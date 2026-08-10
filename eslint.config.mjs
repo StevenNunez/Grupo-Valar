@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Archivos temporales que genera wrangler al servir o desplegar.
+    ".wrangler/**",
   ]),
 ]);
 

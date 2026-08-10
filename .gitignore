@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# instrucciones y notas internas de trabajo con IA (no van al repo público)
+CLAUDE.md
+AGENTS.md
+.claude/
+
+# cloudflare
+/out/
+.wrangler/

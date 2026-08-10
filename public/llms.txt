@@ -1,0 +1,38 @@
+# Valar — Servicios y Proyectos Valar SpA
+
+> Empresa chilena de ingeniería, obras civiles y mantenimiento industrial con base en
+> Antofagasta. Opera principalmente en faenas mineras, energéticas, portuarias y de retail
+> del norte de Chile. Lema: "Valor sostenible para el futuro."
+
+## Qué hace
+
+- **Proyectos de ingeniería**: gestión integral desde la concepción hasta la puesta en marcha, incluidos equipos, personal y presupuesto.
+- **Diseño y construcción de obras civiles**: fundaciones, radieres, estructuras, montaje y habilitación de plantas.
+- **Ingeniería 3D**: levantamientos con escáner láser, planimetría as-built, modelación y maquetas.
+- **Mantenimiento industrial**: eléctrico e instrumentación, HDPE/CPVC, FRP, soldadura mecánica y andamios.
+- **Movimiento de tierra**: caminos, plataformas, excavaciones, rellenos y compactación.
+- **Arriendo de equipos**: torres de iluminación solares y diésel, andamios certificados Layher, equipos menores.
+
+## Clientes principales
+
+SQM (Planta Química Coya Sur, PQLC), Copec S.A., Coca-Cola Andina, Puerto Mejillones.
+
+## Proyectos representativos
+
+- Construcción y habilitación de la planta de tratamiento de aguas servidas TAS fase III (SQM, PQLC).
+- Construcción de caminos y plataformas, y losa para brigada de emergencia (SQM, PQLC).
+- Construcción de estación de servicio y concha acústica (Copec S.A.).
+- Suministro y mantención de torres de iluminación solar y diésel (SQM, PQLC).
+- Reparación del sistema de filtro Trickling y piezas especiales (Coca-Cola Andina).
+- Cierre perimetral de acceso a muelle y mantención estructural de sala de bombas (Puerto Mejillones).
+
+## Datos de la empresa
+
+- Razón social: Servicios y Proyectos Valar SpA
+- RUT: 77.256.185-7
+- Representante legal: Francisco Valdés Araya
+- Dirección: Vicente Salgado 81, sector El Huáscar, Antofagasta, Chile
+- Teléfono: +56 9 6263 1156
+- Email: contacto@valar.live
+- Inscrita en Sicep
+- Sitio: https://grupovalar.cl

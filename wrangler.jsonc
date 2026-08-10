@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "grupovalar",
+  "compatibility_date": "2026-08-10",
+
+  // El sitio es 100% estático (`output: "export"` en next.config.ts), así que
+  // no hay código de Worker: Cloudflare sirve directamente los archivos de `out/`.
+  "assets": {
+    "directory": "./out",
+    "not_found_handling": "404-page"
+  }
+}

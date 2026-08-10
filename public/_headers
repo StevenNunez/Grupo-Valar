@@ -1,0 +1,27 @@
+# Cabeceras que aplica Cloudflare Workers a los archivos estáticos.
+# Sintaxis: una ruta, y debajo cada cabecera indentada.
+
+# Next exporta estas dos imágenes sin extensión, así que hay que declarar
+# el tipo a mano o WhatsApp / Facebook no muestran la vista previa.
+/opengraph-image
+  Content-Type: image/png
+  Cache-Control: public, max-age=3600
+
+/twitter-image
+  Content-Type: image/png
+  Cache-Control: public, max-age=3600
+
+# Los bundles de Next llevan hash en el nombre: se pueden cachear para siempre.
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/proyectos/*
+  Cache-Control: public, max-age=2592000
+
+/clientes/*
+  Cache-Control: public, max-age=2592000
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: SAMEORIGIN
