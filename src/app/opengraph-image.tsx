@@ -1,5 +1,4 @@
 import { ImageResponse } from "next/og";
-import { empresa } from "@/lib/content";
 
 export const alt =
   "Valar — Ingeniería, obras civiles y mantenimiento industrial en Antofagasta";
@@ -101,7 +100,7 @@ export default async function Image() {
             ANTOFAGASTA · CHILE
           </div>
           <div style={{ flexGrow: 1 }} />
-          <div style={{ fontSize: 24, color: "#8b9096" }}>{empresa.telefono}</div>
+          <div style={{ fontSize: 24, color: "#8b9096" }}>grupovalar.cl</div>
         </div>
       </div>
     ),

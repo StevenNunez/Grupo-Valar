@@ -60,11 +60,6 @@ export function Contacto() {
             </p>
 
             <dl className="mt-12 space-y-7">
-              <Dato label="Teléfono">
-                <a className="hover:text-cyan" href={`tel:${empresa.telefonoRaw}`}>
-                  {empresa.telefono}
-                </a>
-              </Dato>
               <Dato label="Email">
                 <a className="hover:text-cyan" href={`mailto:${empresa.email}`}>
                   {empresa.email}

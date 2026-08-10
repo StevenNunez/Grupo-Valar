@@ -36,7 +36,6 @@ const jsonLd = {
       slogan: "Valor sostenible para el futuro.",
       description:
         "Empresa de ingeniería, obras civiles y mantenimiento industrial en Antofagasta, Chile. Más de 40 años de experiencia agregada al servicio de la minería, la energía, el retail y la industria portuaria.",
-      telephone: empresa.telefono,
       email: empresa.email,
       address: {
         "@type": "PostalAddress",
@@ -48,7 +47,6 @@ const jsonLd = {
       contactPoint: {
         "@type": "ContactPoint",
         contactType: "sales",
-        telephone: empresa.telefono,
         email: empresa.email,
         areaServed: "CL",
         availableLanguage: ["es"],

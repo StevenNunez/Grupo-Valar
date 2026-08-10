@@ -4,10 +4,11 @@ export const empresa = {
   rut: "77.256.185-7",
   representante: "Francisco Valdés Araya",
   direccion: "Vicente Salgado 81, sector El Huáscar, Antofagasta, Chile",
-  telefono: "+56 9 6263 1156",
+  // El número no se muestra en ninguna parte del sitio: solo alimenta el enlace
+  // de WhatsApp del formulario de contacto (wa.me).
   telefonoRaw: "+56962631156",
   email: "contacto@valar.live",
-  sitio: "grupovalar.cl",
+  // El dominio vive en src/lib/site.ts — no duplicarlo aquí.
   tagline: ["Valor", "sostenible", "para el futuro."],
 } as const;
 

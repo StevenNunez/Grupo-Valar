@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { Logo } from "./Logo";
-import { empresa } from "@/lib/content";
 
 const links = [
   { href: "#servicios", label: "Servicios" },
@@ -103,10 +102,11 @@ export function Header() {
             ))}
           </nav>
           <a
-            href={`tel:${empresa.telefonoRaw}`}
+            href="#contacto"
+            onClick={() => setOpen(false)}
             className="mt-6 block rounded-full bg-cyan px-5 py-3.5 text-center font-semibold text-white"
           >
-            Llamar {empresa.telefono}
+            Solicitar cotización
           </a>
         </div>
       )}

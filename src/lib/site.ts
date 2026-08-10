@@ -5,4 +5,6 @@
  * WhatsApp/correo (Open Graph), el robots.txt, el sitemap.xml y los datos
  * estructurados de Google. Si cambia el dominio, se cambia SOLO esta línea.
  */
-export const siteUrl = "https://grupovalar.cl";
+// OJO: con "www". El dominio sin www no resuelve, y si las URLs apuntan ahí
+// WhatsApp no puede descargar la imagen de vista previa.
+export const siteUrl = "https://www.grupovalar.cl";

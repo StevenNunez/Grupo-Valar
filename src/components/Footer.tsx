@@ -35,7 +35,6 @@ export function Footer() {
             </Col>
 
             <Col titulo="Contacto">
-              <a href={`tel:${empresa.telefonoRaw}`}>{empresa.telefono}</a>
               <a href={`mailto:${empresa.email}`}>{empresa.email}</a>
               <span className="text-white/50">{empresa.direccion}</span>
             </Col>
