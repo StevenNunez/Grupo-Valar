@@ -8,6 +8,7 @@ import { Sostenibilidad } from "@/components/Sostenibilidad";
 import { Valores } from "@/components/Valores";
 import { Contacto } from "@/components/Contacto";
 import { Footer } from "@/components/Footer";
+import { Splash } from "@/components/Splash";
 import { empresa, servicios, clientes } from "@/lib/content";
 import { siteUrl } from "@/lib/site";
 
@@ -99,6 +100,7 @@ export default function Home() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
+      <Splash />
       <Header />
       <main>
         <Hero />

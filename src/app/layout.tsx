@@ -77,8 +77,30 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="es-CL">
-      <body className={`${inter.variable} ${poppins.variable}`}>{children}</body>
+    // El script de más abajo le pone clases a <html> antes de que React
+    // hidrate; sin esto React lo reporta como desajuste de hidratación.
+    <html lang="es-CL" suppressHydrationWarning>
+      <body className={`${inter.variable} ${poppins.variable}`}>
+        {/*
+          Decide antes del primer pintado si toca mostrar la intro, para que no
+          parpadee en quien ya la vio en esta sesión o pidió menos movimiento.
+          `splash-js` además le avisa al CSS que hay JavaScript y que puede
+          dejar de aplicar el plan B que la retira sola, y `?intro=1` la fuerza
+          para poder revisarla o mostrarla sin abrir una pestaña nueva.
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: [
+              'var r=document.documentElement;r.classList.add("splash-js");',
+              'try{',
+              'if(location.search.indexOf("intro=1")>-1){r.classList.add("splash-force")}',
+              'else if(sessionStorage.getItem("valar-splash")==="1"||matchMedia("(prefers-reduced-motion: reduce)").matches){r.classList.add("splash-skip")}',
+              "}catch(e){}",
+            ].join(""),
+          }}
+        />
+        {children}
+      </body>
     </html>
   );
 }

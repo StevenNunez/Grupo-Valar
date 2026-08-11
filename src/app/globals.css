@@ -77,3 +77,226 @@
     transition: none;
   }
 }
+
+/* ─── Intro de marca ────────────────────────────────────────────────────────
+   La V baja desde arriba y la A (la misma V invertida) sube desde abajo hasta
+   encajar al centro; aparece VALAR debajo y el isotipo vuela al header.
+   Va fuera de @layer a propósito: tiene que ganarle a las utilidades de
+   Tailwind (el `overflow` del body, la pausa de `.animate-rise`).
+   Los tiempos están duplicados en Splash.tsx. */
+
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+}
+
+/* Ya la vio en esta sesión, o pidió menos movimiento: ni se pinta. */
+.splash-skip .splash {
+  display: none;
+}
+
+.splash-veil {
+  position: absolute;
+  inset: 0;
+  background: var(--color-ink);
+}
+
+.splash-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.splash-mark {
+  position: relative;
+  width: min(42vw, 300px);
+  aspect-ratio: 275.01 / 142.45;
+  color: #fff;
+}
+
+.splash-glyph {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  width: 100%;
+  fill: currentColor;
+}
+
+/* Las dos formas comparten viewBox: al llegar a 0 encajan solas en la marca. */
+.splash-glyph-v {
+  animation: splash-drop 1400ms cubic-bezier(0.22, 0.85, 0.25, 1) both;
+}
+
+.splash-glyph-a {
+  animation: splash-rise 1400ms cubic-bezier(0.22, 0.85, 0.25, 1) both;
+}
+
+@keyframes splash-drop {
+  from {
+    transform: translate3d(0, -58vh, 0);
+    opacity: 0;
+  }
+  45% {
+    opacity: 1;
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
+}
+
+@keyframes splash-rise {
+  from {
+    transform: translate3d(0, 58vh, 0);
+    opacity: 0;
+  }
+  45% {
+    opacity: 1;
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
+}
+
+.splash-word {
+  margin-top: clamp(0.9rem, 2.4vw, 1.6rem);
+  font-family: var(--font-display);
+  font-size: clamp(1.05rem, 3.4vw, 1.9rem);
+  font-weight: 600;
+  line-height: 1;
+  color: #fff;
+  /* el mismo kerning del logotipo del brochure */
+  letter-spacing: 0.28em;
+  /* compensa el espacio que ese kerning deja tras la última letra */
+  text-indent: 0.28em;
+}
+
+/* Cada letra entra por su cuenta; el retardo se lo pone Splash.tsx. */
+.splash-word span {
+  display: inline-block;
+  animation: splash-letter-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes splash-letter-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Mientras corre la intro: nada de scroll, el logo del header escondido
+   (lo va a ocupar el que viene volando) y la portada esperando su turno. */
+.splash-running body {
+  overflow: hidden;
+}
+
+.splash-running [data-splash-target] {
+  opacity: 0;
+}
+
+.splash-running .animate-rise {
+  animation-play-state: paused;
+}
+
+/* Salida. El velo se levanta y la portada arranca su propia animación. */
+.splash-out .splash-veil {
+  opacity: 0;
+  transition: opacity 520ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.splash-out .animate-rise {
+  animation-play-state: running;
+}
+
+.splash-out .splash-word {
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 240ms ease,
+    transform 240ms ease;
+}
+
+/* Si alguien se la salta a medias, la marca se arma de golpe y vuela igual. */
+.splash-out .splash-glyph {
+  animation: none;
+}
+
+/* Las variables las calcula Splash.tsx midiendo el logo del header; los
+   valores por defecto son el plan B si ese logo no se pudo medir. */
+.splash-out .splash-mark {
+  transform: translate3d(var(--splash-fly-x, 0px), var(--splash-fly-y, -22vh), 0)
+    scale(var(--splash-fly-scale, 0.1));
+  opacity: 0;
+  transition:
+    transform 820ms cubic-bezier(0.65, 0, 0.3, 1),
+    opacity 180ms linear 620ms;
+}
+
+/* Cruce con el logo real del header, para tapar cualquier desajuste de un píxel. */
+.splash-out [data-splash-target] {
+  opacity: 1;
+  transition: opacity 220ms linear 600ms;
+}
+
+/* Sin JavaScript no hay quien desmonte la intro: se retira sola por CSS para
+   no dejar el sitio tapado. Con JS (`splash-js`) manda Splash.tsx. */
+html:not(.splash-js) .splash-veil {
+  animation: splash-fade-out 520ms cubic-bezier(0.4, 0, 0.2, 1) 2750ms both;
+}
+
+html:not(.splash-js) .splash-stage {
+  animation: splash-fade-out 380ms ease 2750ms both;
+}
+
+html:not(.splash-js) .splash {
+  animation: splash-dismiss 1ms linear 3270ms both;
+}
+
+@keyframes splash-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes splash-dismiss {
+  to {
+    visibility: hidden;
+    pointer-events: none;
+  }
+}
+
+/* Movimiento reducido: la marca aparece ya armada, sin viajes ni vuelo, y las
+   letras se siguen escribiendo una a una porque eso no desplaza la pantalla.
+   `?intro=1` la fuerza entera igual: es pedirla a propósito. */
+@media (prefers-reduced-motion: reduce) {
+  html:not(.splash-force) .splash-glyph {
+    animation: splash-fade-in 420ms ease both;
+  }
+
+  html:not(.splash-force) .splash-word span {
+    animation-name: splash-fade-in;
+  }
+
+  html:not(.splash-force) .splash-out .splash-mark {
+    transform: none;
+    transition: opacity 320ms ease;
+  }
+}
+
+@keyframes splash-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

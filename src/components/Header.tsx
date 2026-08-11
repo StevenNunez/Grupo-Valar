@@ -41,6 +41,8 @@ export function Header() {
         <a
           href="#top"
           aria-label="Valar — inicio"
+          // Destino del isotipo que vuela al terminar la intro (ver Splash.tsx).
+          data-splash-target=""
           className={`text-[19px] transition-colors ${
             solid || open ? "text-ink" : "text-white"
           }`}
