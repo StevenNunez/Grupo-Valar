@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { Logo } from "./Logo";
 
@@ -30,22 +31,22 @@ export function Header() {
   }, [open]);
 
   return (
+    // `sticky` y no `fixed`: el header ocupa su lugar en el flujo, así el hero
+    // empieza debajo y la marca no se pierde sobre la foto de portada.
     <header
-      className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
+      className={`sticky top-0 z-50 transition-all duration-300 ${
         solid || open
           ? "bg-white/90 backdrop-blur-md shadow-[0_1px_0_rgba(31,33,36,0.08)]"
-          : "bg-transparent"
+          : "bg-white"
       }`}
     >
-      <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-6 lg:px-10">
+      <div className="mx-auto flex h-17 max-w-7xl items-center justify-between px-6 lg:px-10">
         <a
           href="#top"
           aria-label="Valar — inicio"
           // Destino del isotipo que vuela al terminar la intro (ver Splash.tsx).
           data-splash-target=""
-          className={`text-[19px] transition-colors ${
-            solid || open ? "text-ink" : "text-white"
-          }`}
+          className="text-[23px] text-ink"
         >
           <Logo />
         </a>
@@ -55,20 +56,25 @@ export function Header() {
             <a
               key={l.href}
               href={l.href}
-              className={`group relative text-sm font-medium transition-colors ${
-                solid ? "text-ink-soft hover:text-ink" : "text-white/80 hover:text-white"
-              }`}
+              className="group relative text-sm font-medium text-ink-soft transition-colors hover:text-ink"
             >
               {l.label}
               <span className="absolute -bottom-1.5 left-0 h-px w-0 bg-cyan transition-all duration-300 group-hover:w-full" />
             </a>
           ))}
-          <a
-            href="#contacto"
-            className="rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep"
-          >
-            Solicitar cotización
-          </a>
+
+          {/* La cotización y el logo de Pagnol van juntos, más cerca entre sí
+              que del resto del menú, con una línea que los separa. */}
+          <div className="flex items-center gap-4">
+            <a
+              href="#contacto"
+              className="rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep"
+            >
+              Solicitar cotización
+            </a>
+            <span className="h-8 w-px bg-mist" aria-hidden="true" />
+            <PagnolLink className="h-9" />
+          </div>
         </nav>
 
         <button
@@ -76,7 +82,7 @@ export function Header() {
           onClick={() => setOpen((v) => !v)}
           aria-label={open ? "Cerrar menú" : "Abrir menú"}
           aria-expanded={open}
-          className={`-mr-2 p-2 md:hidden ${solid || open ? "text-ink" : "text-white"}`}
+          className="-mr-2 p-2 text-ink md:hidden"
         >
           <span className="sr-only">Menú</span>
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -90,7 +96,9 @@ export function Header() {
       </div>
 
       {open && (
-        <div className="border-t border-mist bg-white px-6 pb-8 pt-4 md:hidden">
+        // `absolute` para que el menú caiga por encima del hero en vez de
+        // empujarlo hacia abajo, ahora que el header va en el flujo.
+        <div className="absolute inset-x-0 top-full border-t border-mist bg-white px-6 pb-8 pt-4 shadow-[0_12px_24px_-12px_rgba(31,33,36,0.25)] md:hidden">
           <nav className="flex flex-col">
             {links.map((l) => (
               <a
@@ -110,8 +118,39 @@ export function Header() {
           >
             Solicitar cotización
           </a>
+          <PagnolLink
+            className="mx-auto mt-7 h-10"
+            onClick={() => setOpen(false)}
+          />
         </div>
       )}
     </header>
+  );
+}
+
+/** Logo de Pagnol Asset Management, enlazado a su sitio. */
+function PagnolLink({
+  className = "",
+  onClick,
+}: {
+  className?: string;
+  onClick?: () => void;
+}) {
+  return (
+    <a
+      href="https://www.pagnol.cl"
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={onClick}
+      className={`flex w-fit items-center opacity-90 transition-opacity hover:opacity-100 ${className}`}
+    >
+      <Image
+        src="/logo-pagnol.png"
+        alt="Pagnol Asset Management"
+        width={678}
+        height={269}
+        className="h-full w-auto"
+      />
+    </a>
   );
 }

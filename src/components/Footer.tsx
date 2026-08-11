@@ -1,4 +1,5 @@
 import { empresa } from "@/lib/content";
+import InteractiveLogo from "./InteractiveLogo";
 import { Logo, LogoMark } from "./Logo";
 
 export function Footer() {
@@ -48,6 +49,18 @@ export function Footer() {
           <p>
             Representante legal: {empresa.representante} · Empresa Sicep
           </p>
+          <span className="flex items-center gap-1">
+            Desarrollado por
+            <a
+              href="https://www.teolabs.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition-opacity hover:opacity-80"
+            >
+              <InteractiveLogo variant="footer-small" className="text-[14px]" />
+            </a>
+            ®
+          </span>
         </div>
       </div>
     </footer>

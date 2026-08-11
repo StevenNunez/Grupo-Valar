@@ -3,7 +3,13 @@ import { LogoMark } from "./Logo";
 
 export function Hero() {
   return (
-    <section id="top" className="relative isolate flex min-h-[100svh] flex-col justify-end overflow-hidden">
+    // La altura descuenta el header (h-17 = 4.25rem), que ahora va antes en el
+    // flujo: entre los dos siguen llenando exactamente una pantalla. Si cambia
+    // el alto del header, este número cambia con él.
+    <section
+      id="top"
+      className="relative isolate flex min-h-[calc(100svh-4.25rem)] flex-col justify-end overflow-hidden"
+    >
       <Image
         src="/proyectos/hero.webp"
         alt="Faena de movimiento de tierra ejecutada por Valar en el norte de Chile"
