@@ -7,6 +7,8 @@ export default function robots(): MetadataRoute.Robots {
       {
         // Incluye a los rastreadores de IA (GPTBot, ClaudeBot, PerplexityBot…):
         // el sitio es 100% público, queremos que puedan leerlo y citarlo.
+        // La plataforma interna no vive acá: está en su propio subdominio, con
+        // su propio robots.txt que lo bloquea todo (apps/plataforma).
         userAgent: "*",
         allow: "/",
       },

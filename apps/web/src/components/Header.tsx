@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { Logo } from "./Logo";
+import { plataformaUrl } from "@/lib/site";
 
 const links = [
   { href: "#servicios", label: "Servicios" },
@@ -51,7 +52,10 @@ export function Header() {
           <Logo />
         </a>
 
-        <nav className="hidden items-center gap-9 md:flex">
+        {/* Corte a medida y no un `lg` redondo: con el acceso a la plataforma
+            sumado, el menú entero mide 1.015 px más el aire de los costados, así
+            que por debajo de 1.140 px manda el desplegable, que lo lleva todo. */}
+        <nav className="hidden items-center gap-8 min-[1140px]:flex">
           {links.map((l) => (
             <a
               key={l.href}
@@ -65,7 +69,8 @@ export function Header() {
 
           {/* La cotización y el logo de Pagnol van juntos, más cerca entre sí
               que del resto del menú, con una línea que los separa. */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <AccesoPlataforma className="rounded-full border border-mist-deep px-4 py-2.5 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink" />
             <a
               href="#contacto"
               className="rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep"
@@ -82,7 +87,7 @@ export function Header() {
           onClick={() => setOpen((v) => !v)}
           aria-label={open ? "Cerrar menú" : "Abrir menú"}
           aria-expanded={open}
-          className="-mr-2 p-2 text-ink md:hidden"
+          className="-mr-2 p-2 text-ink min-[1140px]:hidden"
         >
           <span className="sr-only">Menú</span>
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -98,7 +103,7 @@ export function Header() {
       {open && (
         // `absolute` para que el menú caiga por encima del hero en vez de
         // empujarlo hacia abajo, ahora que el header va en el flujo.
-        <div className="absolute inset-x-0 top-full border-t border-mist bg-white px-6 pb-8 pt-4 shadow-[0_12px_24px_-12px_rgba(31,33,36,0.25)] md:hidden">
+        <div className="absolute inset-x-0 top-full border-t border-mist bg-white px-6 pb-8 pt-4 shadow-[0_12px_24px_-12px_rgba(31,33,36,0.25)] min-[1140px]:hidden">
           <nav className="flex flex-col">
             {links.map((l) => (
               <a
@@ -118,6 +123,10 @@ export function Header() {
           >
             Solicitar cotización
           </a>
+          <AccesoPlataforma
+            onClick={() => setOpen(false)}
+            className="mt-3 justify-center rounded-full border border-mist-deep px-5 py-3.5 font-semibold text-ink"
+          />
           <PagnolLink
             className="mx-auto mt-7 h-10"
             onClick={() => setOpen(false)}
@@ -125,6 +134,41 @@ export function Header() {
         </div>
       )}
     </header>
+  );
+}
+
+/**
+ * Entrada a la plataforma interna. Vive en otro dominio y en otro deploy, así
+ * que va como enlace normal: `next/link` no sirve para salir de este sitio.
+ */
+function AccesoPlataforma({
+  className = "",
+  onClick,
+}: {
+  className?: string;
+  onClick?: () => void;
+}) {
+  return (
+    <a
+      href={plataformaUrl}
+      onClick={onClick}
+      className={`flex items-center gap-2 whitespace-nowrap ${className}`}
+    >
+      <svg
+        width="15"
+        height="15"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        aria-hidden="true"
+        className="shrink-0"
+      >
+        <rect x="4" y="10.5" width="16" height="10" rx="2.5" />
+        <path d="M8 10.5V7.6a4 4 0 0 1 8 0v2.9" strokeLinecap="round" />
+      </svg>
+      Acceso a Plataforma Valar
+    </a>
   );
 }
 

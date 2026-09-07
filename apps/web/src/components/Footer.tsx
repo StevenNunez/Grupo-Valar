@@ -1,4 +1,5 @@
 import { empresa } from "@/lib/content";
+import { plataformaUrl } from "@/lib/site";
 import InteractiveLogo from "./InteractiveLogo";
 import { Logo, LogoMark } from "./Logo";
 
@@ -33,6 +34,7 @@ export function Footer() {
               <a href="#nosotros">Quiénes somos</a>
               <a href="#proyectos">Proyectos</a>
               <a href="#contacto">Contacto</a>
+              <a href={plataformaUrl}>Acceso a Plataforma Valar</a>
             </Col>
 
             <Col titulo="Contacto">

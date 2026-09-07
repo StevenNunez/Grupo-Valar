@@ -1,0 +1,13 @@
+# Cabeceras que aplica Cloudflare Workers a los archivos de la plataforma.
+
+# Los bundles de Next llevan hash en el nombre: se pueden cachear para siempre.
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Herramienta interna: fuera de buscadores y sin quedar guardada en disco.
+/*
+  X-Robots-Tag: noindex, nofollow
+  Cache-Control: no-store
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY

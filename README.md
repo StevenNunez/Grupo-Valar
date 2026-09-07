@@ -1,72 +1,130 @@
-# Valar — Landing page
+# Grupo Valar
 
-Sitio de una página para **Servicios y Proyectos Valar SpA** (Antofagasta, Chile).
-Contenido, fotografías e identidad visual tomados del brochure corporativo.
+Repositorio de **Servicios y Proyectos Valar SpA** (Antofagasta, Chile). Son dos
+aplicaciones independientes que comparten repositorio, no código:
+
+| App | Dominio | Qué es |
+| --- | --- | --- |
+| `apps/web` | `www.grupovalar.cl` | Sitio público. Contenido e identidad del brochure corporativo. |
+| `apps/plataforma` | `plataforma.grupovalar.cl` | Plataforma interna. Login y módulos de gestión. |
+
+**Por qué separadas:** `output: "export"` es una decisión de app completa. Con
+las dos juntas, darle servidor a la plataforma obligaba a cambiar también el
+sitio público —y con él su deploy y su SEO—. Separadas, cada una elige su
+runtime sin arrastrar a la otra. Las pocas piezas de marca compartidas (el
+isotipo en `components/Logo.tsx`, los tokens de color en `globals.css`) están
+**copiadas a propósito**: si cambian, se cambian en los dos lugares.
 
 ## Stack
 
 - Next.js 16 (App Router) + React 19 — exportación estática (`output: "export"`)
 - Tailwind CSS 4
 - TypeScript
-- Se despliega en **Cloudflare Workers** (static assets)
+- npm workspaces (una instalación y un lockfile para las dos apps)
+- Se despliega en **Cloudflare Workers** (static assets), un Worker por app
 
 ## Desarrollo
 
 ```bash
-npm install
-npm run dev       # http://localhost:3000
-npm run build     # genera el sitio estático en out/
-npm run preview   # build + lo sirve con wrangler, igual que Cloudflare
+npm install                # instala las dos apps de una vez
+
+npm run dev                # sitio público      → http://localhost:3000
+npm run dev:plataforma     # plataforma interna → http://localhost:3000
+
+npm run build              # compila las dos
+npm run lint               # revisa las dos
 ```
+
+Para trabajar en una sola app: `npm run <script> -w web` o `-w plataforma`.
+
+## Supabase (backend de la plataforma)
+
+La plataforma no tiene servidor: el navegador habla directo con Supabase. **La
+seguridad vive en las políticas RLS de Postgres**, no en el código del cliente:
+la clave publishable viaja dentro del bundle a propósito, y sin una política que
+lo permita no devuelve una sola fila.
+
+Puesta en marcha, una sola vez:
+
+```bash
+cp .env.example .env.local                       # claves para los scripts
+cp apps/plataforma/.env.example apps/plataforma/.env.local   # claves de la app
+```
+
+Ojo con los dos archivos: Next **solo lee el `.env.local` de la carpeta de cada
+app**, así que el de la raíz no le sirve a la plataforma. La `service_role` se
+queda a propósito en el de la raíz, fuera de lo que Next compila.
+
+1. Supabase → **SQL Editor** → pegar `supabase/migraciones/0001_control_de_gestion.sql` → Run.
+2. `npm run sembrar` — crea el usuario demo y siembra los datos del módulo. Idempotente.
+3. `npm run verificar` — comprueba que sin sesión no se ve nada y con sesión sí.
+
+`npm run verificar` conviene correrlo cada vez que se toque una política.
 
 ## Deploy en Cloudflare Workers
 
-El sitio no tiene backend: el build produce archivos estáticos en `out/` y
-Cloudflare los sirve directamente. No hace falta el adaptador de OpenNext,
-ni R2, ni Cloudflare Images.
+Ninguna de las dos apps tiene backend: el build produce archivos estáticos en
+`out/` y Cloudflare los sirve directamente. Las solicitudes a archivos estáticos
+son gratis e ilimitadas, así que no hace falta el adaptador de OpenNext.
 
-**Configuración en el dashboard de Cloudflare** (Workers → conectar repositorio de Git):
+```bash
+npm run deploy:web          # → www.grupovalar.cl
+npm run deploy:plataforma   # → plataforma.grupovalar.cl
+```
 
-| Campo               | Valor           |
-| ------------------- | --------------- |
-| Build command       | `npm run build` |
-| Deploy command      | `npx wrangler deploy` |
-| Path / root directory | (vacío, la raíz) |
+**Desde el dashboard** (Workers → conectar repositorio de Git), un proyecto por app:
 
-El resto lo toma de `wrangler.jsonc`. Después se conecta el dominio
-`grupovalar.cl` en **Workers → el worker → Settings → Domains & Routes**.
+| Campo | `web` | `plataforma` |
+| --- | --- | --- |
+| Root directory | `apps/web` | `apps/plataforma` |
+| Build command | `npm run build` | `npm run build` |
+| Deploy command | `npx wrangler deploy` | `npx wrangler deploy` |
 
-Para desplegar desde el computador en vez del repo: `npm run deploy`.
+El dominio de la plataforma va declarado en su `wrangler.jsonc` como
+`custom_domain`: Cloudflare crea el registro DNS y emite el certificado solo al
+desplegar. El del sitio público se conectó a mano en su día y sigue igual.
 
 ## Estructura
 
 ```
-src/
-  app/
-    layout.tsx           metadata y fuentes (Poppins + Inter)
-    page.tsx             composición de secciones + JSON-LD
-    globals.css          tokens de marca y utilidades
-    icon.svg             favicon (isotipo Valar)
-    opengraph-image.tsx  imagen de WhatsApp / correo / redes (1200×630)
-    robots.ts            robots.txt
-    sitemap.ts           sitemap.xml
-  components/            una sección por archivo
-  lib/
-    content.ts           TODO el contenido editable del sitio
-    site.ts              dominio de producción (única fuente de verdad)
-public/
-  proyectos/             fotografías de obra (WebP)
-  clientes/              logos de clientes (WebP)
-  _headers               cabeceras que aplica Cloudflare
-  llms.txt               resumen del sitio para asistentes de IA
+apps/web/                     Sitio público
+  src/app/
+    page.tsx                  composición de secciones + JSON-LD
+    globals.css               tokens de marca, intro y utilidades
+    opengraph-image.tsx       imagen de WhatsApp / correo / redes (1200×630)
+    robots.ts, sitemap.ts
+  src/components/             una sección por archivo
+  src/lib/
+    content.ts                TODO el contenido editable del sitio
+    site.ts                   dominios (sitio y plataforma)
+  public/                     fotos, logos, _headers, llms.txt
+
+apps/plataforma/              Plataforma interna
+  src/app/
+    page.tsx                  login (raíz del subdominio)
+    (panel)/                  grupo de rutas tras el login; no sale en la URL
+      layout.tsx              marco: menú lateral y barra superior
+      modulos/                índice de módulos
+      control-de-gestion/     primer módulo
+  src/components/
+  src/lib/
+    supabase.ts               cliente del navegador (clave publishable)
+    sesion.ts                 Supabase Auth + perfil del usuario
+    modulos.ts                registro de módulos y su estado
+    control-de-gestion.ts     consultas del módulo y formato chileno
+
+supabase/migraciones/         esquema y políticas RLS (se pegan en el SQL Editor)
+scripts/
+  sembrar-demo.mjs            usuario demo + datos de ejemplo (idempotente)
+  verificar-rls.mjs           comprueba que las políticas hacen lo que dicen
 ```
 
-Para cambiar textos, servicios, proyectos o datos de contacto se edita
-únicamente `src/lib/content.ts`. Para cambiar el dominio, `src/lib/site.ts`.
+Para cambiar textos, servicios, proyectos o datos de contacto del sitio público
+se edita únicamente `apps/web/src/lib/content.ts`.
 
 ## Imágenes
 
-El sitio no tiene optimizador de imágenes en producción (no hay servidor), así
+Ninguna app tiene optimizador de imágenes en producción (no hay servidor), así
 que **las fotos deben subirse ya comprimidas y al tamaño justo**:
 
 - Hero: 1920 px de ancho máximo, WebP calidad ~60
@@ -83,6 +141,11 @@ que **las fotos deben subirse ya comprimidas y al tamaño justo**:
 
 ## Pendientes
 
-- El formulario de contacto no envía correo desde el servidor: compone el
-  mensaje y lo abre en WhatsApp o en el cliente de correo del visitante. Para
-  envío real habría que agregar un Worker aparte o un servicio de formularios.
+- La plataforma **lee** datos pero todavía no permite editarlos desde la
+  interfaz: los contratos se cargan por ahora desde el script de siembra o
+  desde el editor de tablas de Supabase.
+- Los documentos (subida y generación) están sin empezar. Cuando lleguen:
+  Supabase Storage primero; R2 solo si el 1 GB o los 5 GB de egress aprietan.
+- El formulario de contacto del sitio público no envía correo desde el
+  servidor: compone el mensaje y lo abre en WhatsApp o en el cliente de correo
+  del visitante.

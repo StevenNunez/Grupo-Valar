@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "valar-plataforma",
+  "compatibility_date": "2026-09-07",
+
+  // Cloudflare crea el registro DNS y emite el certificado solo al desplegar:
+  // no hay que tocar la zona a mano. El sitio público sigue en su propio
+  // Worker (`grupovalar`), intacto.
+  "routes": [
+    {
+      "pattern": "plataforma.grupovalar.cl",
+      "custom_domain": true
+    }
+  ],
+
+  // Igual que el sitio público: solo archivos, sin código de Worker.
+  "assets": {
+    "directory": "./out",
+    "not_found_handling": "404-page"
+  }
+}

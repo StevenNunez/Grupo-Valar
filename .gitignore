@@ -1,7 +1,7 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# dependencies
-/node_modules
+# dependencies (el workspace puede crear una por app)
+node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -13,9 +13,9 @@
 # testing
 /coverage
 
-# next.js
-/.next/
-/out/
+# next.js (una carpeta por app del workspace)
+.next/
+out/
 
 # production
 /build
@@ -46,5 +46,4 @@ AGENTS.md
 .claude/
 
 # cloudflare
-/out/
 .wrangler/

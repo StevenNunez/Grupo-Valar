@@ -1,6 +1,9 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "grupovalar",
+  // Tiene que coincidir EXACTO con el Worker que ya existe en Cloudflare
+  // ("grupo-valar", con guion). Si no coincide, un `wrangler deploy` crea un
+  // Worker nuevo y vacío en vez de actualizar el que sirve www.grupovalar.cl.
+  "name": "grupo-valar",
   "compatibility_date": "2026-08-10",
 
   // El sitio es 100% estático (`output: "export"` en next.config.ts), así que
