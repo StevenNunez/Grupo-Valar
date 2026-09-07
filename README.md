@@ -37,6 +37,15 @@ npm run lint               # revisa las dos
 
 Para trabajar en una sola app: `npm run <script> -w web` o `-w plataforma`.
 
+> **No borres `package-lock.json` para regenerarlo.** Guarda los binarios
+> nativos de **todas** las plataformas (54 paquetes de Linux, entre ellos
+> `lightningcss` y `@tailwindcss/oxide`). Al rehacerlo desde cero en Windows,
+> npm solo anota los de Windows y **el build de Cloudflare falla** con
+> `Cannot find module '../lightningcss.linux-x64-gnu.node'`. Si hay que
+> repararlo: recuperar el lockfile de un commit anterior
+> (`git show <commit>:package-lock.json > package-lock.json`) y correr
+> `npm install` encima, que conserva las entradas de Linux.
+
 ## Supabase (backend de la plataforma)
 
 La plataforma no tiene servidor: el navegador habla directo con Supabase. **La
