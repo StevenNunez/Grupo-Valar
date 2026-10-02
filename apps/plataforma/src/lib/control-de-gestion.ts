@@ -1,24 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { supabase } from "./supabase";
+import type { PlantillaEdp } from "./plantillas-edp";
+
 
 /**
- * Datos del módulo Control de Gestión, leídos de Supabase.
+ * Datos del Dashboard.
  *
- * Las consultas no llevan filtro de usuario a propósito: quién puede ver qué lo
- * deciden las políticas RLS (ver `supabase/migraciones/`). Sin sesión, estas
- * mismas consultas devuelven cero filas.
+ * Ninguno se escribe a mano: salen de dos vistas que suman lo que se carga en
+ * Ingresos y Egresos.
  *
- * Todos los montos van en pesos chilenos, sin decimales.
+ *   facturacion_mensual  ←  facturas emitidas
+ *   contratos_resumen    ←  contratos + compras + servicios + personal
+ *
+ * Por eso el Dashboard no tiene "sus" números: si un total no cuadra, el dato
+ * que hay que corregir está en la vista donde se carga, no acá.
  */
 
 export type Periodo = "trimestre" | "semestre" | "anio";
 
-export const periodos: { id: Periodo; etiqueta: string }[] = [
-  { id: "trimestre", etiqueta: "Últimos 3 meses" },
-  { id: "semestre", etiqueta: "Últimos 6 meses" },
-  { id: "anio", etiqueta: "Todo el año" },
+export const periodos: { id: Periodo; titulo: string }[] = [
+  { id: "trimestre", titulo: "Últimos 3 meses" },
+  { id: "semestre", titulo: "Últimos 6 meses" },
+  { id: "anio", titulo: "Todo el año" },
 ];
 
 /** Cuántos meses toma cada período del final de la serie. */
@@ -32,16 +35,80 @@ export type EstadoContrato = "en-plazo" | "en-riesgo" | "atrasado" | "cerrado";
 
 export type Contrato = {
   id: string;
+  plantillaEdp: PlantillaEdp;
   nombre: string;
   cliente: string;
   faena: string;
   /** Avance físico informado, 0–100. */
   avance: number;
   presupuesto: number;
+  /** Compras ordinarias + costo de personal. Deducido, no almacenado. */
   costoReal: number;
+  costoCompras: number;
+  costoServicios: number;
+  /** Se le recupera al mandante, así que va aparte del costo real. */
+  costoReembolsable: number;
+  costoPersonal: number;
+  facturado: number;
   estado: EstadoContrato;
-  /** Término contractual, ISO corto. */
   termino: string;
+  /** Puntual o permanente. */
+  modalidad: Modalidad;
+  /** Cómo se cobra, dentro de la modalidad. */
+  forma: FormaContrato;
+  /** Deducida de la fecha de término vigente, no se escribe. */
+  vigencia: Vigencia;
+  diasRestantes: number;
+  /** Cuánto dura en total, si el inicio está cargado. */
+  diasPlazoTotal: number | null;
+  inicio: string | null;
+  /** Cuántos anexos vigentes tiene. Un contrato muta. */
+  anexos: number;
+  montoAnexos: number;
+  diasAnexos: number;
+  /** Presupuesto más anexos. Nulo cuando el contrato no lleva monto total. */
+  montoVigente: number | null;
+  /** El término después de las extensiones de plazo. */
+  terminoVigente: string;
+};
+
+/**
+ * La modalidad va en dos niveles, y son dos preguntas distintas.
+ *
+ *   Modalidad → ¿es puntual o es permanente?  spot · largo plazo
+ *   Forma     → ¿cómo se cobra?               suma alzada · precios unitarios ·
+ *                                             administración delegada · arriendo
+ *
+ * Un contrato a largo plazo puede cobrarse a precios unitarios y uno spot a
+ * suma alzada: por eso no caben en un solo campo.
+ */
+export type Modalidad = "spot" | "largo_plazo";
+
+export const modalidades: { id: Modalidad; titulo: string; ayuda: string }[] = [
+  { id: "largo_plazo", titulo: "Largo plazo", ayuda: "Permanente: se factura mes a mes mientras dure." },
+  { id: "spot", titulo: "Spot", ayuda: "Puntual, por una vez." },
+];
+
+export type FormaContrato =
+  | "suma_alzada"
+  | "precios_unitarios"
+  | "administracion_delegada"
+  | "arriendo";
+
+export const formasContrato: { id: FormaContrato; titulo: string; ayuda: string }[] = [
+  { id: "suma_alzada", titulo: "Suma alzada", ayuda: "Precio fijo por el total, sin importar lo que cueste." },
+  { id: "precios_unitarios", titulo: "Precios unitarios", ayuda: "Se paga lo ejecutado, a un precio por unidad o por hora." },
+  { id: "administracion_delegada", titulo: "Administración delegada", ayuda: "Costo más honorario." },
+  { id: "arriendo", titulo: "Arriendo", ayuda: "Equipos por período." },
+];
+
+/** La vigencia no se teclea: sale de la fecha de término que rige hoy. */
+export type Vigencia = "vigente" | "por-vencer" | "cerrado";
+
+export const vigencias: Record<Vigencia, string> = {
+  vigente: "Vigente",
+  "por-vencer": "Por vencer",
+  cerrado: "Cerrado",
 };
 
 export type MesFacturado = {
@@ -50,6 +117,7 @@ export type MesFacturado = {
   /** "Ene", "Feb"… para el eje del gráfico. */
   etiqueta: string;
   monto: number;
+  documentos: number;
 };
 
 export type Seguridad = {
@@ -57,148 +125,3 @@ export type Seguridad = {
   hhAcumuladas: number;
   ultimaAuditoria: string | null;
 };
-
-export type Datos = {
-  contratos: Contrato[];
-  facturacion: MesFacturado[];
-  seguridad: Seguridad | null;
-};
-
-/* ── Consultas ───────────────────────────────────────────────────────────── */
-
-/* Las filas llegan en snake_case desde Postgres; la app trabaja en camelCase. */
-
-type FilaContrato = {
-  id: string;
-  nombre: string;
-  cliente: string;
-  faena: string;
-  avance: number;
-  presupuesto: number;
-  costo_real: number;
-  estado: EstadoContrato;
-  termino: string;
-};
-
-type FilaFacturacion = { periodo: string; monto: number };
-
-type FilaSeguridad = {
-  dias_sin_accidentes: number;
-  hh_acumuladas: number;
-  ultima_auditoria: string | null;
-};
-
-const MESES = [
-  "Ene", "Feb", "Mar", "Abr", "May", "Jun",
-  "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",
-];
-
-function etiquetaDeMes(iso: string) {
-  // Cortamos la cadena en vez de usar `new Date`: así el mes no se corre por
-  // zona horaria (en Chile, un `2026-09-01` en UTC se leería como agosto).
-  const mes = Number(iso.slice(5, 7));
-  return MESES[mes - 1] ?? iso;
-}
-
-export async function cargarDatos(): Promise<Datos> {
-  const [contratos, facturacion, seguridad] = await Promise.all([
-    supabase
-      .from("contratos")
-      .select("id, nombre, cliente, faena, avance, presupuesto, costo_real, estado, termino")
-      .order("termino", { ascending: true }),
-    supabase
-      .from("facturacion")
-      .select("periodo, monto")
-      .order("periodo", { ascending: true }),
-    supabase
-      .from("seguridad")
-      .select("dias_sin_accidentes, hh_acumuladas, ultima_auditoria")
-      .maybeSingle(),
-  ]);
-
-  const fallo = contratos.error ?? facturacion.error ?? seguridad.error;
-  if (fallo) throw new Error(fallo.message);
-
-  return {
-    contratos: ((contratos.data ?? []) as FilaContrato[]).map((c) => ({
-      id: c.id,
-      nombre: c.nombre,
-      cliente: c.cliente,
-      faena: c.faena,
-      avance: c.avance,
-      presupuesto: c.presupuesto,
-      costoReal: c.costo_real,
-      estado: c.estado,
-      termino: c.termino,
-    })),
-    facturacion: ((facturacion.data ?? []) as FilaFacturacion[]).map((f) => ({
-      periodo: f.periodo,
-      etiqueta: etiquetaDeMes(f.periodo),
-      monto: f.monto,
-    })),
-    seguridad: seguridad.data
-      ? {
-          diasSinAccidentes: (seguridad.data as FilaSeguridad).dias_sin_accidentes,
-          hhAcumuladas: (seguridad.data as FilaSeguridad).hh_acumuladas,
-          ultimaAuditoria: (seguridad.data as FilaSeguridad).ultima_auditoria,
-        }
-      : null,
-  };
-}
-
-export type EstadoDatos =
-  | { estado: "cargando" }
-  | { estado: "error"; mensaje: string }
-  | { estado: "listo"; datos: Datos };
-
-export function useControlDeGestion(): EstadoDatos {
-  const [estado, setEstado] = useState<EstadoDatos>({ estado: "cargando" });
-
-  useEffect(() => {
-    let vigente = true;
-
-    cargarDatos()
-      .then((datos) => {
-        if (vigente) setEstado({ estado: "listo", datos });
-      })
-      .catch((e: unknown) => {
-        if (!vigente) return;
-        const mensaje = e instanceof Error ? e.message : String(e);
-        setEstado({ estado: "error", mensaje });
-      });
-
-    return () => {
-      vigente = false;
-    };
-  }, []);
-
-  return estado;
-}
-
-/* ── Formato chileno ─────────────────────────────────────────────────────── */
-
-const clp = new Intl.NumberFormat("es-CL", {
-  style: "currency",
-  currency: "CLP",
-  maximumFractionDigits: 0,
-});
-
-export const formatearPesos = (monto: number) => clp.format(monto);
-
-/** Versión corta para ejes y tarjetas: "$1.240 M". */
-export function formatearMillones(monto: number) {
-  const millones = monto / 1_000_000;
-  const decimales = millones >= 100 ? 0 : 1;
-  return `$${millones.toLocaleString("es-CL", {
-    minimumFractionDigits: decimales,
-    maximumFractionDigits: decimales,
-  })} M`;
-}
-
-export function formatearFecha(iso: string) {
-  return new Date(`${iso}T12:00:00`).toLocaleDateString("es-CL", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}

@@ -25,6 +25,25 @@ if (!url || !anonKey) {
   );
 }
 
+// Supabase consume el fragmento del enlace al iniciar el cliente. Guardamos
+// únicamente el tipo de enlace antes de que desaparezca, nunca sus tokens.
+export const CLAVE_ENLACE_ACCESO = "valar:enlace-acceso";
+if (typeof window !== "undefined") {
+  const enlace = new URLSearchParams(window.location.hash.slice(1));
+  const tipo = enlace.get("type");
+  const token = enlace.get("access_token");
+  if ((tipo === "recovery" || tipo === "invite") && token) {
+    try {
+      const sujeto = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).sub;
+      if (typeof sujeto === "string") {
+        window.sessionStorage.setItem(CLAVE_ENLACE_ACCESO, JSON.stringify({ tipo, sujeto }));
+      }
+    } catch {
+      window.sessionStorage.removeItem(CLAVE_ENLACE_ACCESO);
+    }
+  }
+}
+
 export const supabase = createClient(url, anonKey, {
   auth: {
     // La sesión vive en localStorage y se renueva sola. No hay servidor que

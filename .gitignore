@@ -47,3 +47,27 @@ AGENTS.md
 
 # cloudflare
 .wrangler/
+
+# Datos reales extraidos de las planillas: cifras de la empresa, no van al repo
+scripts/planillas/datos-valar.json
+scripts/planillas/proveedores.json
+scripts/planillas/articulos.json
+
+# estado local de la CLI de Supabase
+supabase/.temp/
+
+# Notas internas de trabajo: no van al repo
+MEMORIA.md
+.local/
+
+
+CONFIGURACION_ACCESO.md
+
+# Herramientas de desarrollo: sembrar el demo, verificar RLS, importar planillas,
+# diagnosticar SMTP, aplicar migraciones, vaciar la base. Viven en local; la
+# app no las importa y GitHub no las necesita para compilar ni para estar en vivo.
+scripts/
+
+# La plantilla de variables de la plataforma SÍ va: dice qué necesita el build.
+# (La de la raíz es para los scripts locales y queda fuera con ellos.)
+!apps/plataforma/.env.example

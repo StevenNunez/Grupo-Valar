@@ -1,10 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useEffect, useId, useState } from "react";
 import { empresa } from "@/lib/empresa";
 import { mensajeDeError, useSesion } from "@/lib/sesion";
-import { supabase } from "@/lib/supabase";
+import { CLAVE_ENLACE_ACCESO, supabase } from "@/lib/supabase";
 
 const DESTINO = "/modulos/";
 
@@ -22,7 +23,9 @@ export function FormularioAcceso() {
 
   // Si ya hay sesión válida, no tiene sentido volver a pedir la clave.
   useEffect(() => {
-    if (sesion.estado === "con-sesion") router.replace(DESTINO);
+    if (sesion.estado === "con-sesion") {
+      router.replace(window.sessionStorage.getItem(CLAVE_ENLACE_ACCESO) ? "/restablecer/" : DESTINO);
+    }
   }, [sesion.estado, router]);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -43,7 +46,7 @@ export function FormularioAcceso() {
 
     // El redirect lo hace el efecto de arriba en cuanto `useSesion` se entera;
     // dejamos el botón ocupado para que no se pueda enviar dos veces.
-    router.replace(DESTINO);
+    router.replace(window.sessionStorage.getItem(CLAVE_ENLACE_ACCESO) ? "/restablecer/" : DESTINO);
   }
 
   return (
@@ -105,6 +108,13 @@ export function FormularioAcceso() {
           </button>
         </div>
       </div>
+
+      <Link
+        href="/recuperar/"
+        className="self-end text-sm font-semibold text-cyan-deep underline underline-offset-2"
+      >
+        ¿Olvidaste tu contraseña?
+      </Link>
 
       {error && (
         <p

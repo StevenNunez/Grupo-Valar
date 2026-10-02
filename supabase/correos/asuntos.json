@@ -1,0 +1,9 @@
+{
+  "recovery": "Valar | Restablece tu contraseña",
+  "invite": "Valar | Tu invitación a la plataforma",
+  "confirmation": "Valar | Confirma tu correo",
+  "magic_link": "Valar | Tu enlace de acceso",
+  "email_change": "Valar | Confirma tu nuevo correo",
+  "reauthentication": "Valar | Código para verificar tu identidad",
+  "password_changed_notification": "Valar | Se cambió tu contraseña"
+}

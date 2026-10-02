@@ -1,6 +1,13 @@
 import type { Modulo } from "@/lib/modulos";
 
 const trazos: Record<Modulo["icono"], React.ReactNode> = {
+  // Caja de despacho: lo que se compra y llega.
+  abastecimiento: (
+    <>
+      <path d="M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5Z" strokeLinejoin="round" />
+      <path d="M3.5 7.5 12 12l8.5-4.5M12 12v9" strokeLinejoin="round" />
+    </>
+  ),
   gestion: (
     <>
       <path d="M4 19V9M10 19V5M16 19v-6M22 19H2" strokeLinecap="round" />
@@ -8,10 +15,7 @@ const trazos: Record<Modulo["icono"], React.ReactNode> = {
   ),
   proyectos: (
     <>
-      <path
-        d="M4 6a2 2 0 0 1 2-2h4l2 2.5h6a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"
-        strokeLinejoin="round"
-      />
+  <path d="M4 6a2 2 0 0 1 2-2h4l2 2.5h6a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" stroke-linejoin="round" />
     </>
   ),
   personas: (

@@ -1,25 +1,54 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 import { supabase } from "./supabase";
 
 /**
  * Sesión de la Plataforma Valar, sobre Supabase Auth.
  *
- * El guard visual de `Shell.tsx` sigue siendo comodidad —evita mostrar un
- * panel vacío a quien no entró—, pero ya no es lo que protege los datos: el
- * muro son las políticas RLS. Aunque alguien se salte la pantalla, Postgres no
- * le devuelve una sola fila sin sesión válida.
+ * El guard visual (`Guardia.tsx`) es comodidad —evita mostrar un panel vacío a
+ * quien no entró—, pero no es lo que protege los datos: el muro son las
+ * políticas RLS. Aunque alguien se salte la pantalla, Postgres no le devuelve
+ * una sola fila sin sesión válida.
  */
 
-export type Rol = "lectura" | "gestion" | "admin";
+/**
+ * Qué puede hacer la persona: desde la 0042 sale del ACCESO, no del cargo.
+ *
+ *   general   "administrador" = todo en todos los módulos; "soporte" = lo
+ *             mismo y además cruza empresas. Nulo = lo de sus accesos.
+ *   accesos   por módulo, su nivel (administrador, usuario, visualizador,
+ *             personalizado)
+ *   permisos  lo que le contesta `mis_permisos()`, ya resuelto
+ *
+ * Todo esto sirve para ESCONDER lo que no corresponde. Quien decide de verdad
+ * es el RLS: si la pantalla se equivoca, la base dice que no igual.
+ */
+export type Nivel = "administrador" | "usuario" | "visualizador" | "personalizado";
 
 export type Usuario = {
   id: string;
   correo: string;
   nombre: string;
   cargo: string;
-  rol: Rol;
+  /** El cargo del catálogo (`roles`). Es un título: no da permisos. */
+  rol: string;
+  general: "administrador" | "soporte" | null;
+  accesos: Record<string, Nivel>;
+  permisos: Set<string>;
+  /**
+   * La empresa a la que pertenece. Es la que se le pone a todo lo que cree.
+   *
+   * Hace falta tenerla a mano porque el rol `soporte` VE varias empresas: una
+   * consulta sin filtro que antes devolvía una fila ahora puede devolver una
+   * por empresa, y las que esperan exactamente una se caen. Ver la 0030.
+   */
+  empresa: string | null;
   /** Iniciales para el avatar del encabezado. */
   iniciales: string;
 };
@@ -39,16 +68,30 @@ function iniciales(nombre: string, correo: string) {
 
 /** Trae el perfil del usuario. Si aún no existe, arma uno mínimo con el correo. */
 async function cargarUsuario(id: string, correo: string): Promise<Usuario> {
-  const { data, error } = await supabase
-    .from("perfiles")
-    .select("nombre, cargo, rol")
-    .eq("id", id)
-    .maybeSingle();
+  const [perfil, accesos, permisos] = await Promise.all([
+    supabase
+      .from("perfiles")
+      .select("nombre, cargo, rol, empresa_id, acceso_general")
+      .eq("id", id)
+      .maybeSingle(),
+    supabase.from("accesos").select("modulo_id, nivel").eq("usuario_id", id),
+    supabase.rpc("mis_permisos"),
+  ]);
 
   // Un fallo acá no debe dejar a nadie fuera: el trigger que crea el perfil
-  // puede ir un instante atrasado respecto del primer login.
-  if (error) console.warn("No se pudo leer el perfil:", error.message);
+  // puede ir un instante atrasado respecto del primer login. Sin accesos,
+  // la persona ve la plataforma vacía, que es lo seguro.
+  for (const r of [perfil, accesos, permisos]) {
+    if (r.error) console.warn("No se pudo leer el acceso:", r.error.message);
+  }
 
+  const data = perfil.data as {
+    nombre?: string;
+    cargo?: string;
+    rol?: string;
+    empresa_id?: string | null;
+    acceso_general?: Usuario["general"];
+  } | null;
   const nombre = data?.nombre?.trim() || correo.split("@")[0];
 
   return {
@@ -56,9 +99,53 @@ async function cargarUsuario(id: string, correo: string): Promise<Usuario> {
     correo,
     nombre,
     cargo: data?.cargo?.trim() || "Sin cargo asignado",
-    rol: (data?.rol as Rol) ?? "lectura",
+    rol: data?.rol ?? "lectura",
+    general: data?.acceso_general ?? null,
+    accesos: Object.fromEntries(
+      ((accesos.data ?? []) as { modulo_id: string; nivel: Nivel }[]).map((a) => [a.modulo_id, a.nivel]),
+    ),
+    permisos: new Set(((permisos.data ?? []) as { permiso_id: string }[]).map((p) => p.permiso_id)),
+    empresa: data?.empresa_id ?? null,
     iniciales: iniciales(nombre, correo),
   };
+}
+
+/* ── Qué puede, para la pantalla ──────────────────────────────────────────── */
+
+/** Tiene ese permiso (en el módulo que sea). */
+export function puede(usuario: Usuario, permiso: string) {
+  return usuario.general !== null || usuario.permisos.has(permiso);
+}
+
+/** Entra a ese módulo, con el nivel que sea. */
+export function entraA(usuario: Usuario, modulo: string) {
+  return usuario.general !== null || modulo in usuario.accesos;
+}
+
+/** Administra la gente de ese módulo (o de todos). */
+export function administra(usuario: Usuario, modulo: string) {
+  return usuario.general !== null || usuario.accesos[modulo] === "administrador";
+}
+
+/** Administra gente de algún módulo: ve la pantalla de usuarios. */
+export function administraAlgo(usuario: Usuario) {
+  return usuario.general !== null || Object.values(usuario.accesos).includes("administrador");
+}
+
+/**
+ * La empresa de quien está mirando, preguntándosela a la base.
+ *
+ * Es la misma `empresa_actual()` que usa el RLS, así que no hay forma de que
+ * la aplicación y las políticas discrepen. Se usa donde una consulta espera
+ * UNA fila y el rol `soporte` haría que llegaran varias.
+ */
+export async function empresaActual(): Promise<string | null> {
+  const { data, error } = await supabase.rpc("empresa_actual");
+  if (error) {
+    console.warn("No se pudo resolver la empresa:", error.message);
+    return null;
+  }
+  return (data as string | null) ?? null;
 }
 
 /**
@@ -110,4 +197,27 @@ export function mensajeDeError(mensaje: string) {
     return "No se pudo conectar. Revisa tu conexión y vuelve a intentar.";
   }
   return "No se pudo iniciar sesión. Intenta de nuevo en un momento.";
+}
+
+/* ── Usuario disponible en todo el panel ──────────────────────────────────────
+   El guard (`Guardia.tsx`) resuelve la sesión una sola vez y la reparte por
+   contexto. Así los marcos —el simple de /modulos/ y el del módulo con barra
+   lateral— no repiten la consulta del perfil. */
+
+const ContextoUsuario = createContext<Usuario | null>(null);
+
+export const ProveedorUsuario = ContextoUsuario.Provider;
+
+/** Solo se puede llamar dentro del guard, que garantiza que hay sesión. */
+export function useUsuario(): Usuario {
+  const usuario = useContext(ContextoUsuario);
+  if (!usuario) {
+    throw new Error("useUsuario() se usó fuera de <Guardia>, que es quien lo provee.");
+  }
+  return usuario;
+}
+
+/** Atajo para los botones: `usePuede("gestion.editar")`. */
+export function usePuede(permiso: string): boolean {
+  return puede(useUsuario(), permiso);
 }

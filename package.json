@@ -12,7 +12,18 @@
     "deploy:web": "npm run deploy -w web",
     "deploy:plataforma": "npm run deploy -w plataforma",
     "sembrar": "node --env-file=.env.local scripts/sembrar-demo.mjs",
-    "verificar": "node --env-file=.env.local scripts/verificar-rls.mjs"
+    "verificar": "node --env-file=.env.local scripts/verificar-rls.mjs",
+    "importar": "node --env-file=.env.local scripts/importar-valar.mjs",
+    "limpiar": "node --env-file=.env.local scripts/limpiar-demo.mjs",
+    "vaciar": "node --env-file=.env.local scripts/vaciar.mjs",
+    "uf": "node --env-file=.env.local scripts/cargar-uf.mjs",
+    "proveedores": "node --env-file=.env.local scripts/importar-proveedores.mjs",
+    "lector": "node scripts/probar-lector.mjs",
+    "articulos": "node --env-file=.env.local scripts/importar-articulos.mjs",
+    "usuarios": "node --env-file=.env.local scripts/crear-usuarios.mjs",
+    "revisar-sql": "node scripts/revisar-sql.mjs",
+    "equipo-demo": "node --env-file=.env.local scripts/sembrar-equipo-demo.mjs",
+    "verificar-accesos": "node --env-file=.env.local scripts/verificar-accesos.mjs"
   },
   "devDependencies": {
     "@supabase/supabase-js": "^2.115.0"

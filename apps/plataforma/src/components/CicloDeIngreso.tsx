@@ -1,0 +1,737 @@
+"use client";
+
+import { useState } from "react";
+import { Chip, type Tono } from "./ui/Chip";
+import { camposDe, mostrarValor, type CampoContrato } from "@/lib/campos";
+import { actualizar } from "@/lib/crud";
+import { formatearFecha, formatearPesos, mesLargo } from "@/lib/formato";
+import { crearFacturaDesdeOrden, crearOrdenDesdeEdp, type Ciclo, type Etapa } from "@/lib/ingresos";
+import { usePuede } from "@/lib/sesion";
+
+/**
+ * El ciclo del ingreso, en una ficha que se abre.
+ *
+ * El flujo de Valar es una cadena: sin estado de pago no hay orden de compra, y
+ * sin orden no se factura. Por eso las tres etapas viven acá adentro y cada una
+ * se habilita cuando la anterior está lista, en vez de estar repartidas en tres
+ * pantallas donde nada impide saltarse un paso.
+ *
+ * La orden y la factura se proponen con lo que el estado de pago ya dice. Es la
+ * misma información: volver a teclearla es la forma más común de que la orden
+ * autorice un monto distinto del que se presentó.
+ *
+ * En Órdenes de Compra y en Facturas queda el listado, para consultar. Emitir se
+ * emite desde acá, que es donde se ve de dónde viene cada cosa.
+ */
+
+const tonoEtapa: Record<Etapa, Tono> = {
+  edp: "info",
+  orden: "aviso",
+  factura: "aviso",
+  cobro: "aviso",
+  cerrado: "bueno",
+};
+
+const nombreEtapa: Record<Etapa, string> = {
+  edp: "Por aprobar",
+  orden: "Falta la orden",
+  factura: "Falta facturar",
+  cobro: "Por cobrar",
+  cerrado: "Cerrado",
+};
+
+/** Adónde se cuelgan los respaldos: la tabla y el registro de cada etapa. */
+type AbrirAdjuntos = (tabla: string, id: string, titulo: string) => void;
+
+/** Qué hoja abrir en vista previa. La hoja la dibuja la pantalla, no la ficha. */
+export type Documento = "edp" | "orden" | "factura";
+type AbrirDocumento = (doc: Documento) => void;
+
+/** Qué registro de la cadena se va a editar. */
+export type Editable = "edp" | "orden" | "factura";
+type AbrirEdicion = (que: Editable) => void;
+
+export function FichaDeCiclo({
+  ciclo,
+  campos,
+  abierta,
+  alAbrir,
+  alCambiar,
+  alEditar,
+  alVerAdjuntos,
+  alImprimir,
+}: {
+  ciclo: Ciclo;
+  campos: CampoContrato[];
+  abierta: boolean;
+  alAbrir: () => void;
+  alCambiar: () => void;
+  alEditar: AbrirEdicion;
+  alVerAdjuntos: AbrirAdjuntos;
+  alImprimir: AbrirDocumento;
+}) {
+  return (
+    <li className="overflow-hidden rounded-2xl border border-mist-deep bg-white">
+      {/* La línea de resumen: se hace clic acá y se despliega el ciclo entero. */}
+      <button
+        type="button"
+        onClick={alAbrir}
+        aria-expanded={abierta}
+        className="flex w-full items-center gap-4 px-5 py-4 text-left transition-colors hover:bg-mist/30"
+      >
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          aria-hidden="true"
+          className={`shrink-0 text-ink-soft transition-transform ${abierta ? "rotate-90" : ""}`}
+        >
+          <path d="m9 6 6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold text-ink">
+            EP N° {ciclo.numero} · {mesLargo(ciclo.periodo)}
+          </span>
+          <span className="mt-0.5 block truncate text-xs text-ink-soft">
+            {ciclo.contrato} · {ciclo.contratoId}
+            {ciclo.tipoEdp === "extraordinario" ? " · extraordinario" : ""}
+          </span>
+        </span>
+
+        <span className="hidden shrink-0 text-right sm:block">
+          <span className="block text-sm font-semibold tabular-nums text-ink">
+            {formatearPesos(ciclo.montoNeto)}
+          </span>
+          {ciclo.montoUf !== null && (
+            <span className="block text-xs tabular-nums text-ink-soft">{ciclo.montoUf} UF</span>
+          )}
+        </span>
+
+        <Chip tono={tonoEtapa[ciclo.etapa]}>{nombreEtapa[ciclo.etapa]}</Chip>
+      </button>
+
+      {abierta && (
+        <div className="border-t border-mist bg-mist/20 px-5 py-5">
+          <ol className="flex flex-col gap-3">
+            <PasoEdp
+              ciclo={ciclo}
+              campos={campos}
+              alEditar={() => alEditar("edp")}
+              alVerAdjuntos={alVerAdjuntos}
+              alCambiar={alCambiar}
+              alImprimir={alImprimir}
+            />
+            <PasoOrden
+              ciclo={ciclo}
+              alCambiar={alCambiar}
+              alEditar={() => alEditar("orden")}
+              alVerAdjuntos={alVerAdjuntos}
+              alImprimir={alImprimir}
+            />
+            <PasoFactura
+              ciclo={ciclo}
+              alCambiar={alCambiar}
+              alEditar={() => alEditar("factura")}
+              alVerAdjuntos={alVerAdjuntos}
+              alImprimir={alImprimir}
+            />
+          </ol>
+        </div>
+      )}
+    </li>
+  );
+}
+
+/* ── El armazón de cada paso ──────────────────────────────────────────────── */
+
+/* La marca lleva color y símbolo: el estado del paso no se distingue solo por
+   el verde contra el gris. */
+const marcas = {
+  hecho: { fondo: "bg-[#0e7a4f]", simbolo: "✓" },
+  activo: { fondo: "bg-cyan-deep", simbolo: "▸" },
+  bloqueado: { fondo: "bg-mist-deep", simbolo: "○" },
+};
+
+function Paso({
+  n,
+  titulo,
+  estado,
+  resumen,
+  children,
+}: {
+  n: number;
+  titulo: string;
+  estado: keyof typeof marcas;
+  resumen: string;
+  children?: React.ReactNode;
+}) {
+  const marca = marcas[estado];
+  return (
+    <li
+      className={`rounded-xl border bg-white p-4 ${
+        estado === "bloqueado" ? "border-mist" : "border-mist-deep"
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <span
+          className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-bold text-white ${marca.fondo}`}
+        >
+          <span aria-hidden="true">{estado === "activo" ? n : marca.simbolo}</span>
+        </span>
+        <div className="min-w-0 flex-1">
+          <h4
+            className={`text-sm font-semibold ${estado === "bloqueado" ? "text-ink-soft" : "text-ink"}`}
+          >
+            {titulo}
+          </h4>
+          <p className="mt-0.5 text-xs leading-relaxed text-ink-soft">{resumen}</p>
+          {children}
+        </div>
+      </div>
+    </li>
+  );
+}
+
+/* ── 1. El estado de pago ─────────────────────────────────────────────────── */
+
+function PasoEdp({
+  ciclo,
+  campos,
+  alEditar,
+  alVerAdjuntos,
+  alCambiar,
+  alImprimir,
+}: {
+  ciclo: Ciclo;
+  campos: CampoContrato[];
+  alEditar: () => void;
+  alVerAdjuntos: AbrirAdjuntos;
+  alCambiar: () => void;
+  alImprimir: AbrirDocumento;
+}) {
+  const propios = camposDe(campos, ciclo.contratoId, "estado_pago");
+  const aprobado = ciclo.estado !== "presentado" && ciclo.estado !== "rechazado";
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function aprobar() {
+    setError(null);
+    setGuardando(true);
+    try {
+      await actualizar("estados_pago", ciclo.id, {
+        estado: "aprobado",
+        fecha_aprobacion: new Date().toISOString().slice(0, 10),
+      });
+      alCambiar();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  return (
+    <Paso
+      n={1}
+      titulo="Estado de pago"
+      estado={aprobado ? "hecho" : "activo"}
+      resumen={
+        ciclo.estado === "rechazado"
+          ? "Rechazado por el mandante. Hay que corregirlo y volver a presentarlo."
+          : aprobado
+            ? /* Hay EDP aprobados sin fecha —vienen de antes de la plataforma—:
+                 se dice "Aprobado" a secas en vez de "Aprobado el —". */
+              `${ciclo.fechaAprobacion ? `Aprobado el ${formatearFecha(ciclo.fechaAprobacion)}` : "Aprobado"} · ${formatearPesos(ciclo.montoNeto)} netos, ${formatearPesos(ciclo.retenciones)} retenidos`
+            : `Presentado el ${formatearFecha(ciclo.fechaPresentacion)} · esperando la aprobación del mandante`
+      }
+    >
+      {propios.length > 0 && (
+        <dl className="mt-3 grid gap-x-6 gap-y-1.5 border-t border-mist pt-3 sm:grid-cols-2">
+          {propios.map((c) => (
+            <div key={c.id} className="flex justify-between gap-3 text-xs">
+              <dt className="text-ink-soft">{c.etiqueta}</dt>
+              <dd className="font-semibold tabular-nums text-ink">
+                {mostrarValor(c, ciclo.datos[c.clave])}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+
+      {error && <Aviso tono="malo">{error}</Aviso>}
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <BotonChico onClick={() => alImprimir("edp")} icono="hoja">
+          Ver y descargar
+        </BotonChico>
+        <BotonChico escribe onClick={alEditar}>Editar el estado de pago</BotonChico>
+        <BotonChico
+          onClick={() => alVerAdjuntos("estados_pago", ciclo.id, `${ciclo.id} · ${ciclo.contrato}`)}
+        >
+          Adjuntar respaldo
+        </BotonChico>
+        {!aprobado && (
+          <BotonChico escribe onClick={() => void aprobar()} destacado disabled={guardando}>
+            {guardando ? "Guardando…" : "Marcar como aprobado"}
+          </BotonChico>
+        )}
+      </div>
+    </Paso>
+  );
+}
+
+/* ── 2. La orden de compra del mandante ───────────────────────────────────── */
+
+function PasoOrden({
+  ciclo,
+  alCambiar,
+  alEditar,
+  alVerAdjuntos,
+  alImprimir,
+}: {
+  ciclo: Ciclo;
+  alCambiar: () => void;
+  alEditar: () => void;
+  alVerAdjuntos: AbrirAdjuntos;
+  alImprimir: AbrirDocumento;
+}) {
+  const [abriendo, setAbriendo] = useState(false);
+  const habilitado = ciclo.estado === "aprobado" || ciclo.ordenId !== null;
+  const ordenId = ciclo.ordenId;
+
+  if (ordenId) {
+    const corta =
+      ciclo.montoAutorizado !== null && ciclo.montoAutorizado < ciclo.montoNeto
+        ? ciclo.montoNeto - ciclo.montoAutorizado
+        : 0;
+
+    return (
+      <Paso
+        n={2}
+        titulo="Orden de compra"
+        estado="hecho"
+        resumen={`N° ${ciclo.ordenNumero} · ${formatearPesos(ciclo.montoAutorizado ?? 0)} autorizados · ${formatearFecha(ciclo.ordenFecha)}`}
+      >
+        {corta > 0 && (
+          <Aviso tono="ojo">
+            La orden autoriza {formatearPesos(corta)} menos de lo presentado. No se puede facturar
+            por sobre la orden.
+          </Aviso>
+        )}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <BotonChico onClick={() => alImprimir("orden")} icono="hoja">
+            Ver y descargar
+          </BotonChico>
+          <BotonChico escribe onClick={alEditar}>Editar la orden</BotonChico>
+          <BotonChico
+            onClick={() =>
+              alVerAdjuntos("ordenes_compra", ordenId, `${ordenId} · N° ${ciclo.ordenNumero}`)
+            }
+          >
+            Adjuntar la orden original
+          </BotonChico>
+        </div>
+      </Paso>
+    );
+  }
+
+  return (
+    <Paso
+      n={2}
+      titulo="Orden de compra"
+      estado={habilitado ? "activo" : "bloqueado"}
+      resumen={
+        habilitado
+          ? "El mandante aprobó el estado de pago: ya se puede cargar su orden."
+          : "Se habilita cuando el mandante apruebe el estado de pago. Sin EDP no hay orden."
+      }
+    >
+      {habilitado && !abriendo && (
+        <div className="mt-3">
+          <BotonChico escribe onClick={() => setAbriendo(true)} destacado>
+            Cargar la orden
+          </BotonChico>
+        </div>
+      )}
+
+      {abriendo && (
+        <FormularioOrdenMandante
+          ciclo={ciclo}
+          alCerrar={() => setAbriendo(false)}
+          alGuardado={alCambiar}
+        />
+      )}
+    </Paso>
+  );
+}
+
+function FormularioOrdenMandante({
+  ciclo,
+  alCerrar,
+  alGuardado,
+}: {
+  ciclo: Ciclo;
+  alCerrar: () => void;
+  alGuardado: () => void;
+}) {
+  const hoy = new Date().toISOString().slice(0, 10);
+  const [numero, setNumero] = useState("");
+  const [mandante, setMandante] = useState(ciclo.cliente);
+  // Se propone el monto del estado de pago: es lo que se presentó a cobro.
+  const [monto, setMonto] = useState(ciclo.montoNeto);
+  const [fecha, setFecha] = useState(hoy);
+  const [vigencia, setVigencia] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [guardando, setGuardando] = useState(false);
+
+  async function guardar() {
+    setError(null);
+    setGuardando(true);
+    try {
+      await crearOrdenDesdeEdp(ciclo, {
+        numero,
+        mandante,
+        montoAutorizado: monto,
+        fechaEmision: fecha,
+        vigencia,
+      });
+      alGuardado();
+      alCerrar();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded-xl border border-mist-deep bg-mist/30 p-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Campo etiqueta="N° de la orden" requerido>
+          <input
+            value={numero}
+            onChange={(e) => setNumero(e.target.value)}
+            placeholder="4500123456"
+            className={claseCampo}
+          />
+        </Campo>
+        <Campo etiqueta="Mandante">
+          <input
+            value={mandante}
+            onChange={(e) => setMandante(e.target.value)}
+            className={claseCampo}
+          />
+        </Campo>
+        <Campo
+          etiqueta="Monto autorizado"
+          ayuda="Viene del estado de pago. Cámbialo si la orden dice otra cifra."
+        >
+          <input
+            inputMode="numeric"
+            value={monto === 0 ? "" : monto.toLocaleString("es-CL")}
+            onChange={(e) => setMonto(Number(e.target.value.replace(/\D/g, "")) || 0)}
+            className={`${claseCampo} text-right tabular-nums`}
+          />
+        </Campo>
+        <Campo etiqueta="Fecha de emisión">
+          <input
+            type="date"
+            value={fecha}
+            onChange={(e) => setFecha(e.target.value)}
+            className={claseCampo}
+          />
+        </Campo>
+        <Campo etiqueta="Vigencia" ayuda="Hasta cuándo se puede facturar contra ella.">
+          <input
+            type="date"
+            value={vigencia}
+            onChange={(e) => setVigencia(e.target.value)}
+            className={claseCampo}
+          />
+        </Campo>
+      </div>
+
+      {error && <Aviso tono="malo">{error}</Aviso>}
+
+      <div className="mt-3 flex gap-2">
+        <BotonChico onClick={() => void guardar()} destacado disabled={guardando || !numero.trim()}>
+          {guardando ? "Guardando…" : "Guardar la orden"}
+        </BotonChico>
+        <BotonChico onClick={alCerrar}>Cancelar</BotonChico>
+      </div>
+    </div>
+  );
+}
+
+/* ── 3. La factura ────────────────────────────────────────────────────────── */
+
+function PasoFactura({
+  ciclo,
+  alCambiar,
+  alEditar,
+  alVerAdjuntos,
+  alImprimir,
+}: {
+  ciclo: Ciclo;
+  alCambiar: () => void;
+  alEditar: () => void;
+  alVerAdjuntos: AbrirAdjuntos;
+  alImprimir: AbrirDocumento;
+}) {
+  const [abriendo, setAbriendo] = useState(false);
+  const habilitado = ciclo.ordenId !== null;
+  const facturaId = ciclo.facturaId;
+
+  if (facturaId) {
+    return (
+      <Paso
+        n={3}
+        titulo="Factura"
+        estado={ciclo.estadoCobro === "pagada" ? "hecho" : "activo"}
+        resumen={`${facturaId} · ${formatearPesos(ciclo.facturaTotal ?? 0)} con IVA · ${
+          ciclo.estadoCobro === "pagada"
+            ? "pagada"
+            : `vence el ${formatearFecha(ciclo.facturaVencimiento)}`
+        }`}
+      >
+        <div className="mt-3 flex flex-wrap gap-2">
+          <BotonChico onClick={() => alImprimir("factura")} icono="hoja">
+            Ver y descargar
+          </BotonChico>
+          <BotonChico escribe onClick={alEditar}>Editar la factura</BotonChico>
+          <BotonChico onClick={() => alVerAdjuntos("facturas", facturaId, `Factura ${facturaId}`)}>
+            Adjuntar la factura del SII
+          </BotonChico>
+        </div>
+      </Paso>
+    );
+  }
+
+  return (
+    <Paso
+      n={3}
+      titulo="Factura"
+      estado={habilitado ? "activo" : "bloqueado"}
+      resumen={
+        habilitado
+          ? "Hay orden del mandante: ya se puede emitir la factura."
+          : "Se habilita cuando esté cargada la orden. Sin orden no se factura."
+      }
+    >
+      {habilitado && !abriendo && (
+        <div className="mt-3">
+          <BotonChico escribe onClick={() => setAbriendo(true)} destacado>
+            Emitir la factura
+          </BotonChico>
+        </div>
+      )}
+
+      {abriendo && (
+        <FormularioFacturaDesdeOrden
+          ciclo={ciclo}
+          alCerrar={() => setAbriendo(false)}
+          alGuardado={alCambiar}
+        />
+      )}
+    </Paso>
+  );
+}
+
+function FormularioFacturaDesdeOrden({
+  ciclo,
+  alCerrar,
+  alGuardado,
+}: {
+  ciclo: Ciclo;
+  alCerrar: () => void;
+  alGuardado: () => void;
+}) {
+  const hoy = new Date().toISOString().slice(0, 10);
+  const [folio, setFolio] = useState("");
+  /* Se propone el menor entre lo presentado y lo autorizado: la orden es el
+     techo de lo que se puede cobrar, y facturar por sobre ella es una nota de
+     crédito esperando a pasar. */
+  const [neto, setNeto] = useState(
+    Math.min(ciclo.montoNeto, ciclo.montoAutorizado ?? ciclo.montoNeto),
+  );
+  const [fecha, setFecha] = useState(hoy);
+  const [vencimiento, setVencimiento] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [guardando, setGuardando] = useState(false);
+
+  const iva = Math.round(neto * 0.19);
+  const tope = ciclo.montoAutorizado;
+  const exceso = tope !== null && neto > tope ? neto - tope : 0;
+
+  async function guardar() {
+    setError(null);
+    setGuardando(true);
+    try {
+      await crearFacturaDesdeOrden(ciclo, { folio, neto, fechaEmision: fecha, vencimiento });
+      alGuardado();
+      alCerrar();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded-xl border border-mist-deep bg-mist/30 p-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Campo etiqueta="Folio" requerido ayuda="El número de la factura emitida.">
+          <input
+            value={folio}
+            onChange={(e) => setFolio(e.target.value)}
+            placeholder="F-4821"
+            className={claseCampo}
+          />
+        </Campo>
+        <Campo
+          etiqueta="Neto"
+          ayuda={`IVA ${formatearPesos(iva)} · total ${formatearPesos(neto + iva)}`}
+        >
+          <input
+            inputMode="numeric"
+            value={neto === 0 ? "" : neto.toLocaleString("es-CL")}
+            onChange={(e) => setNeto(Number(e.target.value.replace(/\D/g, "")) || 0)}
+            className={`${claseCampo} text-right tabular-nums`}
+          />
+        </Campo>
+        <Campo etiqueta="Fecha de emisión">
+          <input
+            type="date"
+            value={fecha}
+            onChange={(e) => setFecha(e.target.value)}
+            className={claseCampo}
+          />
+        </Campo>
+        <Campo etiqueta="Vencimiento" ayuda="La fecha en que se hace exigible el cobro.">
+          <input
+            type="date"
+            value={vencimiento}
+            onChange={(e) => setVencimiento(e.target.value)}
+            className={claseCampo}
+          />
+        </Campo>
+      </div>
+
+      {exceso > 0 && (
+        <Aviso tono="ojo">
+          Estás facturando {formatearPesos(exceso)} por sobre lo que autoriza la orden. Eso vuelve
+          como nota de crédito.
+        </Aviso>
+      )}
+
+      {error && <Aviso tono="malo">{error}</Aviso>}
+
+      <div className="mt-3 flex gap-2">
+        <BotonChico onClick={() => void guardar()} destacado disabled={guardando || !folio.trim()}>
+          {guardando ? "Emitiendo…" : "Emitir la factura"}
+        </BotonChico>
+        <BotonChico onClick={alCerrar}>Cancelar</BotonChico>
+      </div>
+    </div>
+  );
+}
+
+/* ── Piezas chicas ────────────────────────────────────────────────────────── */
+
+const claseCampo =
+  "w-full rounded-lg border border-mist-deep bg-white px-2.5 py-1.5 text-sm text-ink outline-none transition-colors focus:border-cyan";
+
+function Campo({
+  etiqueta,
+  requerido,
+  ayuda,
+  children,
+}: {
+  etiqueta: string;
+  requerido?: boolean;
+  ayuda?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
+        {etiqueta}
+        {requerido && <span className="text-cyan-deep"> *</span>}
+      </span>
+      {children}
+      {ayuda && (
+        <span className="mt-1 block text-[11px] leading-relaxed text-ink-soft">{ayuda}</span>
+      )}
+    </label>
+  );
+}
+
+function Aviso({ tono, children }: { tono: "ojo" | "malo"; children: React.ReactNode }) {
+  return (
+    <p
+      role={tono === "malo" ? "alert" : undefined}
+      className={`mt-3 rounded-lg px-3 py-2 text-xs leading-relaxed ${
+        tono === "malo" ? "bg-[#fdeeec] font-medium text-[#a52f24]" : "bg-[#fdf3e3] text-[#8a5a09]"
+      }`}
+    >
+      {children}
+    </p>
+  );
+}
+
+function BotonChico({
+  onClick,
+  destacado = false,
+  disabled = false,
+  icono,
+  escribe = false,
+  children,
+}: {
+  onClick: () => void;
+  /** Cambia datos: sin "Cargar ingresos y egresos" no aparece. Imprimir y ver
+      respaldos quedan para todos los que ven el ciclo. */
+  escribe?: boolean;
+  destacado?: boolean;
+  disabled?: boolean;
+  /** El de la hoja marca los botones que abren un documento. */
+  icono?: "hoja";
+  children: React.ReactNode;
+}) {
+  const puedeCargar = usePuede("gestion.editar");
+  if (escribe && !puedeCargar) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold transition-colors disabled:opacity-50 ${
+        destacado
+          ? "bg-cyan text-white hover:bg-cyan-deep"
+          : "border border-mist-deep bg-white text-ink-soft hover:border-ink hover:text-ink"
+      }`}
+    >
+      {icono === "hoja" && (
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.9"
+          aria-hidden="true"
+        >
+          <path
+            d="M7 8V3h10v5M7 18H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 15h10v6H7Z"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )}
+      {children}
+    </button>
+  );
+}

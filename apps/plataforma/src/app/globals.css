@@ -35,4 +35,73 @@
   .tracking-brand {
     letter-spacing: 0.32em;
   }
+
+  /* Las pestañas se arrastran con el dedo en móvil; la barra del navegador
+     encima solo estorba. */
+  .sin-barra-scroll {
+    scrollbar-width: none;
+  }
+
+  .sin-barra-scroll::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ─── Impresión ──────────────────────────────────────────────────────────────
+   Los documentos —la orden de compra y el informe de control de gestión— se
+   imprimen con el navegador, que sabe hacer PDF y no necesita servidor. Al
+   imprimir se esconde toda la aplicación —menú, barra, botones— y queda solo
+   la hoja, que es cualquier elemento con la clase `.hoja`.
+
+   Va fuera de `@layer` a propósito: tiene que ganarle a las utilidades de
+   Tailwind sin depender del orden de las capas. */
+
+@media print {
+  /* Todo lo que no sea la orden desaparece. */
+  body > *:not(.imprimiendo),
+  .no-imprimir {
+    display: none !important;
+  }
+
+  .imprimiendo {
+    position: static !important;
+    inset: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+    padding: 0 !important;
+  }
+
+  .imprimiendo * {
+    visibility: visible;
+  }
+
+  .hoja {
+    max-width: none;
+    padding: 0;
+  }
+
+  /* Una fila de la tabla no se parte entre dos hojas. */
+  tr,
+  section {
+    break-inside: avoid;
+  }
+
+  /*
+    La firma de Teo Labs se imprime con su color.
+
+    El logo pinta las letras con un gradiente recortado al texto, y el texto en
+    sí es transparente. Los navegadores no imprimen fondos por omisión, así que
+    sin esto la firma sale INVISIBLE en papel y en «Guardar como PDF». No es un
+    cambio de diseño: es decirle al navegador que lo imprima como se ve.
+  */
+  .firma-teolabs,
+  .firma-teolabs * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
 }
