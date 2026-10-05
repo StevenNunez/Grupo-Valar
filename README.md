@@ -149,14 +149,14 @@ archivo: `apps/web/src/lib/content.ts`.
 | Capa | Tecnología |
 |---|---|
 | Frontend | Next.js 16 (App Router), React 19, Tailwind CSS 4, TypeScript |
-| Render | Exportación estática (`output: "export"`): sin servidor en ninguna de las dos apps |
+| Render | Sitio público: exportación estática. Plataforma: servidor Next (para guardar secretos y recibir webhooks); los datos los sigue pidiendo el navegador a Supabase bajo RLS |
 | Base de datos | PostgreSQL en Supabase, con RLS por empresa, módulo, sección y contrato |
 | Auth | Supabase Auth: invitación por correo, recuperación de clave |
 | Correo | Edge Function de Supabase con SMTP (invitaciones y solicitudes de cotización) |
 | Archivos | Supabase Storage, privado, con enlaces firmados |
 | Documentos | Impresión del navegador (EDP, OC, informe, cuadro de pago) y pdf.js para leer cotizaciones |
 | Gráficos | SVG hecho a mano, sin librería |
-| Deploy | Cloudflare Workers (static assets), un Worker por app |
+| Deploy | Sitio público en Cloudflare Workers (static assets); plataforma en Vercel |
 | Monorepo | npm workspaces: una instalación y un lockfile para las dos apps |
 
 ---
@@ -184,8 +184,8 @@ pegan en el SQL Editor de Supabase, en orden. La función de correo se despliega
 
 > **No borres `package-lock.json` para regenerarlo.** Guarda los binarios nativos de
 > **todas** las plataformas (entre ellos `lightningcss` y `@tailwindcss/oxide` para
-> Linux). Rehecho desde cero en Windows solo anota los de Windows y el build de
-> Cloudflare falla con `Cannot find module '../lightningcss.linux-x64-gnu.node'`. Para
+> Linux). Rehecho desde cero en Windows solo anota los de Windows y el build
+> en Linux (Cloudflare, Vercel) falla con `Cannot find module '../lightningcss.linux-x64-gnu.node'`. Para
 > repararlo: recuperar el lockfile de un commit anterior y correr `npm install` encima.
 
 ---
@@ -221,23 +221,33 @@ supabase/
 
 ## Deploy
 
-Ninguna de las dos apps tiene backend: el build produce archivos estáticos en `out/` y
-Cloudflare los sirve directo.
+Cada app se publica por su lado, cada una en su dominio.
+
+**Sitio público → Cloudflare.** No tiene backend: el build produce archivos estáticos en
+`out/` y Cloudflare los sirve directo.
 
 ```bash
 npm run deploy:web           # → www.grupovalar.cl
-npm run deploy:plataforma    # → plataforma.grupovalar.cl
 ```
 
-Desde el dashboard (Workers → conectar repositorio), un proyecto por app:
+| Campo (Workers → conectar repositorio) | `web` |
+|---|---|
+| Root directory | `apps/web` |
+| Build command | `npm run build` |
+| Deploy command | `npx wrangler deploy` |
 
-| Campo | `web` | `plataforma` |
-|---|---|---|
-| Root directory | `apps/web` | `apps/plataforma` |
-| Build command | `npm run build` | `npm run build` |
-| Deploy command | `npx wrangler deploy` | `npx wrangler deploy` |
+**Plataforma → Vercel.** Tiene servidor Next: la llave de la API de Pagnol y los webhooks
+viven ahí, nunca en el navegador. Se publica sola con cada push a la rama principal; cada
+rama o PR tiene su preview.
 
-Sin optimizador de imágenes en producción, **las fotos se suben ya comprimidas**: hero a
+| Campo | `plataforma` |
+|---|---|
+| Root directory | `apps/plataforma` |
+| Framework | Next.js |
+| Región de funciones | `iad1`, junto al proyecto de Supabase (`us-east-1`) |
+| Variables | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `PAGNOL_API_URL`, `PAGNOL_API_KEY` |
+
+En el sitio público no hay optimizador de imágenes, así que **las fotos se suben ya comprimidas**: hero a
 1920 px y WebP ~60, tarjetas de proyecto a 900 px y WebP ~72, logos de clientes a 300 px.
 
 ---

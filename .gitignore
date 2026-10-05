@@ -71,3 +71,6 @@ scripts/
 # La plantilla de variables de la plataforma SÍ va: dice qué necesita el build.
 # (La de la raíz es para los scripts locales y queda fuera con ellos.)
 !apps/plataforma/.env.example
+
+# Documentación interna (contrato con Pagnol, etc.): no va al repo
+docs/

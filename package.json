@@ -10,7 +10,6 @@
     "build": "npm run build --workspaces",
     "lint": "npm run lint --workspaces",
     "deploy:web": "npm run deploy -w web",
-    "deploy:plataforma": "npm run deploy -w plataforma",
     "sembrar": "node --env-file=.env.local scripts/sembrar-demo.mjs",
     "verificar": "node --env-file=.env.local scripts/verificar-rls.mjs",
     "importar": "node --env-file=.env.local scripts/importar-valar.mjs",
