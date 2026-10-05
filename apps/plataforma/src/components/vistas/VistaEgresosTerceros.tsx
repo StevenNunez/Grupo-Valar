@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { FormularioCompra } from "../formularios/FormularioCompra";
+import { FormularioOrden } from "../formularios/FormularioOrden";
+import { CicloOrden } from "../CicloOrden";
 import { FormularioServicio } from "../formularios/FormularioServicio";
 import { DialogoAdjuntos } from "../ui/Adjuntos";
 import { Chip, type Tono } from "../ui/Chip";
@@ -12,7 +14,8 @@ import { cargarProveedores, type Proveedor } from "@/lib/abastecimiento";
 import { cargarCampos, type CampoContrato } from "@/lib/campos";
 import { cargarCategorias, type Categoria } from "@/lib/categorias";
 import { useConsulta } from "@/lib/consulta";
-import { usePuede } from "@/lib/sesion";
+import { usePuede, useUsuario } from "@/lib/sesion";
+import { cargarOrdenes, type Orden } from "@/lib/ordenes";
 import { cargarContratosBreve, type ContratoBreve } from "@/lib/contratos";
 import {
   cargarCompras,
@@ -60,10 +63,11 @@ type Datos = {
   campos: CampoContrato[];
   proveedores: Proveedor[];
   categorias: Categoria[];
+  ordenes: Orden[];
 };
 
 async function cargar(): Promise<Datos> {
-  const [egresos, compras, servicios, contratos, campos, proveedores, categorias] =
+  const [egresos, compras, servicios, contratos, campos, proveedores, categorias, ordenes] =
     await Promise.all([
       cargarEgresosTerceros(),
       cargarCompras(),
@@ -72,8 +76,9 @@ async function cargar(): Promise<Datos> {
       cargarCampos(),
       cargarProveedores(),
       cargarCategorias(),
+      cargarOrdenes(),
     ]);
-  return { egresos, compras, servicios, contratos, campos, proveedores, categorias };
+  return { egresos, compras, servicios, contratos, campos, proveedores, categorias, ordenes };
 }
 
 export function VistaEgresosTerceros() {
@@ -81,6 +86,12 @@ export function VistaEgresosTerceros() {
   const edicion = useEdicion<EgresoTercero>();
   const [creando, setCreando] = useState<"compra" | "servicio" | null>(null);
   const puedeCargar = usePuede("gestion.editar");
+  /* La OC es de Abastecimiento: registrarla pide su permiso, aunque se haga
+     desde acá. Es la misma orden, no una copia. */
+  const puedeRegistrarOC = usePuede("ordenes.emitir");
+  const usuario = useUsuario();
+  const [registrandoOC, setRegistrandoOC] = useState(false);
+  const [adjuntarOC, setAdjuntarOC] = useState<string | null>(null);
 
   return (
     <>
@@ -88,12 +99,15 @@ export function VistaEgresosTerceros() {
         titulo="Compras y Servicios"
         descripcion="Todo lo que se gasta con terceros: materiales, subcontratos, arriendos y fletes. El personal va aparte, porque no es un gasto con un tercero."
         acciones={
-          puedeCargar && (
-            <div className="flex gap-2">
-              <BotonCrear onClick={() => setCreando("compra")}>Nueva compra</BotonCrear>
+          (puedeCargar || puedeRegistrarOC) && (
+            <div className="flex flex-wrap gap-2">
+              {puedeRegistrarOC && <BotonCrear onClick={() => setRegistrandoOC(true)}>Registrar OC</BotonCrear>}
+              {puedeCargar && <BotonCrear onClick={() => setCreando("compra")}>Nueva compra</BotonCrear>}
+              {puedeCargar && (
               <BotonCrear onClick={() => setCreando("servicio")} destacado>
                 Nuevo servicio
               </BotonCrear>
+              )}
             </div>
           )
         }
@@ -103,6 +117,24 @@ export function VistaEgresosTerceros() {
         {(datos) => (
           <>
             <Contenidos filas={datos.egresos} edicion={edicion} />
+            <OrdenesDeCompra ordenes={datos.ordenes} alCambiar={recargar} />
+
+            {registrandoOC && (
+              <FormularioOrden
+                orden={null}
+                registrar
+                contratos={datos.contratos}
+                categorias={datos.categorias}
+                proveedores={datos.proveedores}
+                usuario={usuario}
+                alCerrar={() => setRegistrandoOC(false)}
+                alGuardado={(id) => {
+                  recargar();
+                  // El PDF de Drive se adjunta apenas se registra: es el respaldo de la orden.
+                  if (id) setAdjuntarOC(id);
+                }}
+              />
+            )}
 
             {/* Cada origen abre su propio formulario, con sus campos. */}
             {(creando === "compra" || edicion.registro?.origen === "compra") && (
@@ -153,6 +185,16 @@ export function VistaEgresosTerceros() {
           titulo={edicion.historial.titulo}
           abierto
           alCerrar={edicion.cerrarHistorial}
+        />
+      )}
+
+      {adjuntarOC && (
+        <DialogoAdjuntos
+          tabla="ordenes_compra_proveedor"
+          registroId={adjuntarOC}
+          titulo={`Adjunta el PDF de la orden ${adjuntarOC}`}
+          abierto
+          alCerrar={() => setAdjuntarOC(null)}
         />
       )}
 
@@ -401,6 +443,108 @@ const columnas = (
         alVerHistorial={() => edicion.verHistorial(e.id, `${e.id} · ${e.tercero}`)}
         alVerAdjuntos={() => edicion.verAdjuntos(e.id, `${e.id} · ${e.tercero}`)}
       />
+    ),
+  },
+];
+
+/* ── Órdenes de compra ────────────────────────────────────────────────────── */
+
+type EstadoCiclo = "por_recibir" | "retenida" | "por_facturar" | "parcial" | "facturada" | "pagada";
+
+const ciclo: Record<EstadoCiclo, { titulo: string; tono: Tono }> = {
+  retenida: { titulo: "Facturado sin recibir", tono: "critico" },
+  por_recibir: { titulo: "Por recibir", tono: "aviso" },
+  por_facturar: { titulo: "Recibido sin factura", tono: "info" },
+  parcial: { titulo: "Facturada parcial", tono: "info" },
+  facturada: { titulo: "Facturada", tono: "bueno" },
+  pagada: { titulo: "Pagada", tono: "bueno" },
+};
+
+/** Lo más urgente primero: lo facturado sin llegar bloquea el pago. */
+function estadoCiclo(o: Orden): EstadoCiclo {
+  if (o.sinRecibir > 0) return "retenida";
+  if (o.facturado >= o.neto && o.neto > 0) return o.pagado >= o.facturado ? "pagada" : "facturada";
+  if (o.recibidoSinFacturar > 0) return "por_facturar";
+  if (o.facturado > 0) return "parcial";
+  return "por_recibir";
+}
+
+/**
+ * Las OC con su ciclo: lo que llegó, lo facturado y lo pagado.
+ *
+ * Su costo ya pesa en el contrato desde que se emiten, pero no aparecen en el
+ * detalle de arriba hasta que llega una factura. Desde acá se abre cada una
+ * para recibir, agregar facturas, registrar la NC o cerrar el saldo.
+ */
+function OrdenesDeCompra({ ordenes, alCambiar }: { ordenes: Orden[]; alCambiar: () => void }) {
+  const [filtro, setFiltro] = useState<"abiertas" | "todas">("abiertas");
+  const [abierta, setAbierta] = useState<string | null>(null);
+  const vigentes = ordenes.filter((o) => o.estado !== "anulada" && o.estado !== "borrador");
+  const abiertas = vigentes.filter((o) => estadoCiclo(o) !== "pagada");
+  const visibles = filtro === "todas" ? vigentes : abiertas;
+  const porFacturar = vigentes.reduce((t, o) => t + Math.max(0, o.neto - o.facturado), 0);
+  const nc = vigentes.filter((o) => o.solicitarNc).length;
+  const orden = ordenes.find((o) => o.id === abierta) ?? null;
+
+  return (
+    <div className="mt-6">
+      <Panel
+        titulo="Órdenes de compra"
+        nota={`${formatearMonto(porFacturar)} netos por facturar${nc ? ` · ${nc} ${nc === 1 ? "orden pide" : "órdenes piden"} nota de crédito` : ""}`}
+        filtros={<Filtro etiqueta="Ver" valor={filtro} alCambiar={setFiltro}
+          opciones={[{ id: "abiertas", titulo: "Abiertas" }, { id: "todas", titulo: "Todas" }]} />}
+      >
+        <Tabla
+          filas={visibles}
+          claveDe={(o) => o.id}
+          vacio={filtro === "abiertas" ? "No hay órdenes abiertas." : "Todavía no hay órdenes registradas."}
+          columnas={columnasOrden(setAbierta)}
+        />
+      </Panel>
+      {orden && <CicloOrden orden={orden} alCerrar={() => setAbierta(null)} alCambiar={alCambiar} />}
+    </div>
+  );
+}
+
+const columnasOrden = (abrir: (id: string) => void): Columna<Orden>[] => [
+  {
+    clave: "orden",
+    titulo: "Orden",
+    encabezado: true,
+    celda: (o) => (
+      <button type="button" onClick={() => abrir(o.id)} className="text-left">
+        <span className="block font-semibold text-cyan-deep hover:underline">{o.numero}</span>
+        <span className="text-xs text-ink-soft">{o.proveedor} · {o.contratoId}</span>
+      </button>
+    ),
+  },
+  { clave: "emision", titulo: "Emisión", celda: (o) => <span className="whitespace-nowrap text-ink-soft">{formatearFecha(o.fechaEmision)}</span> },
+  { clave: "neto", titulo: "Neto OC", derecha: true, celda: (o) => formatearMonto(o.neto) },
+  { clave: "recibido", titulo: "Recibido", derecha: true, celda: (o) => formatearMonto(o.recibido) },
+  { clave: "facturado", titulo: "Facturado", derecha: true, celda: (o) => formatearMonto(o.facturado) },
+  { clave: "pagado", titulo: "Pagado", derecha: true, celda: (o) => formatearMonto(o.pagado) },
+  {
+    clave: "estado",
+    titulo: "Estado",
+    celda: (o) => {
+      const e = ciclo[estadoCiclo(o)];
+      return (
+        <span className="flex flex-col items-start gap-1">
+          <Chip tono={e.tono}>{e.titulo}</Chip>
+          {o.solicitarNc && <span className="text-xs font-semibold text-[#a52f24]">Solicitar NC</span>}
+        </span>
+      );
+    },
+  },
+  {
+    clave: "abrir",
+    titulo: "",
+    derecha: true,
+    celda: (o) => (
+      <button type="button" onClick={() => abrir(o.id)}
+        className="rounded-full border border-mist-deep px-3 py-1.5 text-xs font-semibold text-ink-soft hover:border-ink hover:text-ink">
+        Abrir
+      </button>
     ),
   },
 ];

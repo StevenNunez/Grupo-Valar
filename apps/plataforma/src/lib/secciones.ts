@@ -23,6 +23,10 @@ export type Subseccion = {
   href: string;
   /** El permiso "Ver…" que la abre. */
   permiso?: string;
+  /** Un tercer nivel, cuando la subsección se parte en vistas. Su enlace
+      lleva a la primera hija que se ve; el permiso de la subsección se exige
+      además del de cada hija. */
+  hijas?: Subseccion[];
 };
 
 export type Seccion = {
@@ -92,7 +96,17 @@ export const seccionesGestion: Seccion[] = [
          gastó con terceros— y en dos pantallas había que sumar de cabeza. */
       { titulo: "Compras y Servicios", href: `${RAIZ_GESTION}/egresos/terceros/`, permiso: "egresos.ver" },
       { titulo: "Personal", href: `${RAIZ_GESTION}/egresos/personal/`, permiso: "personal.ver" },
-      { titulo: "Oficina Central", href: `${RAIZ_GESTION}/egresos/oficina-central/`, permiso: "oficina_central.ver" },
+      /* Los sueldos de la casa matriz no son un egreso más: piden además
+         "Ver costos de personal", igual que los de cada contrato. */
+      {
+        titulo: "Oficina Central",
+        href: `${RAIZ_GESTION}/egresos/oficina-central/`,
+        permiso: "oficina_central.ver",
+        hijas: [
+          { titulo: "Gastos generales", href: `${RAIZ_GESTION}/egresos/oficina-central/` },
+          { titulo: "Personal", href: `${RAIZ_GESTION}/egresos/oficina-central/personal/`, permiso: "personal.ver" },
+        ],
+      },
     ],
   },
 ];
@@ -174,11 +188,26 @@ export function seccionesVisibles(
   const resultado: Seccion[] = [];
   for (const s of secciones) {
     if (s.subsecciones) {
-      const subsecciones = s.subsecciones.filter((sub) => !sub.permiso || ve(sub.permiso));
+      const subsecciones = subseccionesVisibles(s.subsecciones, ve);
       if (subsecciones.length > 0) resultado.push({ ...s, href: subsecciones[0].href, subsecciones });
     } else if (!s.permiso || ve(s.permiso)) {
       resultado.push(s);
     }
+  }
+  return resultado;
+}
+
+/** Lo mismo un nivel más abajo: una subsección con hijas queda si le queda alguna. */
+function subseccionesVisibles(subsecciones: Subseccion[], ve: (permiso: string) => boolean): Subseccion[] {
+  const resultado: Subseccion[] = [];
+  for (const sub of subsecciones) {
+    if (sub.permiso && !ve(sub.permiso)) continue;
+    if (!sub.hijas) {
+      resultado.push(sub);
+      continue;
+    }
+    const hijas = sub.hijas.filter((h) => !h.permiso || ve(h.permiso));
+    if (hijas.length > 0) resultado.push({ ...sub, href: hijas[0].href, hijas });
   }
   return resultado;
 }
@@ -190,9 +219,11 @@ export function seccionesVisibles(
 export function rutaVedada(secciones: Seccion[], pathname: string, ve: (permiso: string) => boolean) {
   const seccion = seccionDe(secciones, pathname);
   if (!seccion) return false;
-  const sub = seccion.subsecciones?.find((x) => esSubseccionActiva(pathname, x.href));
-  const permiso = sub?.permiso ?? seccion.permiso;
-  return !!permiso && !ve(permiso);
+  const sub = seccion.subsecciones?.find((x) => contieneRuta(pathname, x));
+  const hija = sub?.hijas?.find((x) => esSubseccionActiva(pathname, x.href));
+  // Sin subsección, manda la sección; con ella, su permiso y el de la hija.
+  const permisos = (sub ? [sub.permiso, hija?.permiso] : [seccion.permiso]).filter((p): p is string => !!p);
+  return permisos.some((p) => !ve(p));
 }
 
 /* ── Dónde estoy ──────────────────────────────────────────────────────────── */
@@ -209,4 +240,9 @@ export function seccionDe(secciones: Seccion[], pathname: string): Seccion | und
 /** Si una ruta cae dentro de una subsección concreta. */
 export function esSubseccionActiva(pathname: string, href: string) {
   return pathname.replace(/\/$/, "") === href.replace(/\/$/, "");
+}
+
+/** Si una ruta cae en una subsección o en alguna de sus hijas. */
+export function contieneRuta(pathname: string, sub: Subseccion) {
+  return esSubseccionActiva(pathname, sub.href) || !!sub.hijas?.some((h) => esSubseccionActiva(pathname, h.href));
 }

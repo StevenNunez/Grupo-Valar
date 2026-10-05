@@ -8,11 +8,13 @@ import { FirmaTeoLabs } from "./FirmaTeoLabs";
 import { IconoSeccion } from "./IconoSeccion";
 import { Logo } from "./Logo";
 import {
+  contieneRuta,
   esSubseccionActiva,
   rutaVedada,
   seccionDe,
   seccionesVisibles,
   type Seccion,
+  type Subseccion,
 } from "@/lib/secciones";
 import { entraDirecto } from "@/lib/modulos";
 import { administra, entraA, puede, useUsuario } from "@/lib/sesion";
@@ -273,9 +275,12 @@ function EntradaSeccion({
            cuelga de la sección y no es otra sección más. */
         <ul className="ml-[1.42rem] mt-1 flex flex-col gap-0.5 border-l border-white/12 pl-3">
           {seccion.subsecciones!.map((sub) => {
+            if (sub.hijas) {
+              return <SubseccionDesplegable key={sub.titulo} sub={sub} pathname={pathname} alNavegar={alNavegar} />;
+            }
             const activaSub = esSubseccionActiva(pathname, sub.href);
             return (
-              <li key={sub.href}>
+              <li key={sub.titulo}>
                 <Link
                   href={sub.href}
                   onClick={alNavegar}
@@ -287,6 +292,76 @@ function EntradaSeccion({
                   }`}
                 >
                   {sub.titulo}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+/**
+ * Una subsección que se parte en vistas (Oficina Central → Gastos generales y
+ * Personal). Va cerrada: abierta de entrada, Egresos mostraba todo su árbol y
+ * confundía. Se abre sola cuando se está en una de sus vistas.
+ */
+function SubseccionDesplegable({
+  sub,
+  pathname,
+  alNavegar,
+}: {
+  sub: Subseccion;
+  pathname: string;
+  alNavegar: () => void;
+}) {
+  const contiene = contieneRuta(pathname, sub);
+  // `null` = manda la ruta; tocar la flecha la deja como la persona quiso.
+  const [abierta, setAbierta] = useState<boolean | null>(null);
+  const desplegada = abierta ?? contiene;
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => setAbierta(!desplegada)}
+        aria-expanded={desplegada}
+        className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[13px] transition-colors ${
+          contiene ? "font-semibold text-white" : "text-white/60 hover:bg-white/5 hover:text-white"
+        }`}
+      >
+        {sub.titulo}
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          aria-hidden="true"
+          className={`shrink-0 text-white/40 transition-transform duration-200 ${desplegada ? "rotate-180" : ""}`}
+        >
+          <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {desplegada && (
+        <ul className="ml-3 mt-0.5 flex flex-col gap-0.5 border-l border-white/12 pl-3">
+          {sub.hijas!.map((hija) => {
+            const activaHija = esSubseccionActiva(pathname, hija.href);
+            return (
+              <li key={hija.href}>
+                <Link
+                  href={hija.href}
+                  onClick={alNavegar}
+                  aria-current={activaHija ? "page" : undefined}
+                  className={`block rounded-lg px-3 py-1.5 text-[12.5px] transition-colors ${
+                    activaHija
+                      ? "bg-cyan font-semibold text-white"
+                      : "text-white/55 hover:bg-white/5 hover:text-white"
+                  }`}
+                >
+                  {hija.titulo}
                 </Link>
               </li>
             );

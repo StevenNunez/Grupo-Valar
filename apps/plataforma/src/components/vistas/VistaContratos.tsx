@@ -25,7 +25,11 @@ const tonoVigencia: Record<Vigencia, Tono> = {
   vigente: "bueno",
   "por-vencer": "aviso",
   cerrado: "neutro",
+  cancelado: "critico",
 };
+
+/** Cerrado por calendario o cancelado antes: ya no corre. */
+const terminado = (c: Contrato) => c.vigencia === "cerrado" || c.vigencia === "cancelado";
 
 type Filtrado = "todos" | "vigentes" | "por-vencer" | "cerrados";
 
@@ -144,8 +148,8 @@ function Contenidos({
   const [filtro, setFiltro] = useState<Filtrado>("todos");
 
   const visibles = useMemo(() => {
-    if (filtro === "vigentes") return filas.filter((c) => c.vigencia !== "cerrado");
-    if (filtro === "cerrados") return filas.filter((c) => c.vigencia === "cerrado");
+    if (filtro === "vigentes") return filas.filter((c) => !terminado(c));
+    if (filtro === "cerrados") return filas.filter(terminado);
     if (filtro === "por-vencer") return filas.filter((c) => c.vigencia === "por-vencer");
     return filas;
   }, [filas, filtro]);
@@ -156,10 +160,10 @@ function Contenidos({
 
   const vigentes = filas.filter((c) => c.vigencia === "vigente");
   const porVencer = filas.filter((c) => c.vigencia === "por-vencer");
-  const cerrados = filas.filter((c) => c.vigencia === "cerrado");
+  const cerrados = filas.filter(terminado);
   const conMonto = filas.filter((c) => c.montoVigente !== null).length;
   const montoVigente = filas
-    .filter((c) => c.vigencia !== "cerrado")
+    .filter((c) => !terminado(c))
     .reduce((t, c) => t + (c.montoVigente ?? 0), 0);
   const montoCerrado = cerrados.reduce((t, c) => t + (c.montoVigente ?? 0), 0);
 
@@ -254,7 +258,9 @@ const columnas = (
       <>
         <Chip tono={tonoVigencia[c.vigencia]}>{vigencias[c.vigencia]}</Chip>
         <span className="mt-1 block text-xs text-ink-soft">
-          {c.vigencia === "cerrado"
+          {c.vigencia === "cancelado"
+            ? "terminado antes de plazo"
+            : c.vigencia === "cerrado"
             ? `terminó hace ${Math.abs(c.diasRestantes)} d`
             : `${c.diasRestantes} d restantes`}
         </span>

@@ -4,8 +4,7 @@ import { useState } from "react";
 
 import {
   Ancho,
-  CampoDinero,
-  CampoFecha,
+  CampoMes,
   CampoNumero,
   CampoSeleccion,
   CampoTexto,
@@ -17,59 +16,38 @@ import {
   useFormulario,
 } from "../ui/Formulario";
 import { CamposDelContrato } from "../ui/CamposDelContrato";
+import { FichaHaberes } from "./FichaHaberes";
+import { errorDeHaberes, haberesEnCero, type Haberes } from "@/lib/haberes";
 import { actualizar, crear } from "@/lib/crud";
 import type { CampoContrato, Datos } from "@/lib/campos";
-import { categoriasDe, opcionesDeCategoria, type Categoria } from "@/lib/categorias";
+import { categoriasDe, type Categoria } from "@/lib/categorias";
 import { opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
 import { siguienteIdPersonal, type CostoPersonal } from "@/lib/egresos";
-import { formatearNumero, formatearPesos } from "@/lib/formato";
 
 /** Primer día del mes en curso. */
 const mesActual = () => new Date().toISOString().slice(0, 8) + "01";
 
-type Borrador = {
+type Borrador = Haberes & {
   contrato_id: string;
-  categoria_id: string;
   faena: string;
   periodo: string;
   dotacion: number;
   horas_hombre: number;
-  sueldo_bruto: number;
-  hh_reemplazo: number;
-  hh_parada_planta: number;
-  hh_feriado_compensado: number;
-  hh_apoyo_oficina: number;
-  hh_otras: number;
-  horas_extra_monto: number;
-  total_no_imponible: number;
-  otros_haberes: number;
-  leyes_sociales: number;
 };
 
 function borradorDe(p: CostoPersonal | null, contratos: ContratoBreve[]): Borrador {
   if (!p) {
     return {
+      ...haberesEnCero,
       contrato_id: contratos[0]?.id ?? "",
-      categoria_id: "",
-      faena: "",
+      faena: contratos[0]?.faena ?? "",
       periodo: mesActual(),
       dotacion: 0,
       horas_hombre: 0,
-      sueldo_bruto: 0,
-      hh_reemplazo: 0,
-      hh_parada_planta: 0,
-      hh_feriado_compensado: 0,
-      hh_apoyo_oficina: 0,
-      hh_otras: 0,
-      horas_extra_monto: 0,
-      total_no_imponible: 0,
-      otros_haberes: 0,
-      leyes_sociales: 0,
     };
   }
   return {
     contrato_id: p.contratoId,
-    categoria_id: p.categoriaId ?? "",
     faena: p.faena,
     periodo: p.periodo,
     dotacion: p.dotacion,
@@ -85,6 +63,16 @@ function borradorDe(p: CostoPersonal | null, contratos: ContratoBreve[]): Borrad
     otros_haberes: p.otrosHaberes,
     leyes_sociales: p.leyesSociales,
   };
+}
+
+/**
+ * La línea de la planilla donde entra el costo. No se pregunta: se está
+ * cargando Personal, así que va a la línea de personal del contrato (la
+ * primera, si hubiera más de una). Si el contrato no tiene ninguna, queda sin
+ * categoría y el Dashboard lo muestra como "Personal" igual.
+ */
+function categoriaDePersonal(categorias: Categoria[], contratoId: string) {
+  return categoriasDe(categorias, contratoId, "personal")[0]?.id ?? null;
 }
 
 export function FormularioPersonal({
@@ -118,38 +106,13 @@ export function FormularioPersonal({
     alCerrar();
   });
 
-  /* Misceláneos separa "Personal" de "HH Extra" y Torres no: por eso la línea
-     se elige y no se deduce. */
-  const propias = categoriasDe(categorias, f.datos.contrato_id, "personal");
-
+  // La faena viene del contrato: elegir el contrato ya dice dónde se trabaja.
   function elegirContrato(id: string) {
     if (id !== f.datos.contrato_id) setPropios({});
-    f.cambiar("contrato_id", id);
-    if (!categoriasDe(categorias, id, "personal").some((c) => c.id === f.datos.categoria_id)) {
-      f.cambiar("categoria_id", "");
-    }
+    const contrato = contratos.find((c) => c.id === id);
+    f.setDatos((d) => ({ ...d, contrato_id: id, faena: contrato?.faena || d.faena }));
   }
-
-  /* Los dos totales, igual que en la nómina. Se muestran mientras se escribe;
-     quien los guarda es el trigger de la base. */
-  /* Las horas extra del mes: la suma de sus motivos. El costo va aparte, porque
-     el valor de la hora cambia mes a mes y no se puede derivar uno del otro. */
-  const horasExtra =
-    f.datos.hh_reemplazo +
-    f.datos.hh_parada_planta +
-    f.datos.hh_feriado_compensado +
-    f.datos.hh_apoyo_oficina +
-    f.datos.hh_otras;
-
-  const totalHaberes =
-    f.datos.sueldo_bruto +
-    f.datos.horas_extra_monto +
-    f.datos.total_no_imponible +
-    f.datos.otros_haberes;
-
-  const costoTotal = totalHaberes + f.datos.leyes_sociales;
-  const porHora = f.datos.horas_hombre > 0 ? costoTotal / f.datos.horas_hombre : 0;
-  const valorHoraExtra = horasExtra > 0 ? f.datos.horas_extra_monto / horasExtra : 0;
+  const faenaDelContrato = contratos.find((c) => c.id === f.datos.contrato_id)?.faena ?? "";
 
   // El código no se teclea: se arma solo con el contrato y el mes.
   const codigo = editando
@@ -158,7 +121,18 @@ export function FormularioPersonal({
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const fila = { ...f.datos, categoria_id: f.datos.categoria_id || null, datos: propios };
+    const problema = errorDeHaberes(f.datos);
+    if (problema) {
+      f.setError(problema);
+      return;
+    }
+    const fila = {
+      ...f.datos,
+      faena: f.datos.faena || faenaDelContrato,
+      // Al editar se respeta la línea que ya tenía; al crear, la de personal del contrato.
+      categoria_id: editando ? registro.categoriaId : categoriaDePersonal(categorias, f.datos.contrato_id),
+      datos: propios,
+    };
 
     f.enviar(
       () =>
@@ -194,26 +168,28 @@ export function FormularioPersonal({
               alCambiar={elegirContrato}
             />
 
-            <CampoSeleccion
-              etiqueta="Categoría de costo"
-              requerido
-              opciones={opcionesDeCategoria(categorias, f.datos.contrato_id, "personal")}
-              ayuda={
-                propias.length === 0
-                  ? "Este contrato todavía no tiene categorías de personal definidas."
-                  : "En qué línea de la planilla entra este costo."
-              }
-              {...f.campo("categoria_id")}
-            />
-
-            <CampoFecha
+            <CampoMes
               etiqueta="Mes"
               requerido
-              ayuda="El día 1 del mes que se está cargando."
+              ayuda="El mes de la nómina que se está cargando."
               {...f.campo("periodo")}
             />
 
-            <CampoTexto etiqueta="Faena" marcador="Planta Química Coya Sur" {...f.campo("faena")} />
+            {faenaDelContrato ? (
+              <Ancho>
+                <p className="rounded-xl border border-mist-deep bg-mist/30 px-4 py-3 text-sm text-ink-soft">
+                  Faena: <span className="font-semibold text-ink">{f.datos.faena || faenaDelContrato}</span>
+                  <span className="ml-2 text-xs">Viene del contrato.</span>
+                </p>
+              </Ancho>
+            ) : (
+              <CampoTexto
+                etiqueta="Faena"
+                marcador="Planta Química Coya Sur"
+                ayuda="El contrato no tiene faena registrada. Se puede completar en Contratos."
+                {...f.campo("faena")}
+              />
+            )}
 
             <CampoNumero
               etiqueta="Dotación"
@@ -231,158 +207,21 @@ export function FormularioPersonal({
               {...f.campo("horas_hombre")}
             />
 
-            <CampoDinero
-              etiqueta="Sueldo bruto"
-              requerido
-              ayuda="La remuneración imponible del mes, como viene en la nómina."
-              {...f.campo("sueldo_bruto")}
-            />
-
-            {/* Las HH extra van por motivo: todas se pagan sobre horas, y
-                "cuánto de este mes fue parada de planta" es lo que se discute
-                con el mandante. Con un solo número no se puede responder. */}
-            <Ancho>
-              <div className="border-t border-mist pt-5">
-                <h3 className="font-display text-sm font-semibold text-ink">
-                  Horas extraordinarias
-                </h3>
-                <p className="mt-1 text-xs leading-relaxed text-ink-soft">
-                  En horas, por motivo, como en la planilla. El costo va aparte.
-                </p>
-              </div>
-            </Ancho>
-
-            <CampoNumero
-              etiqueta="Reemplazo por vacaciones o licencias"
-              min={0}
-              sufijo="HH"
-              {...f.campo("hh_reemplazo")}
-            />
-
-            <CampoNumero
-              etiqueta="Parada de planta"
-              min={0}
-              sufijo="HH"
-              {...f.campo("hh_parada_planta")}
-            />
-
-            <CampoNumero
-              etiqueta="Feriado compensado"
-              min={0}
-              sufijo="HH"
-              {...f.campo("hh_feriado_compensado")}
-            />
-
-            <CampoNumero
-              etiqueta="Apoyo oficina"
-              min={0}
-              sufijo="HH"
-              {...f.campo("hh_apoyo_oficina")}
-            />
-
-            <CampoNumero
-              etiqueta="Otras"
-              min={0}
-              sufijo="HH"
-              ayuda="El resto de las horas extra. Acá va la diferencia si el total no calza con tu planilla."
-              {...f.campo("hh_otras")}
-            />
-
-            <CampoDinero
-              etiqueta="Costo total de las HH extra"
-              ayuda="En pesos, como viene en la nómina. No se calcula: el valor de la hora cambia mes a mes."
-              {...f.campo("horas_extra_monto")}
-            />
-
-            <Ancho>
-              <div className="flex flex-col gap-1.5 rounded-xl border border-mist-deep bg-mist/30 px-4 py-3">
-                <p className="flex items-baseline justify-between gap-4 text-sm text-ink-soft">
-                  Total HH extra
-                  <span className="font-display text-lg font-semibold tabular-nums text-ink">
-                    {formatearNumero(horasExtra)} HH
-                  </span>
-                </p>
-                <p className="text-xs leading-relaxed text-ink-soft">
-                  {valorHoraExtra > 0
-                    ? `Suma de los cinco motivos. Sale a ${formatearPesos(Math.round(valorHoraExtra))} la hora.`
-                    : "Suma de los cinco motivos. No se escribe."}
-                </p>
-              </div>
-            </Ancho>
-
-            <Ancho>
-              <div className="border-t border-mist pt-5">
-                <h3 className="font-display text-sm font-semibold text-ink">
-                  Resto de los haberes
-                </h3>
-              </div>
-            </Ancho>
-
-            <CampoDinero
-              etiqueta="Total no imponible"
-              ayuda="Colación, movilización y viáticos."
-              {...f.campo("total_no_imponible")}
-            />
-
-            <CampoDinero
-              etiqueta="Otros haberes"
-              ayuda="Aguinaldos y asignaciones que no son HH extra ni no imponible."
-              {...f.campo("otros_haberes")}
-            />
-
-            <Ancho>
-              <div className="flex flex-col gap-1.5 rounded-xl border-2 border-ink bg-white px-4 py-3">
-                <p className="flex items-baseline justify-between gap-4">
-                  <span className="font-display text-sm font-semibold uppercase tracking-[0.12em] text-ink">
-                    Total haberes
-                  </span>
-                  <span className="font-display text-xl font-semibold tabular-nums text-ink">
-                    {formatearPesos(totalHaberes)}
-                  </span>
-                </p>
-                <p className="text-xs leading-relaxed text-ink-soft">
-                  Sueldo bruto, HH extra, no imponible y otros haberes. No se escribe: si no calza
-                  con tu nómina, la diferencia va en «otras» o en «otros haberes».
-                </p>
-              </div>
-            </Ancho>
-
-            <CamposDelContrato
-              campos={campos}
-              contratoId={f.datos.contrato_id}
-              seccion="personal"
-              datos={propios}
-              alCambiar={setPropios}
-            />
-
-            <CampoDinero
-              etiqueta="Leyes sociales"
-              ayuda={
-                totalHaberes > 0
-                  ? `Suelen rondar el 23%: ${formatearPesos(Math.round(totalHaberes * 0.23))}.`
-                  : "Cotizaciones y cargas sobre la remuneración."
+            <FichaHaberes
+              datos={f.datos}
+              campo={f.campo}
+              horasHombre={f.datos.horas_hombre}
+              antesDeLeyes={
+                <CamposDelContrato
+                  campos={campos}
+                  contratoId={f.datos.contrato_id}
+                  seccion="personal"
+                  datos={propios}
+                  alCambiar={setPropios}
+                />
               }
-              {...f.campo("leyes_sociales")}
+              nota={<>Código: <span className="font-mono text-ink">{codigo}</span> · se arma solo con el contrato y el mes.</>}
             />
-
-            <Ancho>
-              <p className="rounded-xl bg-mist/50 px-4 py-3 text-sm text-ink-soft">
-                Costo total:{" "}
-                <span className="font-semibold text-ink">{formatearPesos(costoTotal)}</span>
-                {porHora > 0 && (
-                  <span className="ml-2">
-                    · {formatearPesos(Math.round(porHora))} por hora hombre
-                  </span>
-                )}
-                <span className="ml-2 text-xs">
-                  Total haberes más leyes sociales. Es lo que entra al margen del contrato.
-                </span>
-                <span className="mt-1.5 block text-xs">
-                  Código: <span className="font-mono text-ink">{codigo}</span> · se arma solo con el
-                  contrato y el mes.
-                </span>
-              </p>
-            </Ancho>
           </Campos>
 
           <Pie

@@ -2,10 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { FormularioOrden } from "../formularios/FormularioOrden";
+import { CicloOrden } from "../CicloOrden";
 import { OrdenImprimible } from "../OrdenImprimible";
 import { BotonAdjuntos, DialogoAdjuntos } from "../ui/Adjuntos";
 import { Chip, Etiqueta, type Tono } from "../ui/Chip";
-import { Dialogo } from "../ui/Formulario";
 import { Impresion } from "../ui/Impresion";
 import { BotonNuevo, DialogoHistorial, useEdicion } from "../ui/Historial";
 import { Tabla, Total, type Columna } from "../ui/Tabla";
@@ -13,12 +13,10 @@ import { Contenido, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
 import { cargarProveedores, type Proveedor } from "@/lib/abastecimiento";
 import { useConsulta } from "@/lib/consulta";
 import { cargarContratosBreve, type ContratoBreve } from "@/lib/contratos";
-import { actualizar } from "@/lib/crud";
-import { formatearFecha, formatearMonto, formatearNumero, formatearPesos } from "@/lib/formato";
+import { formatearFecha, formatearMonto } from "@/lib/formato";
 import {
   cargarItemsDeOrden,
   cargarOrdenes,
-  etapas,
   type EstadoOrden,
   type Item,
   type Orden,
@@ -117,10 +115,12 @@ export function VistaOrdenes() {
       )}
 
       {recepcion && (
-        <DialogoRecepcion
+        /* Recepción con guía, facturas parciales, NC y cierre: el ciclo
+           entero de la orden (0051). Antes era solo la cantidad recibida. */
+        <CicloOrden
           orden={recepcion}
           alCerrar={() => setRecepcion(null)}
-          alGuardado={recargar}
+          alCambiar={recargar}
         />
       )}
 
@@ -371,205 +371,5 @@ function VistaImpresion({ orden, alCerrar }: { orden: Orden; alCerrar: () => voi
         </p>
       )}
     </Impresion>
-  );
-}
-
-/* ── Recepción y facturación por ítem ─────────────────────────────────────── */
-
-function DialogoRecepcion({
-  orden,
-  alCerrar,
-  alGuardado,
-}: {
-  orden: Orden;
-  alCerrar: () => void;
-  alGuardado: () => void;
-}) {
-  const { estado, recargar } = useConsulta<Item[]>(() => cargarItemsDeOrden(orden.id));
-  const [guardando, setGuardando] = useState<string | null>(null);
-  const puedeRecibir = usePuede("recepcion.registrar");
-  const [error, setError] = useState<string | null>(null);
-
-  /**
-   * Recibir una cantidad, no un ítem entero.
-   *
-   * El proveedor manda 10 de las 30 unidades pedidas más veces de las que manda
-   * las 30: con un interruptor de todo o nada había que elegir entre mentir
-   * diciendo que llegó todo o mentir diciendo que no llegó nada. El estado sale
-   * de la cantidad, no al revés, así que nunca puede decir "recibido" con la
-   * mitad adentro.
-   */
-  async function recibir(item: Item, cantidad: number) {
-    setError(null);
-    setGuardando(item.id);
-    try {
-      const recibida = Math.max(0, Math.min(cantidad, item.cantidad));
-      await actualizar("items_compra", item.id, {
-        estado_recepcion:
-          recibida <= 0 ? "pendiente" : recibida >= item.cantidad ? "recibido" : "parcial",
-        cantidad_recibida: recibida,
-        fecha_recepcion: recibida <= 0 ? null : new Date().toISOString().slice(0, 10),
-      });
-      recargar();
-      // La orden cambia de estado sola con el trigger; hay que releerla.
-      alGuardado();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setGuardando(null);
-    }
-  }
-
-  return (
-    <Dialogo
-      titulo={`Recepción de ${orden.numero}`}
-      descripcion="Anota lo que llegó de cada ítem, aunque llegue a medias. El estado de la orden se actualiza solo."
-      abierto
-      alCerrar={alCerrar}
-      ancho="max-w-4xl"
-    >
-      {error && (
-        <p role="alert" className="mx-6 mt-5 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm font-medium text-[#a52f24]">
-          {error}
-        </p>
-      )}
-
-      <div className="max-h-[60vh] overflow-y-auto px-6 py-5">
-        {estado.estado !== "listo" ? (
-          <p className="py-10 text-center text-sm text-ink-soft">
-            {estado.estado === "error" ? estado.mensaje : "Cargando ítems…"}
-          </p>
-        ) : estado.datos.length === 0 ? (
-          <p className="py-10 text-center text-sm text-ink-soft">
-            Esta orden todavía no tiene ítems.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {estado.datos.map((i) => (
-              <li
-                key={i.id}
-                className="flex flex-wrap items-center gap-4 rounded-xl border border-mist-deep bg-white p-4"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-ink">{i.descripcion}</p>
-                  <p className="mt-0.5 text-xs text-ink-soft">
-                    {formatearNumero(i.cantidad)} {i.unidad} × {formatearPesos(i.precioUnitario)} ·{" "}
-                    {i.categoria}
-                    {i.facturaNumero && ` · factura ${i.facturaNumero}`}
-                  </p>
-                  {i.cantidadRecibida > 0 && i.cantidadRecibida < i.cantidad && (
-                    <p className="mt-0.5 text-xs font-semibold text-[#8a5a09]">
-                      Faltan {formatearNumero(i.cantidad - i.cantidadRecibida)} {i.unidad}
-                    </p>
-                  )}
-                </div>
-
-                {i.tipo === "reembolsable" && <Etiqueta destacada>Reembolsable</Etiqueta>}
-
-                <Chip tono={etapas[i.etapa].tono}>{etapas[i.etapa].titulo}</Chip>
-
-                <span className="w-28 text-right font-semibold tabular-nums text-ink">
-                  {formatearPesos(i.neto)}
-                </span>
-
-                <CantidadRecibida
-                  item={i}
-                  guardando={guardando === i.id}
-                  puede={puedeRecibir}
-                  alRecibir={(cantidad) => recibir(i, cantidad)}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <div className="flex justify-end border-t border-mist px-6 py-5">
-        <button
-          type="button"
-          onClick={alCerrar}
-          className="rounded-full border border-mist-deep px-5 py-2.5 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink"
-        >
-          Cerrar
-        </button>
-      </div>
-    </Dialogo>
-  );
-}
-
-/**
- * Cuánto llegó de un ítem.
- *
- * Arranca en lo que falta —que es lo que llega casi siempre— y deja corregirlo.
- * "Todo" está aparte porque es el caso frecuente y no merece teclear un número.
- */
-function CantidadRecibida({
-  item,
-  guardando,
-  puede,
-  alRecibir,
-}: {
-  item: Item;
-  guardando: boolean;
-  /** Sin "Registrar recepción" se ve cuánto llegó, pero no se anota. */
-  puede: boolean;
-  alRecibir: (cantidad: number) => void;
-}) {
-  const falta = item.cantidad - item.cantidadRecibida;
-  const [cantidad, setCantidad] = useState(String(falta > 0 ? falta : item.cantidad));
-
-  if (!puede) {
-    return (
-      <span className="text-sm tabular-nums text-ink-soft">
-        {formatearNumero(item.cantidadRecibida)} de {formatearNumero(item.cantidad)} recibidos
-      </span>
-    );
-  }
-
-  if (item.estadoRecepcion === "recibido") {
-    return (
-      <button
-        type="button"
-        onClick={() => alRecibir(0)}
-        disabled={guardando}
-        className="rounded-full border border-mist-deep px-4 py-2 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-50"
-      >
-        {guardando ? "Guardando…" : "Deshacer"}
-      </button>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-2">
-      <label className="sr-only" htmlFor={`recibe-${item.id}`}>
-        Cantidad recibida de {item.descripcion}
-      </label>
-      <input
-        id={`recibe-${item.id}`}
-        type="number"
-        min={0}
-        max={item.cantidad}
-        step="any"
-        value={cantidad}
-        onChange={(e) => setCantidad(e.target.value)}
-        className="w-20 rounded-xl border border-mist-deep px-3 py-2 text-right text-sm tabular-nums text-ink"
-      />
-      <button
-        type="button"
-        onClick={() => alRecibir(item.cantidadRecibida + Number(cantidad || 0))}
-        disabled={guardando}
-        className="rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:opacity-50"
-      >
-        {guardando ? "…" : "Recibir"}
-      </button>
-      <button
-        type="button"
-        onClick={() => alRecibir(item.cantidad)}
-        disabled={guardando}
-        className="rounded-full border border-mist-deep px-3 py-2 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-50"
-      >
-        Todo
-      </button>
-    </div>
   );
 }

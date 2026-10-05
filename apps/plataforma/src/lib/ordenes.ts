@@ -62,7 +62,20 @@ export type Orden = {
   neto: number;
   total: number;
   reembolsable: number;
+  /** Facturado neto de notas de crédito. */
   facturado: number;
+  /* El ciclo (0051), en pesos netos. */
+  recibido: number;
+  /** Facturado y todavía no llega: es lo que retiene el pago y pide NC. */
+  sinRecibir: number;
+  recibidoSinFacturar: number;
+  acreditado: number;
+  cerrado: number;
+  porRecibir: number;
+  pagado: number;
+  facturas: number;
+  /** Lleva más de 5 días facturado algo que no llegó. */
+  solicitarNc: boolean;
 };
 
 type FilaOrden = {
@@ -97,6 +110,15 @@ type FilaOrden = {
   total: number;
   reembolsable: number;
   facturado: number;
+  recibido: number;
+  sin_recibir: number;
+  recibido_sin_facturar: number;
+  acreditado: number;
+  cerrado: number;
+  por_recibir: number;
+  pagado: number;
+  facturas: number;
+  solicitar_nc: boolean;
 };
 
 function mapear(f: FilaOrden): Orden {
@@ -132,6 +154,15 @@ function mapear(f: FilaOrden): Orden {
     total: f.total,
     reembolsable: f.reembolsable,
     facturado: f.facturado,
+    recibido: f.recibido ?? 0,
+    sinRecibir: f.sin_recibir ?? 0,
+    recibidoSinFacturar: f.recibido_sin_facturar ?? 0,
+    acreditado: f.acreditado ?? 0,
+    cerrado: f.cerrado ?? 0,
+    porRecibir: f.por_recibir ?? 0,
+    pagado: f.pagado ?? 0,
+    facturas: f.facturas ?? 0,
+    solicitarNc: f.solicitar_nc ?? false,
   };
 }
 
@@ -143,6 +174,13 @@ export async function cargarOrdenes(): Promise<Orden[]> {
 
   if (error) throw new Error(error.message);
   return ((data ?? []) as FilaOrden[]).map(mapear);
+}
+
+/** Una sola orden, con su avance. */
+export async function cargarOrden(id: string): Promise<Orden> {
+  const { data, error } = await supabase.from("ordenes_proveedor_resumen").select("*").eq("id", id).single();
+  if (error) throw new Error(error.message);
+  return mapear(data as FilaOrden);
 }
 
 /**
@@ -298,4 +336,29 @@ export async function cargarItems(): Promise<Item[]> {
 
   if (error) throw new Error(error.message);
   return ((data ?? []) as FilaItem[]).map(mapearItem);
+}
+
+/* ── Las líneas tal como se pidieron ──────────────────────────────────────── */
+
+/**
+ * Las líneas de la orden desde la tabla, para editarla. `items_detalle` ya no
+ * sirve para esto: desde la 0051 su cantidad es lo VIGENTE (descontadas NC y
+ * cierres), y guardar eso como cantidad pedida borraría la historia.
+ */
+export async function cargarLineasDeOrden(ordenId: string) {
+  const { data, error } = await supabase
+    .from("items_compra")
+    .select("id, descripcion, unidad, cantidad, precio_unitario, tipo, categoria_id")
+    .eq("orden_id", ordenId)
+    .order("id");
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((f) => ({
+    id: f.id as string,
+    descripcion: f.descripcion as string,
+    unidad: f.unidad as string,
+    cantidad: Number(f.cantidad),
+    precioUnitario: Number(f.precio_unitario),
+    tipo: f.tipo as "ordinario" | "reembolsable",
+    categoriaId: (f.categoria_id as string | null) ?? null,
+  }));
 }

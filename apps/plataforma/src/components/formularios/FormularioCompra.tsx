@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Ancho,
   CampoDinero,
@@ -17,70 +17,65 @@ import {
 import { Combo } from "../ui/Combo";
 import { CamposDelContrato } from "../ui/CamposDelContrato";
 import { FormularioProveedor } from "./FormularioProveedor";
+import { LineasDeGasto, lineaVacia, netoLinea, type LineaGasto } from "./LineasDeGasto";
 import { formatearRut, siguienteIdProveedor, type Proveedor } from "@/lib/abastecimiento";
 import type { CampoContrato, Datos } from "@/lib/campos";
-import { categoriasDe, opcionesDeCategoria, type Categoria } from "@/lib/categorias";
-import { actualizar, crear, eliminar } from "@/lib/crud";
+import { categoriasDe, type Categoria } from "@/lib/categorias";
+import { eliminar } from "@/lib/crud";
 import { opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
-import { siguienteIdCompra, tiposCompra, type Compra, type TipoCompra } from "@/lib/egresos";
+import { cargarLineasDeCompra, guardarCompraDirecta, siguienteIdCompra, type Compra } from "@/lib/egresos";
 import { formatearPesos } from "@/lib/formato";
 
 /**
- * Una compra de Control de Gestión.
+ * Una compra directa de Control de Gestión: el documento y sus líneas.
+ *
+ * Una factura de ferretería trae varias líneas con categorías distintas y a
+ * veces alguna reembolsable; antes había que crear una compra por línea
+ * repitiendo proveedor, documento y fecha. Ahora el documento lleva su detalle
+ * (migración 0053) y el costo sale por línea.
+ *
+ * Es la compra SIN orden de compra, al contado: no espera recepción, así que
+ * queda pagable de inmediato. La factura de una OC se registra y se edita en el
+ * ciclo de la orden.
  *
  * Una compra tiene fecha documental y mes de control. Normalmente coinciden;
  * si una factura de agosto se imputa en septiembre, ambos datos quedan visibles
  * y el Dashboard usa el mes de control sin alterar la fecha del comprobante.
- *
- * Por eso acá no se pregunta el estado de pago: si la factura al proveedor está
- * pagada o no es asunto de Abastecimiento, no del resultado del mes.
  */
 
 const mesActual = () => `${new Date().toISOString().slice(0, 7)}-01`;
 const hoy = () => new Date().toISOString().slice(0, 10);
 
-type Borrador = {
+type Cabecera = {
   contrato_id: string;
-  categoria_id: string;
   proveedor_id: string;
   proveedor: string;
   documento: string;
-  detalle: string;
-  tipo: TipoCompra;
-  neto: number;
-  iva: number;
   fecha: string;
   periodo_control: string;
+  iva: number;
 };
 
-function borradorDe(compra: Compra | null, contratos: ContratoBreve[]): Borrador {
+function cabeceraDe(compra: Compra | null, contratos: ContratoBreve[]): Cabecera {
   if (!compra) {
     return {
       contrato_id: contratos[0]?.id ?? "",
-      categoria_id: "",
       proveedor_id: "",
       proveedor: "",
       documento: "",
-      detalle: "",
-      tipo: "ordinario",
-      neto: 0,
-      iva: 0,
       fecha: hoy(),
       periodo_control: mesActual(),
+      iva: 0,
     };
   }
   return {
     contrato_id: compra.contratoId,
-    categoria_id: compra.categoriaId ?? "",
     proveedor_id: compra.proveedorId ?? "",
     proveedor: compra.proveedor,
     documento: compra.documento ?? "",
-    detalle: compra.detalle,
-    tipo: compra.tipo,
-    neto: compra.neto,
-    iva: compra.iva,
     fecha: compra.fecha,
     periodo_control: compra.periodoControl,
+    iva: compra.iva,
   };
 }
 
@@ -107,58 +102,74 @@ export function FormularioCompra({
   alCerrar: () => void;
   alGuardado: () => void;
 }) {
-  const f = useFormulario<Borrador>(borradorDe(compra, contratos));
+  const f = useFormulario<Cabecera>(cabeceraDe(compra, contratos));
+  const editando = compra !== null;
+  const [lineas, setLineas] = useState<LineaGasto[]>(() => (compra ? [] : [lineaVacia()]));
+  const [cargandoLineas, setCargandoLineas] = useState(editando);
+  /* El IVA sigue a las líneas mientras no se escriba a mano: hay facturas con
+     redondeos del proveedor que no dan exactamente lo calculado. */
+  const [ivaTocado, setIvaTocado] = useState(editando);
   const [confirmando, setConfirmando] = useState(false);
   const [errorBorrado, setErrorBorrado] = useState<string | null>(null);
   const [borrando, setBorrando] = useState(false);
-  const editando = compra !== null;
   const [propios, setPropios] = useState<Datos>(compra?.datos ?? {});
   const [creandoProveedor, setCreandoProveedor] = useState(false);
 
+  /* Al editar se traen sus líneas. Una compra anterior a las líneas no tiene:
+     se muestra como una sola, con su detalle, categoría, tipo y neto; al
+     guardarla queda con el formato nuevo y los mismos montos. */
+  useEffect(() => {
+    if (!compra) return;
+    let vigente = true;
+    cargarLineasDeCompra(compra.id)
+      .then((ls) => {
+        if (!vigente) return;
+        setLineas(
+          ls.length > 0
+            ? ls.map((l) => lineaVacia(l))
+            : [lineaVacia({ descripcion: compra.detalle, cantidad: 1, precio_unitario: compra.neto, categoria_id: compra.categoriaId ?? "", tipo: compra.tipo })],
+        );
+      })
+      .catch((e) => vigente && f.setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => vigente && setCargandoLineas(false));
+    return () => {
+      vigente = false;
+    };
+    // Solo al abrir: la compra no cambia mientras el diálogo está abierto.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   /* El código no se teclea: es el contrato y el mes. Escribirlo a mano es la
-     forma más común de terminar con dos líneas del mismo mes con el mismo
+     forma más común de terminar con dos compras del mismo mes con el mismo
      código, o con uno que no calza con ningún contrato. */
   const codigo = editando
     ? compra.id
     : siguienteIdCompra(compras, f.datos.contrato_id, f.datos.periodo_control);
 
-  const total = f.datos.neto + f.datos.iva;
-
-  /* La categoría elegida y su presupuesto del mes. Cambiar el contrato cambia
-     la lista: cargar un EPP contra Torres no debería ser posible, porque Torres
-     no tiene esa línea en su planilla. */
   const propias = categoriasDe(categorias, f.datos.contrato_id, "compras");
-  const categoria = propias.find((c) => c.id === f.datos.categoria_id);
+  const afectaIva = (id: string) => categorias.find((c) => c.id === id)?.afectaIva ?? true;
+  const neto = lineas.reduce((t, l) => t + netoLinea(l), 0);
+  const ivaCalculado = lineas.reduce((t, l) => t + (afectaIva(l.categoria_id) ? Math.round(netoLinea(l) * 0.19) : 0), 0);
+  const iva = ivaTocado ? f.datos.iva : ivaCalculado;
 
-  /* Lo que ya lleva esa categoría en el mes, sin contar la línea que se está
-     editando. Es el semáforo de desviación de la planilla. */
-  const consumido = compras
-    .filter(
-      (c) =>
-        c.id !== compra?.id &&
-        c.categoriaId === f.datos.categoria_id &&
-        c.periodoControl.slice(0, 7) === f.datos.periodo_control.slice(0, 7),
-    )
-    .reduce((t, c) => t + c.neto, 0);
+  /* El presupuesto de cada categoría del documento, con lo que ya lleva en el
+     mes sin contar esta compra. Es el semáforo de desviación de la planilla. */
+  const semaforo = propias
+    .filter((c) => c.presupuestoMensual > 0 && lineas.some((l) => l.categoria_id === c.id))
+    .map((c) => {
+      const yaLleva = compras
+        .filter((x) => x.id !== compra?.id && x.categoriaId === c.id && x.periodoControl.slice(0, 7) === f.datos.periodo_control.slice(0, 7))
+        .reduce((t, x) => t + x.neto, 0);
+      const estaCompra = lineas.filter((l) => l.categoria_id === c.id).reduce((t, l) => t + netoLinea(l), 0);
+      return { categoria: c, acumulado: yaLleva + estaCompra };
+    });
 
-  const presupuesto = categoria?.presupuestoMensual ?? 0;
-  const acumulado = consumido + f.datos.neto;
-
-  /* El IVA se calcula al escribir el neto, y queda editable: hay facturas
-     exentas y hay redondeos del proveedor que no dan exactamente el 19%. */
-  function ponerNeto(neto: number) {
-    f.cambiar("neto", neto);
-    f.cambiar("iva", Math.round(neto * 0.19));
-  }
-
-  /* Cambiar de contrato deja la categoría del contrato anterior seleccionada, y
-     esa categoría no existe en el nuevo. Se limpia. */
+  /* Cambiar de contrato deja categorías que en el nuevo no existen. Se limpian. */
   function elegirContrato(id: string) {
     if (id !== f.datos.contrato_id) setPropios({});
     f.cambiar("contrato_id", id);
-    if (!categoriasDe(categorias, id, "compras").some((c) => c.id === f.datos.categoria_id)) {
-      f.cambiar("categoria_id", "");
-    }
+    const delNuevo = new Set(categoriasDe(categorias, id, "compras").map((c) => c.id));
+    setLineas((ls) => ls.map((l) => (delNuevo.has(l.categoria_id) ? l : { ...l, categoria_id: "" })));
   }
 
   /* El proveedor se elige del maestro y el nombre se copia: el enlace sirve para
@@ -171,20 +182,27 @@ export function FormularioCompra({
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const d = f.datos;
-    const fila = {
-      ...d,
-      categoria_id: d.categoria_id || null,
-      proveedor_id: d.proveedor_id || null,
-      documento: d.documento.trim() || null,
-      datos: propios,
-    };
+    const conDescripcion = lineas.filter((l) => l.descripcion.trim());
+    if (!f.datos.proveedor.trim()) return f.setError("Elige el proveedor.");
+    if (conDescripcion.length === 0) return f.setError("Agrega al menos una línea con descripción.");
+    if (conDescripcion.some((l) => l.cantidad <= 0)) return f.setError("Cada línea necesita una cantidad mayor que cero.");
 
     f.enviar(
       () =>
-        editando
-          ? actualizar("compras", compra.id, fila)
-          : crear("compras", { ...fila, id: codigo }),
+        guardarCompraDirecta({
+          id: codigo,
+          contratoId: f.datos.contrato_id,
+          proveedorId: f.datos.proveedor_id,
+          proveedor: f.datos.proveedor,
+          documento: f.datos.documento,
+          fecha: f.datos.fecha,
+          periodoControl: f.datos.periodo_control,
+          iva,
+          datos: propios,
+          lineas: conDescripcion.map(({ descripcion, unidad, cantidad, precio_unitario, categoria_id, tipo }) => ({
+            descripcion: descripcion.trim(), unidad, cantidad, precio_unitario, categoria_id, tipo,
+          })),
+        }),
       () => {
         alGuardado();
         alCerrar();
@@ -196,6 +214,7 @@ export function FormularioCompra({
     setErrorBorrado(null);
     setBorrando(true);
     try {
+      // Sus líneas se borran con ella (trigger de la 0053).
       await eliminar("compras", compra!.id);
       alGuardado();
       alCerrar();
@@ -206,6 +225,26 @@ export function FormularioCompra({
     }
   }
 
+  /* La factura de una OC es del ciclo de la orden: sus líneas son las de la
+     orden y se registran contra lo recibido. Editarla acá las desordenaría. */
+  if (compra?.ordenId) {
+    return (
+      <Dialogo titulo={`Factura ${compra.documento ?? compra.id}`} abierto alCerrar={alCerrar}
+        descripcion="Esta factura viene de una orden de compra.">
+        <p className="px-6 py-6 text-sm leading-relaxed text-ink-soft">
+          Se registró contra la orden y cubre líneas de ella. Para corregirla, o para registrar una nota de crédito, abre
+          la orden en <strong className="text-ink">Órdenes de compra</strong>, más abajo en esta misma pantalla.
+        </p>
+        <div className="flex justify-end border-t border-mist px-6 py-5">
+          <button type="button" onClick={alCerrar}
+            className="rounded-full border border-mist-deep px-5 py-2.5 text-sm font-semibold text-ink-soft hover:border-ink hover:text-ink">
+            Cerrar
+          </button>
+        </div>
+      </Dialogo>
+    );
+  }
+
   return (
     <>
       <Dialogo
@@ -213,10 +252,11 @@ export function FormularioCompra({
         descripcion={
           editando
             ? `${compra.id} · cada cambio queda registrado con tu nombre y la hora.`
-            : "El egreso del mes por contrato, con su respaldo. Los gastos reembolsables se le recuperan al mandante, así que no entran al costo."
+            : "Una compra sin orden de compra, al contado: el documento y sus líneas. Para una OC, usa «Registrar OC»."
         }
         abierto
         alCerrar={alCerrar}
+        ancho="max-w-5xl"
       >
         <form onSubmit={onSubmit}>
           <Campos>
@@ -226,6 +266,13 @@ export function FormularioCompra({
               opciones={opcionesDeContrato(contratos)}
               valor={f.datos.contrato_id}
               alCambiar={elegirContrato}
+            />
+
+            <CampoTexto
+              etiqueta="N° de documento"
+              marcador="123456"
+              ayuda="Factura o boleta del proveedor."
+              {...f.campo("documento")}
             />
 
             <CampoFecha
@@ -243,57 +290,6 @@ export function FormularioCompra({
             />
 
             <Ancho>
-              <div className="rounded-xl border border-mist-deep bg-mist/40 px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-soft">
-                  Código
-                </p>
-                <p className="mt-1 font-mono text-sm font-semibold text-ink">{codigo}</p>
-                <p className="mt-1 text-xs text-ink-soft">
-                  {editando
-                    ? "No se puede cambiar."
-                    : "Se arma solo con el contrato y el mes, y sigue el correlativo."}
-                </p>
-              </div>
-            </Ancho>
-
-            {/* La lista sale de la planilla del contrato elegido: Misceláneos
-                tiene EPP Básicos y Torres no, porque no compra EPP. */}
-            <CampoSeleccion
-              etiqueta="Categoría de costo"
-              requerido
-              opciones={opcionesDeCategoria(categorias, f.datos.contrato_id, "compras")}
-              ayuda={
-                propias.length === 0
-                  ? "Este contrato todavía no tiene categorías de compras definidas."
-                  : categoria && !categoria.afectaIva
-                    ? "No afecta a IVA: entra íntegra al costo."
-                    : "En qué línea de la planilla entra este gasto."
-              }
-              {...f.campo("categoria_id")}
-            />
-
-            {/* Ordinario o gasto reembolsable: decide si el monto entra o no al
-                costo del contrato. */}
-            <CampoSeleccion
-              etiqueta="Tipo de compra"
-              requerido
-              opciones={tiposCompra}
-              ayuda={
-                f.datos.tipo === "reembolsable"
-                  ? "No suma al costo real del contrato: se le cobra al mandante."
-                  : "Suma al costo real del contrato y descuenta del presupuesto."
-              }
-              {...f.campo("tipo")}
-            />
-
-            <CampoTexto
-              etiqueta="N° de documento"
-              marcador="123456"
-              ayuda="Factura o guía del proveedor."
-              {...f.campo("documento")}
-            />
-
-            <Ancho>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
                 <div className="min-w-0 flex-1">
                   <Combo
@@ -304,9 +300,7 @@ export function FormularioCompra({
                       .map((p) => ({
                         id: p.id,
                         titulo: p.razonSocial,
-                        nota: [formatearRut(p.rut), ...p.rubros.slice(0, 2)]
-                          .filter(Boolean)
-                          .join(" · "),
+                        nota: [formatearRut(p.rut), ...p.rubros.slice(0, 2)].filter(Boolean).join(" · "),
                       }))}
                     marcador="Escribe para buscar…"
                     ayuda="Son los mismos de Abastecimiento. Si no está, agrégalo acá al lado."
@@ -337,59 +331,64 @@ export function FormularioCompra({
             )}
 
             <Ancho>
-              <CampoTexto
-                etiqueta="Detalle"
-                requerido
-                marcador="Hormigón H30 para fundaciones"
-                {...f.campo("detalle")}
+              <p className="text-xs text-ink-soft">
+                Código: <span className="font-mono font-semibold text-ink">{codigo}</span>
+                {editando ? " · no se puede cambiar." : " · se arma solo con el contrato y el mes."}
+              </p>
+            </Ancho>
+          </Campos>
+
+          <section className="border-t border-mist px-6 py-6">
+            {cargandoLineas ? (
+              <p className="py-6 text-center text-sm text-ink-soft">Cargando las líneas…</p>
+            ) : (
+              <LineasDeGasto
+                lineas={lineas}
+                alCambiar={setLineas}
+                categorias={propias.map((c) => ({ id: c.id, nombre: c.nombre }))}
+                afectaIva={afectaIva}
               />
-            </Ancho>
+            )}
+          </section>
 
+          <Campos>
             <CampoDinero
-              etiqueta="Neto"
-              requerido
-              ayuda="Al escribirlo se calculan solos el IVA y el total."
-              valor={f.datos.neto}
-              alCambiar={ponerNeto}
+              etiqueta="IVA del documento"
+              ayuda={
+                ivaTocado && iva !== ivaCalculado
+                  ? `Según las categorías serían ${formatearPesos(ivaCalculado)}. Se guarda lo que dice la factura.`
+                  : "Se calcula con las categorías. Corrígelo si la factura dice otra cosa."
+              }
+              valor={iva}
+              alCambiar={(v) => {
+                setIvaTocado(true);
+                f.cambiar("iva", v);
+              }}
             />
+            <div className="flex items-baseline justify-between gap-4 self-end rounded-xl border-2 border-ink bg-white px-4 py-3">
+              <span className="font-display text-sm font-semibold uppercase tracking-[0.12em] text-ink">Total</span>
+              <span className="font-display text-xl font-semibold tabular-nums text-ink">{formatearPesos(neto + iva)}</span>
+            </div>
 
-            <CampoDinero
-              etiqueta="IVA"
-              ayuda="El 19% del neto. Se puede corregir si la factura viene exenta o con otro redondeo."
-              {...f.campo("iva")}
-            />
-
-            <Ancho>
-              <div className="flex items-baseline justify-between gap-4 rounded-xl border-2 border-ink bg-white px-4 py-3">
-                <span className="font-display text-sm font-semibold uppercase tracking-[0.12em] text-ink">
-                  Total con IVA
-                </span>
-                <span className="font-display text-xl font-semibold tabular-nums text-ink">
-                  {formatearPesos(total)}
-                </span>
-              </div>
-            </Ancho>
-
-            {presupuesto > 0 && (
-              <Ancho>
+            {semaforo.map(({ categoria, acumulado }) => (
+              <Ancho key={categoria.id}>
                 <p
                   className={`rounded-xl px-4 py-3 text-sm leading-relaxed ${
-                    acumulado > presupuesto
+                    acumulado > categoria.presupuestoMensual
                       ? "bg-[#fdeeec] text-[#a52f24]"
-                      : acumulado > presupuesto * 0.85
+                      : acumulado > categoria.presupuestoMensual * 0.85
                         ? "bg-[#fdf3e3] text-[#8a5a09]"
                         : "bg-mist/50 text-ink-soft"
                   }`}
                 >
-                  <strong>{categoria?.nombre}</strong> tiene {formatearPesos(presupuesto)} de
-                  presupuesto al mes. Con esta compra el mes va en{" "}
-                  <strong>{formatearPesos(acumulado)}</strong>
-                  {acumulado > presupuesto
-                    ? ` — ${formatearPesos(acumulado - presupuesto)} por sobre el presupuesto.`
-                    : ` (${Math.round((acumulado / presupuesto) * 100)}% del presupuesto).`}
+                  <strong>{categoria.nombre}</strong> tiene {formatearPesos(categoria.presupuestoMensual)} de presupuesto al
+                  mes. Con esta compra el mes va en <strong>{formatearPesos(acumulado)}</strong>
+                  {acumulado > categoria.presupuestoMensual
+                    ? ` — ${formatearPesos(acumulado - categoria.presupuestoMensual)} por sobre el presupuesto.`
+                    : ` (${Math.round((acumulado / categoria.presupuestoMensual) * 100)}% del presupuesto).`}
                 </p>
               </Ancho>
-            )}
+            ))}
 
             <CamposDelContrato
               campos={campos}
@@ -428,7 +427,7 @@ export function FormularioCompra({
       <Confirmacion
         abierto={confirmando}
         titulo="Eliminar compra"
-        detalle={`Se va a eliminar ${compra?.id ?? ""} — ${compra?.proveedor ?? ""}. El costo del contrato se recalcula sin ella.`}
+        detalle={`Se va a eliminar ${compra?.id ?? ""} — ${compra?.proveedor ?? ""}, con sus líneas. El costo del contrato se recalcula sin ella.`}
         error={errorBorrado}
         procesando={borrando}
         alCancelar={() => setConfirmando(false)}

@@ -273,90 +273,12 @@ export async function registrarFactura(
   });
 }
 
-/**
- * La factura que llega contra una OC: es el traspaso de Abastecimiento a
- * Control de Gestión.
- *
- * Crea la línea de compra —el documento— y le engancha los ítems de la orden
- * que todavía no estaban facturados. El costo del contrato no se mueve por
- * esto: los ítems ya pesaban desde que se emitió la orden. Lo que cambia es
- * que ahora tienen documento, proveedor y vencimiento, o sea que se pueden
- * pagar y se pueden auditar.
- */
-export async function facturarOrden({
-  ordenId,
-  contratoId,
-  proveedorId,
-  proveedor,
-  documento,
-  fechaFactura,
-  vencimiento,
-  neto,
-  iva,
-  detalle,
-}: {
-  ordenId: string;
-  contratoId: string;
-  proveedorId: string | null;
-  proveedor: string;
-  documento: string;
-  fechaFactura: string;
-  vencimiento: string | null;
-  neto: number;
-  iva: number;
-  detalle: string;
-}) {
-  // El mes contable de la factura: Control de Gestión trabaja por mes.
-  const periodo = `${fechaFactura.slice(0, 7)}-01`;
-  const id = await siguienteIdDeCompra(contratoId, periodo);
-
-  const { data: items, error: errorItems } = await supabase
-    .from("items_compra")
-    .select("id, categoria_id, tipo")
-    .eq("orden_id", ordenId)
-    .is("compra_id", null);
-
-  if (errorItems) throw new Error(errorItems.message);
-
-  const { error } = await supabase.from("compras").insert({
-    id,
-    contrato_id: contratoId,
-    proveedor_id: proveedorId,
-    proveedor,
-    documento: documento.trim(),
-    detalle,
-    // La categoría y el tipo se heredan de los ítems: son de ellos, no del
-    // documento. Si la orden mezcla categorías, queda la del primer ítem y el
-    // costo igual se reparte bien, porque se reparte por ítem.
-    categoria_id: items?.[0]?.categoria_id ?? null,
-    tipo: items?.every((i) => i.tipo === "reembolsable") ? "reembolsable" : "ordinario",
-    neto,
-    iva,
-    fecha: periodo,
-    fecha_factura: fechaFactura,
-    fecha_vencimiento: vencimiento,
-    orden_id: ordenId,
-    estado_pago: "pendiente",
-  });
-
-  if (error) throw new Error(error.message);
-
-  if (items && items.length > 0) {
-    const { error: errorEnlace } = await supabase
-      .from("items_compra")
-      .update({ compra_id: id })
-      .in(
-        "id",
-        items.map((i) => i.id),
-      );
-    if (errorEnlace) throw new Error(errorEnlace.message);
-  }
-
-  return id;
-}
+/* La factura que llega contra una OC ya no se registra acá: se registra por
+   líneas en el ciclo de la orden (lib/ciclo-oc.ts, migración 0051), porque
+   puede cubrir solo una parte y una orden puede tener varias. */
 
 /** "CO-MISC-2026-09", y con sufijo si el mes ya tiene una. */
-async function siguienteIdDeCompra(contratoId: string, periodo: string) {
+export async function siguienteIdDeCompra(contratoId: string, periodo: string) {
   const base = `CO-${contratoId.replace(/^C-/, "")}-${periodo.slice(0, 7)}`;
   const { data, error } = await supabase.from("compras").select("id").like("id", `${base}%`);
   if (error) throw new Error(error.message);

@@ -2,7 +2,7 @@
 
 import { mesCorto } from "./formato";
 import { supabase } from "./supabase";
-import { cargarEgresosOficina, type EgresoOficina } from "./oficina-central";
+import { cargarEgresosOficina, cargarNominasOficina, type EgresoOficina } from "./oficina-central";
 
 /**
  * Datos del Dashboard de rentabilidad.
@@ -50,6 +50,8 @@ export type DatosDashboard = {
   meses: FilaMes[];
   categorias: FilaCategoria[];
   oficina: EgresoOficina[];
+  /** Costo de la nómina de Oficina Central por mes. Vacío para quien no ve sueldos. */
+  personalOficina: { periodo: string; costo: number }[];
 };
 
 type FilaResumenSQL = {
@@ -81,10 +83,13 @@ type FilaCategoriaSQL = {
 };
 
 export async function cargarDashboard(): Promise<DatosDashboard> {
-  const [resumen, categorias, oficina] = await Promise.all([
+  const [resumen, categorias, oficina, nominas] = await Promise.all([
     supabase.from("resumen_mensual").select("*").order("periodo"),
     supabase.from("costos_por_categoria").select("*"),
     cargarEgresosOficina(),
+    /* Si la 0048 todavía no está aplicada, el Dashboard sigue sin la nómina.
+       Quien no ve sueldos recibe la lista vacía (RLS), no un error. */
+    cargarNominasOficina().catch(() => []),
   ]);
 
   const fallo = resumen.error ?? categorias.error;
@@ -92,6 +97,7 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
 
   return {
     oficina,
+    personalOficina: nominas.map((n) => ({ periodo: n.periodo, costo: n.costo_total })),
     meses: ((resumen.data ?? []) as FilaResumenSQL[]).map((r) => ({
       contratoId: r.contrato_id,
       contrato: r.contrato,

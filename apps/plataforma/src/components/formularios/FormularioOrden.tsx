@@ -28,13 +28,13 @@ import { tiposCompra } from "@/lib/egresos";
 import { emisorOC } from "@/lib/empresa";
 import { formatearPesos } from "@/lib/formato";
 import {
-  cargarItemsDeOrden,
+  cargarLineasDeOrden,
   estadosOrden,
   siguienteNumero,
   type EstadoOrden,
-  type Item,
   type Orden,
 } from "@/lib/ordenes";
+import { leerPegado, type FilaPegada } from "@/lib/pegado";
 import type { Usuario } from "@/lib/sesion";
 
 /**
@@ -90,6 +90,7 @@ function borradorDe(
   orden: Orden | null,
   contratos: ContratoBreve[],
   usuario: Usuario,
+  registrar: boolean,
 ): BorradorOrden {
   if (!orden) {
     return {
@@ -116,7 +117,8 @@ function borradorDe(
       condiciones_pago: emisorOC.condicionesPagoPorDefecto,
       solicitado_por: "",
       retira: "",
-      estado: "borrador",
+      // La que ya se mandó desde la planilla de Drive no pasa por borrador.
+      estado: registrar ? "emitida" : "borrador",
       observaciones: "",
     };
   }
@@ -161,12 +163,23 @@ function lineaVacia(n: number): Linea {
   };
 }
 
+function lineaPegada(fila: FilaPegada, n: number): Linea {
+  return {
+    ...lineaVacia(n),
+    descripcion: fila.descripcion,
+    unidad: fila.unidad,
+    cantidad: fila.cantidad,
+    precio_unitario: fila.precioUnitario,
+  };
+}
+
 export function FormularioOrden({
   orden,
   contratos,
   categorias,
   proveedores,
   usuario,
+  registrar = false,
   alCerrar,
   alGuardado,
 }: {
@@ -176,10 +189,14 @@ export function FormularioOrden({
   /** El maestro de Abastecimiento: de acá se copian los datos del proveedor. */
   proveedores: Proveedor[];
   usuario: Usuario;
+  /** Registrar una OC que ya se emitió fuera de la plataforma (la planilla de
+      Drive): nace emitida y el número se escribe como está en el PDF. */
+  registrar?: boolean;
   alCerrar: () => void;
-  alGuardado: () => void;
+  /** Con el código interno de la orden, para poder adjuntarle el PDF. */
+  alGuardado: (ordenId?: string) => void;
 }) {
-  const f = useFormulario<BorradorOrden>(borradorDe(orden, contratos, usuario));
+  const f = useFormulario<BorradorOrden>(borradorDe(orden, contratos, usuario, registrar));
   const editando = orden !== null;
   // Una orden nueva arranca con una línea en blanco. Se hace en el
   // inicializador y no en el efecto: llamar a setState en el cuerpo de un
@@ -197,10 +214,10 @@ export function FormularioOrden({
     let vigente = true;
 
     if (orden) {
-      cargarItemsDeOrden(orden.id).then((items) => {
+      cargarLineasDeOrden(orden.id).then((items) => {
         if (!vigente) return;
         setLineas(
-          items.map((i: Item) => ({
+          items.map((i) => ({
             id: i.id,
             descripcion: i.descripcion,
             unidad: i.unidad,
@@ -305,6 +322,36 @@ export function FormularioOrden({
     setLineas((ls) => ls.filter((l) => l.id !== linea.id));
   }
 
+  /* Pegar filas de la planilla. Las líneas en blanco se descartan —la orden
+     nueva arranca con una— y las pegadas van al final de las que ya tienen algo. */
+  const [pegando, setPegando] = useState(false);
+  const [textoPegado, setTextoPegado] = useState("");
+  const filasPegadas = leerPegado(textoPegado);
+
+  function agregarPegadas(filas: FilaPegada[]) {
+    setLineas((ls) => {
+      const conAlgo = ls.filter((l) => l.descripcion.trim() || !l.nuevo);
+      return [...conAlgo, ...filas.map((fila, i) => lineaPegada(fila, conAlgo.length + i))];
+    });
+    setTextoPegado("");
+    setPegando(false);
+  }
+
+  /** Pegar varias celdas directo en una descripción también sirve. */
+  function alPegarEnCelda(e: React.ClipboardEvent<HTMLInputElement>) {
+    const texto = e.clipboardData.getData("text");
+    if (!texto.includes("\t") && !texto.includes("\n")) return;
+    const filas = leerPegado(texto);
+    if (filas.length === 0) return;
+    e.preventDefault();
+    agregarPegadas(filas);
+  }
+
+  /** Lo que se elige acá se aplica a todas las líneas; después se corrigen las excepciones. */
+  function aplicarATodas(campo: "categoria_id" | "tipo", valor: string) {
+    setLineas((ls) => ls.map((l) => ({ ...l, [campo]: valor })));
+  }
+
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const ordenId = editando ? orden.id : codigoInterno;
@@ -354,7 +401,7 @@ export function FormularioOrden({
         }
       }
     }, () => {
-      alGuardado();
+      alGuardado(ordenId);
       alCerrar();
     });
   }
@@ -362,11 +409,13 @@ export function FormularioOrden({
   return (
     <>
       <Dialogo
-        titulo={editando ? `Orden ${orden.numero}` : "Nueva orden de compra"}
+        titulo={editando ? `Orden ${orden.numero}` : registrar ? "Registrar OC emitida" : "Nueva orden de compra"}
         descripcion={
           editando
             ? "El estado se actualiza solo según lo que se vaya recibiendo y facturando."
-            : "El número viene propuesto con el siguiente de la serie. Puedes cambiarlo."
+            : registrar
+              ? "Para la OC que ya se emitió desde la planilla de Drive. Escribe el número como aparece en el PDF y pega sus ítems; al guardar se abre para adjuntar el PDF."
+              : "El número viene propuesto con el siguiente de la serie. Puedes cambiarlo."
         }
         abierto
         alCerrar={alCerrar}
@@ -504,21 +553,109 @@ export function FormularioOrden({
 
           {/* ── Ítems ──────────────────────────────────────────────────────── */}
           <section className="border-t border-mist px-6 py-6">
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <h3 className="font-display text-base font-semibold text-ink">
                 Ítems de la orden
               </h3>
-              <button
-                type="button"
-                onClick={() => setLineas((ls) => [...ls, lineaVacia(ls.length)])}
-                className="inline-flex items-center gap-1.5 rounded-full border border-mist-deep px-4 py-2 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
-                  <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-                </svg>
-                Agregar ítem
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPegando((p) => !p)}
+                  aria-expanded={pegando}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-cyan px-4 py-2 text-sm font-semibold text-cyan-deep transition-colors hover:bg-cyan/5"
+                >
+                  Pegar desde la planilla
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLineas((ls) => [...ls, lineaVacia(ls.length)])}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-mist-deep px-4 py-2 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink"
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+                    <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+                  </svg>
+                  Agregar ítem
+                </button>
+              </div>
             </div>
+
+            {pegando && (
+              <div className="mb-5 rounded-xl border border-mist-deep bg-mist/30 p-4">
+                <label className="block text-sm font-semibold text-ink" htmlFor="pegado-oc">
+                  Pega las filas de la OC
+                </label>
+                <p className="mt-1 text-xs leading-relaxed text-ink-soft">
+                  En la planilla, selecciona las filas de ítems (de la columna ÍTEM a TOTALES) y cópialas. Las filas vacías y el
+                  encabezado se ignoran. Revisa abajo cómo quedó antes de agregarlas.
+                </p>
+                <textarea
+                  id="pegado-oc"
+                  rows={4}
+                  value={textoPegado}
+                  onChange={(e) => setTextoPegado(e.target.value)}
+                  placeholder={"1\tBOTIN MAXWORK TRAIL. AISL. P, CAFÉ, 40\tUN\t1\t$ 29,900\t$ 29,900"}
+                  className={`${claseCelda} mt-3 font-mono text-xs`}
+                />
+                {filasPegadas.length > 0 && (
+                  <div className="mt-3">
+                    <ul className="max-h-48 overflow-y-auto rounded-lg border border-mist bg-white text-xs">
+                      {filasPegadas.map((fila, i) => (
+                        <li key={i} className="flex justify-between gap-4 border-b border-mist px-3 py-1.5 last:border-0">
+                          <span className="truncate text-ink">{fila.descripcion}</span>
+                          <span className="shrink-0 tabular-nums text-ink-soft">
+                            {fila.cantidad.toLocaleString("es-CL")} {fila.unidad} × {formatearPesos(fila.precioUnitario)} ={" "}
+                            <strong className="text-ink">{formatearPesos(Math.round(fila.cantidad * fila.precioUnitario))}</strong>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <span className="text-xs text-ink-soft">
+                        {filasPegadas.length} ítems · neto{" "}
+                        {formatearPesos(filasPegadas.reduce((t, x) => t + Math.round(x.cantidad * x.precioUnitario), 0))}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => agregarPegadas(filasPegadas)}
+                        className="rounded-full bg-cyan px-4 py-2 text-xs font-semibold text-white hover:bg-cyan-deep"
+                      >
+                        Agregar {filasPegadas.length} ítems
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {lineas.length > 1 && (
+              <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-ink-soft">
+                <span className="font-semibold uppercase tracking-[0.1em]">A todas las líneas:</span>
+                <select
+                  aria-label="Categoría para todas las líneas"
+                  value=""
+                  onChange={(e) => e.target.value && aplicarATodas("categoria_id", e.target.value === "-" ? "" : e.target.value)}
+                  className="rounded-full border border-mist-deep bg-white px-3 py-1.5 text-xs font-semibold text-ink-soft"
+                >
+                  <option value="">Categoría…</option>
+                  <option value="-">— Sin categoría —</option>
+                  {delContrato.map((c) => (
+                    <option key={c.id} value={c.id}>{c.nombre}</option>
+                  ))}
+                </select>
+                <select
+                  aria-label="Tipo para todas las líneas"
+                  value=""
+                  onChange={(e) => e.target.value && aplicarATodas("tipo", e.target.value)}
+                  className="rounded-full border border-mist-deep bg-white px-3 py-1.5 text-xs font-semibold text-ink-soft"
+                >
+                  <option value="">Tipo…</option>
+                  {tiposCompra.map((t) => (
+                    <option key={t.id} value={t.id}>{t.titulo}</option>
+                  ))}
+                </select>
+                <span>Después cambia solo las excepciones.</span>
+              </div>
+            )}
 
             <div className="overflow-x-auto">
               <table className="w-full min-w-[52rem] border-collapse text-sm">
@@ -541,6 +678,7 @@ export function FormularioOrden({
                         <input
                           value={l.descripcion}
                           onChange={(e) => cambiar(l.id, "descripcion", e.target.value)}
+                          onPaste={alPegarEnCelda}
                           placeholder="Disco de corte 4½″"
                           className={claseCelda}
                         />
@@ -645,7 +783,7 @@ export function FormularioOrden({
             error={f.error}
             guardando={f.guardando}
             alCancelar={alCerrar}
-            textoGuardar={editando ? "Guardar cambios" : "Crear orden"}
+            textoGuardar={editando ? "Guardar cambios" : registrar ? "Registrar orden" : "Crear orden"}
             alEliminar={editando ? borrado.abrir : undefined}
           />
         </form>

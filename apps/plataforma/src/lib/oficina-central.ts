@@ -1,5 +1,6 @@
 "use client";
 
+import type { Haberes } from "./haberes";
 import { supabase } from "./supabase";
 
 export const categoriasOficina = [
@@ -45,4 +46,47 @@ export async function cargarEgresosOficina(): Promise<EgresoOficina[]> {
 
 export function totalOficina(filas: EgresoOficina[]) {
   return filas.reduce((total, fila) => total + fila.neto, 0);
+}
+
+/* ── Personal de Oficina Central ──────────────────────────────────────────── */
+
+/**
+ * La nómina de un mes del personal de Oficina Central. Es la misma ficha que
+ * el personal de un contrato (`Haberes`, migración 0052): un registro por mes
+ * con los totales, y el PDF de la nómina adjunto. `horas_extra_cantidad`,
+ * `total_haberes` y `costo_total` los calcula la base.
+ */
+export type NominaOficina = Haberes & {
+  id: string;
+  /** ISO del primer día del mes: "2026-09-01". */
+  periodo: string;
+  dotacion: number;
+  horas_hombre: number;
+  horas_extra_cantidad: number;
+  total_haberes: number;
+  costo_total: number;
+  observaciones: string | null;
+};
+
+const NUMERICAS = [
+  "dotacion", "horas_hombre",
+  "sueldo_bruto", "hh_reemplazo", "hh_parada_planta", "hh_feriado_compensado", "hh_apoyo_oficina", "hh_otras",
+  "horas_extra_monto", "total_no_imponible", "otros_haberes", "leyes_sociales",
+  "horas_extra_cantidad", "total_haberes", "costo_total",
+] as const;
+
+export async function cargarNominasOficina(): Promise<NominaOficina[]> {
+  const { data, error } = await supabase
+    .from("nominas_oficina_central")
+    .select(`id, periodo, observaciones, ${NUMERICAS.join(", ")}`)
+    .order("periodo", { ascending: false });
+  if (error) throw new Error(error.message);
+
+  return ((data ?? []) as unknown as Record<string, unknown>[]).map((n) => ({
+    id: n.id as string,
+    periodo: n.periodo as string,
+    observaciones: (n.observaciones as string | null) ?? null,
+    // Numeric de Postgres llega como texto: se convierte una vez acá.
+    ...(Object.fromEntries(NUMERICAS.map((k) => [k, Number(n[k] ?? 0)])) as Record<(typeof NUMERICAS)[number], number>),
+  }));
 }

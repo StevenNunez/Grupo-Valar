@@ -98,8 +98,12 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
   }, [datos.meses]);
 
   const periodosDatos = useMemo(
-    () => [...new Set([...datos.meses.map((f) => f.periodo), ...datos.oficina.map((f) => `${f.fecha.slice(0, 7)}-01`)])].sort(),
-    [datos.meses, datos.oficina],
+    () => [...new Set([
+      ...datos.meses.map((f) => f.periodo),
+      ...datos.oficina.map((f) => `${f.fecha.slice(0, 7)}-01`),
+      ...datos.personalOficina.map((f) => f.periodo),
+    ])].sort(),
+    [datos.meses, datos.oficina, datos.personalOficina],
   );
 
   const filas = useMemo(() => {
@@ -131,6 +135,16 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
     const meses = periodosDatos.slice(-Number(periodo)).map((p) => p.slice(0, 7));
     return datos.oficina.filter((f) => meses.includes(f.fecha.slice(0, 7)));
   }, [datos.oficina, periodo, periodosDatos]);
+
+  // Mismo recorte de período que los egresos de oficina.
+  const personalOficina = useMemo(() => {
+    const filas = esMes(periodo)
+      ? datos.personalOficina.filter((f) => f.periodo === mesDe(periodo))
+      : periodo === "todo"
+        ? datos.personalOficina
+        : datos.personalOficina.filter((f) => periodosDatos.slice(-Number(periodo)).includes(f.periodo));
+    return filas.reduce((t, f) => t + f.costo, 0);
+  }, [datos.personalOficina, periodo, periodosDatos]);
 
   const total = sumar(filas);
   const contratos = agruparPorContrato(filas);
@@ -173,7 +187,7 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
           su rentabilidad. Los egresos de Oficina Central aparecen debajo.
         </p>
       </div>
-      {contratoFiltro === "todos" && <ResumenOficina filas={oficinaVisible} margenContratos={0} />}
+      {contratoFiltro === "todos" && <ResumenOficina filas={oficinaVisible} personal={personalOficina} margenContratos={0} />}
       </>
     );
   }
@@ -231,7 +245,7 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
         ]}
       />
 
-      {contratoFiltro === "todos" && <ResumenOficina filas={oficinaVisible} margenContratos={total.margen} />}
+      {contratoFiltro === "todos" && <ResumenOficina filas={oficinaVisible} personal={personalOficina} margenContratos={total.margen} />}
 
       {/* ── Por contrato ───────────────────────────────────────────────────── */}
       {contratos.length > 1 && (
@@ -317,8 +331,9 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
   );
 }
 
-function ResumenOficina({ filas, margenContratos }: { filas: EgresoOficina[]; margenContratos: number }) {
-  const operativos = totalOficina(filas.filter((fila) => fila.categoria !== "activos"));
+function ResumenOficina({ filas, personal, margenContratos }: { filas: EgresoOficina[]; personal: number; margenContratos: number }) {
+  // La nómina de la oficina es gasto operativo: sin ella el resultado se ve mejor de lo que es.
+  const operativos = totalOficina(filas.filter((fila) => fila.categoria !== "activos")) + personal;
   const activos = totalOficina(filas.filter((fila) => fila.categoria === "activos"));
   return (
     <section className="mb-6 rounded-2xl border border-mist-deep bg-white p-6 lg:p-8">
@@ -330,13 +345,14 @@ function ResumenOficina({ filas, margenContratos }: { filas: EgresoOficina[]; ma
         <Link href="/control-de-gestion/egresos/oficina-central/" className="text-sm font-semibold text-cyan-deep hover:underline">Ver movimientos →</Link>
       </div>
       <Resumen datos={[
-        { etiqueta: "Gastos operativos", valor: formatearMonto(operativos), nota: "Compras, arriendos e insumos" },
+        { etiqueta: "Gastos operativos", valor: formatearMonto(operativos), nota: "Compras, arriendos, insumos y personal" },
         { etiqueta: "Compra de activos", valor: formatearMonto(activos), nota: "Inversión, separada del resultado" },
         { etiqueta: "Total egresos oficina", valor: formatearMonto(operativos + activos), nota: `${filas.length} movimientos registrados` },
         { etiqueta: "Resultado tras oficina", valor: formatearMonto(margenContratos - operativos), nota: "Resultado contratos menos gastos operativos" },
       ]} />
-      {filas.length > 0 && <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-ink-soft">
+      {(filas.length > 0 || personal > 0) && <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-ink-soft">
         {categoriasOficina.map((c) => <span key={c.id}>{c.titulo}: <strong className="text-ink">{formatearMonto(totalOficina(filas.filter((f) => f.categoria === c.id)))}</strong></span>)}
+        {personal > 0 && <span>Personal: <strong className="text-ink">{formatearMonto(personal)}</strong></span>}
       </div>}
     </section>
   );

@@ -47,6 +47,8 @@ export type Compra = {
   fecha: string;
   periodoControl: string;
   estadoPago: EstadoPagoCompra;
+  /** La OC de la que es factura. Esas se editan desde el ciclo de la orden. */
+  ordenId: string | null;
 };
 
 type FilaCompra = {
@@ -65,6 +67,7 @@ type FilaCompra = {
   fecha: string;
   periodo_control: string | null;
   estado_pago: EstadoPagoCompra;
+  orden_id: string | null;
   contratos: { nombre: string } | null;
 };
 
@@ -72,7 +75,7 @@ export async function cargarCompras(): Promise<Compra[]> {
   const { data, error } = await supabase
     .from("compras")
     .select(
-      "id, contrato_id, proveedor, proveedor_id, categoria_id, documento, detalle, tipo, neto, iva, total, fecha, periodo_control, estado_pago, datos, contratos(nombre)",
+      "id, contrato_id, proveedor, proveedor_id, categoria_id, documento, detalle, tipo, neto, iva, total, fecha, periodo_control, estado_pago, orden_id, datos, contratos(nombre)",
     )
     .order("fecha", { ascending: false });
 
@@ -95,7 +98,64 @@ export async function cargarCompras(): Promise<Compra[]> {
     fecha: f.fecha,
     periodoControl: f.periodo_control ?? `${f.fecha.slice(0, 7)}-01`,
     estadoPago: f.estado_pago,
+    ordenId: f.orden_id ?? null,
   }));
+}
+
+/**
+ * Las líneas de una compra directa (0053). Una compra anterior a las líneas no
+ * tiene ninguna: el formulario la muestra como una sola, con su detalle y neto.
+ */
+export async function cargarLineasDeCompra(compraId: string) {
+  const { data, error } = await supabase
+    .from("factura_items")
+    .select("item_id, items_compra(descripcion, unidad, cantidad, precio_unitario, categoria_id, tipo)")
+    .eq("compra_id", compraId)
+    .order("item_id");
+  if (error) throw new Error(error.message);
+  type Fila = { item_id: string; items_compra: { descripcion: string; unidad: string; cantidad: number; precio_unitario: number; categoria_id: string | null; tipo: TipoCompra } | null };
+  return ((data ?? []) as unknown as Fila[])
+    .filter((f) => f.items_compra)
+    .map((f) => ({
+      descripcion: f.items_compra!.descripcion,
+      unidad: f.items_compra!.unidad,
+      cantidad: Number(f.items_compra!.cantidad),
+      precio_unitario: Number(f.items_compra!.precio_unitario),
+      categoria_id: f.items_compra!.categoria_id ?? "",
+      tipo: f.items_compra!.tipo,
+    }));
+}
+
+/** Guarda la compra con sus líneas, entera o nada (función de la base, 0053). */
+export async function guardarCompraDirecta(datos: {
+  id: string;
+  contratoId: string;
+  proveedorId: string;
+  proveedor: string;
+  documento: string;
+  fecha: string;
+  periodoControl: string;
+  iva: number;
+  datos: Datos;
+  lineas: { descripcion: string; unidad: string; cantidad: number; precio_unitario: number; categoria_id: string; tipo: TipoCompra }[];
+}) {
+  const { error } = await supabase.rpc("guardar_compra_directa", {
+    p_id: datos.id,
+    p_contrato_id: datos.contratoId,
+    p_proveedor_id: datos.proveedorId,
+    p_proveedor: datos.proveedor,
+    p_documento: datos.documento,
+    p_fecha: datos.fecha,
+    p_periodo_control: datos.periodoControl,
+    p_iva: datos.iva,
+    p_datos: datos.datos,
+    p_lineas: datos.lineas,
+  });
+  if (error) {
+    throw new Error(/row-level security|permission denied/i.test(error.message)
+      ? "Tu acceso no permite este cambio (o ese contrato no está entre los tuyos)."
+      : error.message);
+  }
 }
 
 /* ── Personal ─────────────────────────────────────────────────────────────── */

@@ -15,13 +15,14 @@ import {
   useFormulario,
 } from "../ui/Formulario";
 import { actualizar, crear } from "@/lib/crud";
-import { borrarContratoDemo, type ResumenBorradoContratoDemo } from "@/lib/contratos";
+import { borrarContratoDemo, estadosContrato, type ResumenBorradoContratoDemo } from "@/lib/contratos";
 import { useUsuario } from "@/lib/sesion";
 import { plantillasEdp, type PlantillaEdp } from "@/lib/plantillas-edp";
 import {
   formasContrato,
   modalidades,
   type Contrato,
+  type EstadoContrato,
   type FormaContrato,
   type Modalidad,
 } from "@/lib/control-de-gestion";
@@ -37,6 +38,7 @@ type Borrador = {
   modalidad: Modalidad;
   tipo: FormaContrato;
   plantilla_edp: PlantillaEdp;
+  estado: EstadoContrato;
 };
 
 function borradorDe(c: Contrato | null): Borrador {
@@ -51,6 +53,7 @@ function borradorDe(c: Contrato | null): Borrador {
     modalidad: c?.modalidad ?? "largo_plazo",
     tipo: c?.forma ?? "precios_unitarios",
     plantilla_edp: c?.plantillaEdp ?? "general",
+    estado: c?.estado ?? "activo",
   };
 }
 
@@ -243,6 +246,23 @@ export function FormularioContrato({
               ayuda={plantillasEdp.find((p) => p.id === f.datos.plantilla_edp)?.ayuda}
               {...f.campo("plantilla_edp")}
             />
+
+            {/* Vigente, por vencer o cerrado salen solos de las fechas. Lo único
+                que el calendario no sabe es si se canceló antes: eso se marca
+                acá, y por eso no aparece al crear uno. */}
+            {editando && (
+              <CampoSeleccion
+                etiqueta="Estado"
+                requerido
+                opciones={estadosContrato}
+                ayuda={
+                  f.datos.estado === "cancelado"
+                    ? "Terminó antes de plazo. Sale de los vigentes y de los montos por ejecutar."
+                    : "La vigencia sale de las fechas. Márcalo cancelado solo si terminó antes de plazo."
+                }
+                {...f.campo("estado")}
+              />
+            )}
 
             <Ancho>
               <p className="rounded-xl border border-mist-deep bg-mist/30 px-4 py-3 text-sm text-ink-soft">

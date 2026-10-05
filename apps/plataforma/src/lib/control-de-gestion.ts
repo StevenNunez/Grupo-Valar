@@ -31,7 +31,8 @@ export function mesesDelPeriodo(periodo: Periodo, disponibles: number) {
   return disponibles;
 }
 
-export type EstadoContrato = "en-plazo" | "en-riesgo" | "atrasado" | "cerrado";
+/** Lo que el calendario no sabe: si se canceló antes de tiempo. Ver la 0047. */
+export type EstadoContrato = "activo" | "cancelado";
 
 export type Contrato = {
   id: string;
@@ -103,12 +104,13 @@ export const formasContrato: { id: FormaContrato; titulo: string; ayuda: string 
 ];
 
 /** La vigencia no se teclea: sale de la fecha de término que rige hoy. */
-export type Vigencia = "vigente" | "por-vencer" | "cerrado";
+export type Vigencia = "vigente" | "por-vencer" | "cerrado" | "cancelado";
 
 export const vigencias: Record<Vigencia, string> = {
   vigente: "Vigente",
   "por-vencer": "Por vencer",
   cerrado: "Cerrado",
+  cancelado: "Cancelado",
 };
 
 export type MesFacturado = {

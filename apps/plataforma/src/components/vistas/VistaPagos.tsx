@@ -3,8 +3,6 @@
 import { useMemo, useState } from "react";
 import { Chip, type Tono } from "../ui/Chip";
 import {
-  Ancho,
-  CampoDinero,
   CampoFecha,
   CampoTexto,
   Campos,
@@ -16,9 +14,11 @@ import { Tabla, Total, type Columna } from "../ui/Tabla";
 import { Contenido, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
 import { BotonImprimir, Impresion } from "../ui/Impresion";
 import { CuadroDePago } from "../CuadroDePago";
+import { CicloOrden } from "../CicloOrden";
 import { useConsulta } from "@/lib/consulta";
 import { formatearFecha, formatearMonto, formatearPesos } from "@/lib/formato";
 import { formatearRut } from "@/lib/abastecimiento";
+import { cargarOrden } from "@/lib/ordenes";
 import { usePuede } from "@/lib/sesion";
 import {
   armarNomina,
@@ -26,7 +26,6 @@ import {
   cargarCuentasPorPagar,
   cargarFlujoDePagos,
   cargarParametrosPago,
-  facturarOrden,
   marcarPagada,
   nombreEstadoCuenta,
   nombreEstadoDocumento,
@@ -250,7 +249,15 @@ function Tablero({ datos, recargar }: { datos: Datos; recargar: () => void }) {
         </Panel>
       )}
 
-      {facturando && (
+      {facturando?.origen === "orden" && facturando.ordenId && (
+        <FacturaDeOrden
+          ordenId={facturando.ordenId}
+          alCerrar={() => setFacturando(null)}
+          alCambiar={recargar}
+        />
+      )}
+
+      {facturando && facturando.origen !== "orden" && (
         <DialogoFactura
           linea={facturando}
           plazoPorDefecto={datos.parametros.plazoPagoDias}
@@ -764,11 +771,7 @@ function DialogoFactura({
     documento: "",
     fechaFactura: hoy,
     vencimiento: sumarDias(hoy, plazo),
-    neto: linea.neto,
-    iva: Math.round(linea.neto * 0.19),
   });
-
-  const esOrden = linea.origen === "orden";
 
   return (
     <Dialogo
@@ -781,26 +784,11 @@ function DialogoFactura({
         onSubmit={(e) => {
           e.preventDefault();
           f.enviar(async () => {
-            if (esOrden) {
-              await facturarOrden({
-                ordenId: linea.ordenId!,
-                contratoId: linea.contratoId,
-                proveedorId: linea.proveedorId,
-                proveedor: linea.proveedor,
-                documento: f.datos.documento,
-                fechaFactura: f.datos.fechaFactura,
-                vencimiento: f.datos.vencimiento || null,
-                neto: f.datos.neto,
-                iva: f.datos.iva,
-                detalle: `Factura ${f.datos.documento} · ${linea.ordenNumero ?? "sin orden"}`,
-              });
-            } else {
-              await registrarFactura(linea.compraId!, {
-                documento: f.datos.documento,
-                fechaFactura: f.datos.fechaFactura,
-                vencimiento: f.datos.vencimiento || null,
-              });
-            }
+            await registrarFactura(linea.compraId!, {
+              documento: f.datos.documento,
+              fechaFactura: f.datos.fechaFactura,
+              vencimiento: f.datos.vencimiento || null,
+            });
           }, () => {
             alGuardado();
             alCerrar();
@@ -829,29 +817,6 @@ function DialogoFactura({
             ayuda={`${plazo} días desde la factura. Se puede cambiar si se pactó otra cosa.`}
             {...f.campo("vencimiento")}
           />
-
-          {esOrden && (
-            <>
-              <CampoDinero
-                etiqueta="Neto facturado"
-                ayuda="Viene del saldo sin facturar de la orden."
-                valor={f.datos.neto}
-                alCambiar={(v) => {
-                  f.cambiar("neto", v);
-                  f.cambiar("iva", Math.round(v * 0.19));
-                }}
-              />
-              <CampoDinero etiqueta="IVA" {...f.campo("iva")} />
-              <Ancho>
-                <p className="rounded-xl bg-mist px-4 py-3 text-sm leading-relaxed text-ink-soft">
-                  Se crea la línea de compra del contrato{" "}
-                  <strong className="text-ink">{linea.contrato}</strong> y se le enganchan
-                  los ítems de la orden que todavía no estaban facturados. El costo del
-                  contrato no cambia: esos ítems ya pesaban desde que se emitió la orden.
-                </p>
-              </Ancho>
-            </>
-          )}
         </Campos>
 
         <Pie
@@ -927,4 +892,24 @@ function sumarDias(iso: string, dias: number) {
   const f = new Date(`${iso}T12:00:00`);
   f.setDate(f.getDate() + dias);
   return f.toISOString().slice(0, 10);
+}
+
+/* ── La factura de una OC ─────────────────────────────────────────────────── */
+
+/**
+ * La factura que llega contra una OC se registra por líneas: puede cubrir una
+ * parte, y la orden puede tener varias. Se abre el ciclo de la orden directo en
+ * "Agregar factura", el mismo que se usa desde Compras y desde Órdenes.
+ */
+function FacturaDeOrden({ ordenId, alCerrar, alCambiar }: { ordenId: string; alCerrar: () => void; alCambiar: () => void }) {
+  const { estado } = useConsulta(() => cargarOrden(ordenId));
+  if (estado.estado === "error") {
+    return (
+      <Dialogo titulo="Registrar factura" abierto alCerrar={alCerrar}>
+        <p className="px-6 py-10 text-center text-sm text-[#a52f24]">{estado.mensaje}</p>
+      </Dialogo>
+    );
+  }
+  if (estado.estado !== "listo") return null;
+  return <CicloOrden orden={estado.datos} modoInicial="facturar" alCerrar={alCerrar} alCambiar={alCambiar} />;
 }

@@ -17,10 +17,8 @@ import type {
  */
 
 export const estadosContrato: { id: EstadoContrato; titulo: string }[] = [
-  { id: "en-plazo", titulo: "En plazo" },
-  { id: "en-riesgo", titulo: "En riesgo" },
-  { id: "atrasado", titulo: "Atrasado" },
-  { id: "cerrado", titulo: "Cerrado" },
+  { id: "activo", titulo: "Activo" },
+  { id: "cancelado", titulo: "Cancelado" },
 ];
 
 /** Lo mínimo para llenar un selector de contrato en los formularios. */
@@ -28,13 +26,15 @@ export type ContratoBreve = {
   id: string;
   nombre: string;
   cliente: string;
+  /** Dónde se presta el servicio. El personal del contrato la hereda. */
+  faena: string;
   plantillaEdp: PlantillaEdp;
 };
 
 export async function cargarContratosBreve(): Promise<ContratoBreve[]> {
   const { data, error } = await supabase
     .from("contratos")
-    .select("id, nombre, cliente, plantilla_edp")
+    .select("id, nombre, cliente, faena, plantilla_edp")
     .order("id");
 
   if (error) throw new Error(error.message);
@@ -42,6 +42,7 @@ export async function cargarContratosBreve(): Promise<ContratoBreve[]> {
     id: fila.id,
     nombre: fila.nombre,
     cliente: fila.cliente,
+    faena: fila.faena ?? "",
     plantillaEdp: fila.plantilla_edp as PlantillaEdp,
   }));
 }
