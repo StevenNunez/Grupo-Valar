@@ -35,6 +35,7 @@ import {
   type Orden,
 } from "@/lib/ordenes";
 import { leerPegado, type FilaPegada } from "@/lib/pegado";
+import { CampoConPagnol, unidadDesdePagnol } from "../ui/CampoConPagnol";
 import type { Usuario } from "@/lib/sesion";
 
 /**
@@ -82,6 +83,10 @@ type Linea = {
   precio_unitario: number;
   tipo: "ordinario" | "reembolsable";
   categoria_id: string;
+  /** El material en Pagnol, si se eligió de su catálogo. Solo la referencia. */
+  pagnol_material_id: string;
+  /** Su código, para mostrarlo bajo la descripción mientras se edita. */
+  pagnol_codigo: string;
   /** Los que ya existen en la base se actualizan; los nuevos se insertan. */
   nuevo: boolean;
 };
@@ -159,6 +164,8 @@ function lineaVacia(n: number): Linea {
     precio_unitario: 0,
     tipo: "ordinario",
     categoria_id: "",
+    pagnol_material_id: "",
+    pagnol_codigo: "",
     nuevo: true,
   };
 }
@@ -225,6 +232,8 @@ export function FormularioOrden({
             precio_unitario: i.precioUnitario,
             tipo: i.tipo,
             categoria_id: i.categoriaId ?? "",
+            pagnol_material_id: i.pagnolMaterialId ?? "",
+            pagnol_codigo: "",
             nuevo: false,
           })),
         );
@@ -381,6 +390,7 @@ export function FormularioOrden({
           contrato_id: cabecera.contrato_id,
           orden_id: ordenId,
           categoria_id: l.categoria_id || null,
+          pagnol_material_id: l.pagnol_material_id || null,
           descripcion: l.descripcion.trim(),
           unidad: l.unidad || "UN",
           cantidad: l.cantidad || 1,
@@ -675,9 +685,23 @@ export function FormularioOrden({
                   {lineas.map((l) => (
                     <tr key={l.id} className="border-b border-mist last:border-0">
                       <td className="py-2 pr-3">
-                        <input
-                          value={l.descripcion}
-                          onChange={(e) => cambiar(l.id, "descripcion", e.target.value)}
+                        <CampoConPagnol
+                          ariaLabel="Descripción"
+                          valor={l.descripcion}
+                          // Escribir a mano suelta la referencia: ya no es ese material.
+                          alCambiar={(v) =>
+                            setLineas((ls) => ls.map((x) => (x.id === l.id ? { ...x, descripcion: v, pagnol_material_id: "", pagnol_codigo: "" } : x)))
+                          }
+                          alElegir={(m) =>
+                            setLineas((ls) =>
+                              ls.map((x) =>
+                                x.id === l.id
+                                  ? { ...x, descripcion: m.nombre, unidad: unidadDesdePagnol(m.unidad_medida), pagnol_material_id: m.id, pagnol_codigo: m.codigo }
+                                  : x,
+                              ),
+                            )
+                          }
+                          enlazado={l.pagnol_material_id ? l.pagnol_codigo || "enlazado" : null}
                           onPaste={alPegarEnCelda}
                           placeholder="Disco de corte 4½″"
                           className={claseCelda}

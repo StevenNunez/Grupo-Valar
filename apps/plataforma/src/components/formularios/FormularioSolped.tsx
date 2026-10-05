@@ -27,6 +27,7 @@ import {
 } from "@/lib/abastecimiento";
 import type { FilaCategoria } from "@/lib/dashboard";
 import { useUsuario } from "@/lib/sesion";
+import { CampoConPagnol, unidadDesdePagnol } from "../ui/CampoConPagnol";
 
 /**
  * La solicitud de pedido.
@@ -56,6 +57,9 @@ type Linea = {
   cantidad: number;
   categoria_id: string;
   observacion: string;
+  /** El material en Pagnol, si se eligió de su catálogo. Solo la referencia. */
+  pagnol_material_id: string;
+  pagnol_codigo: string;
   nuevo: boolean;
 };
 
@@ -67,6 +71,8 @@ const lineaVacia = (n: number): Linea => ({
   cantidad: 1,
   categoria_id: "",
   observacion: "",
+  pagnol_material_id: "",
+  pagnol_codigo: "",
   nuevo: true,
 });
 
@@ -161,6 +167,8 @@ export function FormularioSolped({
           cantidad: i.cantidad,
           categoria_id: i.categoriaId ?? "",
           observacion: i.observacion ?? "",
+          pagnol_material_id: i.pagnolMaterialId ?? "",
+          pagnol_codigo: "",
           nuevo: false,
         })),
       );
@@ -258,6 +266,7 @@ export function FormularioSolped({
             solped_id: solpedId,
             linea: n,
             articulo_id: l.articulo_id || null,
+            pagnol_material_id: l.pagnol_material_id || null,
             descripcion: l.descripcion.trim(),
             unidad: l.unidad.trim() || "un",
             cantidad: l.cantidad || 1,
@@ -405,10 +414,25 @@ export function FormularioSolped({
                         {/* Autocompleta con el catálogo. Al elegir uno queda
                             enlazado, y con eso la solicitud de cotización sale
                             con el nombre técnico que el proveedor entiende. */}
-                        <input
+                        <CampoConPagnol
+                          ariaLabel="Descripción"
                           list="catalogo-articulos"
-                          value={l.descripcion}
-                          onChange={(e) => elegirArticulo(l.id, e.target.value)}
+                          valor={l.descripcion}
+                          alCambiar={(v) => {
+                            // Escribir a mano suelta la referencia a Pagnol: ya no es ese material.
+                            cambiar(l.id, "pagnol_material_id", "");
+                            elegirArticulo(l.id, v);
+                          }}
+                          alElegir={(m) =>
+                            setLineas((ls) =>
+                              ls.map((x) =>
+                                x.id === l.id
+                                  ? { ...x, articulo_id: "", descripcion: m.nombre, unidad: unidadDesdePagnol(m.unidad_medida), pagnol_material_id: m.id, pagnol_codigo: m.codigo }
+                                  : x,
+                              ),
+                            )
+                          }
+                          enlazado={l.pagnol_material_id ? l.pagnol_codigo || "enlazado" : null}
                           placeholder="Cinta aisladora color rojo"
                           className={claseCelda}
                         />

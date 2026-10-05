@@ -1,5 +1,8 @@
 "use client";
 
+import { useState } from "react";
+import { BuscadorProveedorPagnol } from "../ui/BuscadorProveedorPagnol";
+import type { ProveedorPagnol } from "@/lib/pagnol/tipos";
 import {
   Ancho,
   CampoSeleccion,
@@ -46,6 +49,8 @@ type Borrador = {
   rubros: string;
   estado: EstadoProveedor;
   observaciones: string;
+  /** El mismo proveedor en Pagnol. Solo la referencia (contrato con Pagnol). */
+  pagnol_proveedor_id: string;
 };
 
 function borradorDe(p: Proveedor | null, todos: Proveedor[]): Borrador {
@@ -71,6 +76,7 @@ function borradorDe(p: Proveedor | null, todos: Proveedor[]): Borrador {
       rubros: "",
       estado: "activo",
       observaciones: "",
+      pagnol_proveedor_id: "",
     };
   }
   return {
@@ -94,6 +100,7 @@ function borradorDe(p: Proveedor | null, todos: Proveedor[]): Borrador {
     rubros: p.rubros.join(", "),
     estado: p.estado,
     observaciones: p.observaciones ?? "",
+    pagnol_proveedor_id: p.pagnolProveedorId ?? "",
   };
 }
 
@@ -117,6 +124,23 @@ export function FormularioProveedor({
 }) {
   const f = useFormulario<Borrador>(borradorDe(proveedor, proveedores));
   const editando = proveedor !== null;
+  // El nombre con que se enlazó en esta edición; si ya venía enlazado, basta con saberlo.
+  const [nombrePagnol, setNombrePagnol] = useState<string | null>(null);
+
+  /* Lo que Pagnol tiene se copia; lo que no (banco, cuenta, plazo) se completa acá.
+     No se pisa lo que ya estaba escrito con un vacío de Pagnol. */
+  function elegirDePagnol(p: ProveedorPagnol) {
+    setNombrePagnol(p.razon_social);
+    f.setDatos((d) => ({
+      ...d,
+      pagnol_proveedor_id: p.id,
+      razon_social: p.razon_social || d.razon_social,
+      rut: p.rut ? formatearRut(p.rut) : d.rut,
+      nombre_fantasia: p.nombre_fantasia ?? d.nombre_fantasia,
+      correo: p.email ?? d.correo,
+      telefono: p.telefono ?? d.telefono,
+    }));
+  }
   const borrado = useBorrado("proveedores", proveedor?.id, () => {
     alGuardado();
     alCerrar();
@@ -150,6 +174,7 @@ export function FormularioProveedor({
       tipo_cuenta: campos.tipo_cuenta.trim() || null,
       numero_cuenta: campos.numero_cuenta.trim() || null,
       observaciones: campos.observaciones.trim() || null,
+      pagnol_proveedor_id: campos.pagnol_proveedor_id || null,
       // "Ferretería, EPP, aceros" → tres rubros. Se escribe con comas porque es
       // como los dicta cualquiera, y se guarda como lista para poder filtrar.
       rubros: rubros
@@ -184,6 +209,17 @@ export function FormularioProveedor({
       >
         <form onSubmit={onSubmit}>
           <Campos>
+            <Ancho>
+              <BuscadorProveedorPagnol
+                enlazado={f.datos.pagnol_proveedor_id ? (nombrePagnol ?? f.datos.razon_social) : null}
+                alElegir={elegirDePagnol}
+                alSoltar={() => {
+                  setNombrePagnol(null);
+                  f.cambiar("pagnol_proveedor_id", "");
+                }}
+              />
+            </Ancho>
+
             <CampoTexto
               etiqueta="RUT"
               marcador="77.256.185-7"

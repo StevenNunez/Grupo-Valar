@@ -35,6 +35,9 @@ function traducir(mensaje: string) {
   if (/violates row-level security|permission denied/i.test(mensaje)) {
     return "Tu acceso no permite este cambio (o ese contrato no está entre los tuyos).";
   }
+  if (/proveedores_pagnol_unico/.test(mensaje)) {
+    return "Ese proveedor de Pagnol ya está enlazado a otra ficha. Quita el enlace de la otra antes.";
+  }
   if (/duplicate key|already exists/i.test(mensaje)) {
     return "Ya existe un registro con ese código. Usa uno distinto.";
   }

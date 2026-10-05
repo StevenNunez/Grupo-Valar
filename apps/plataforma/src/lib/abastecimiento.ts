@@ -47,6 +47,8 @@ export type Proveedor = {
   rubros: string[];
   estado: EstadoProveedor;
   observaciones: string | null;
+  /** El mismo proveedor en Pagnol, si se enlazó. Solo la referencia. */
+  pagnolProveedorId: string | null;
 };
 
 type FilaProveedor = {
@@ -70,6 +72,7 @@ type FilaProveedor = {
   rubros: string[] | null;
   estado: EstadoProveedor;
   observaciones: string | null;
+  pagnol_proveedor_id?: string | null;
 };
 
 function mapearProveedor(f: FilaProveedor): Proveedor {
@@ -94,6 +97,7 @@ function mapearProveedor(f: FilaProveedor): Proveedor {
     rubros: f.rubros ?? [],
     estado: f.estado,
     observaciones: f.observaciones,
+    pagnolProveedorId: f.pagnol_proveedor_id ?? null,
   };
 }
 
@@ -359,6 +363,8 @@ export type ItemSolped = {
   observacion: string | null;
   /** Del maestro, cuando el ítem quedó enlazado. */
   articuloId: string | null;
+  /** El material en Pagnol, si se eligió de ahí. Solo la referencia. */
+  pagnolMaterialId: string | null;
   /** Con el que hay que pedirlo: el técnico si se conoce, si no el de faena. */
   nombreParaPedir: string;
   especificacion: string | null;
@@ -392,6 +398,7 @@ export async function cargarItemsDeSolped(solpedId: string): Promise<ItemSolped[
       categoriaId: (f.categoria_id as string | null) ?? null,
       observacion: (f.observacion as string | null) ?? null,
       articuloId: (f.articulo_id as string | null) ?? null,
+      pagnolMaterialId: (f.pagnol_material_id as string | null) ?? null,
       nombreParaPedir: articulo?.nombre_tecnico?.trim() || descripcion,
       especificacion: articulo?.especificacion ?? null,
     };
@@ -1204,6 +1211,8 @@ export async function generarOrdenDesdeCotizacion({
       contrato_id: solped.contratoId,
       orden_id: ordenId,
       solped_item_id: i.solpedItemId,
+      // Lo que se pidió del catálogo de Pagnol se compra con la misma referencia.
+      pagnol_material_id: pedido?.pagnolMaterialId ?? null,
       categoria_id: pedido?.categoriaId ?? null,
       descripcion: pedido?.descripcion ?? "Ítem cotizado",
       unidad: pedido?.unidad ?? "un",

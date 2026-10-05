@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
  * Cliente de Supabase para el navegador.
  *
  * La clave que va acá es la *publishable* (anon), y es pública a propósito:
- * viaja dentro del bundle porque la app es un export estático. Lo que impide
+ * viaja dentro del bundle porque los datos los pide el navegador. Lo que impide
  * que alguien lea datos con ella son las políticas RLS de Postgres
  * (ver `supabase/migraciones/`), no el secreto de la clave.
  *
@@ -15,7 +15,7 @@ import { createClient } from "@supabase/supabase-js";
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-// Con `output: "export"` estos valores se incrustan en el build. Si faltan, el
+// Estos valores se incrustan en el build (NEXT_PUBLIC_). Si faltan, el
 // error tiene que salir acá y no como un "fetch failed" incomprensible después.
 if (!url || !anonKey) {
   throw new Error(
