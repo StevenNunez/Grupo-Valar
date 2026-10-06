@@ -42,3 +42,20 @@ export function clientePagnol(tag: TagPagnol, segundos = 300) {
       }),
   });
 }
+
+/**
+ * Para escribir (Fase 2: activos, movimientos). Sin caché: una escritura nunca
+ * se sirve de memoria. Cada llamada lleva su propia `Idempotency-Key`.
+ */
+export function clientePagnolEscritura() {
+  const baseUrl = process.env.PAGNOL_API_URL;
+  const llave = process.env.PAGNOL_API_KEY;
+  if (!baseUrl || !llave) {
+    throw new PagnolNoConfigurado("Faltan PAGNOL_API_URL o PAGNOL_API_KEY en las variables del servidor.");
+  }
+  return createClient<paths>({
+    baseUrl,
+    headers: { Authorization: `Bearer ${llave}` },
+    fetch: (pedido: Request) => fetch(pedido, { signal: AbortSignal.timeout(ESPERA_MAXIMA_MS), cache: "no-store" }),
+  });
+}

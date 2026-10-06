@@ -31,6 +31,8 @@ export type LineaCiclo = {
   sinRecibir: number;
   recibidaSinFacturar: number;
   porRecibir: number;
+  /** Del catálogo de Pagnol, si la línea salió de ahí: al recibirla se informa. */
+  pagnolMaterialId: string | null;
 };
 
 export type RecepcionCiclo = {
@@ -40,6 +42,8 @@ export type RecepcionCiclo = {
   recibidoPor: string | null;
   observaciones: string | null;
   lineas: { itemId: string; cantidad: number }[];
+  /** Lo que se le informó a Pagnol de esta recepción (0055). Null si no tenía líneas de Pagnol. */
+  pagnol: { total: number; enviados: number; errores: string[] } | null;
 };
 
 export type NotaCreditoCiclo = {
@@ -73,7 +77,7 @@ const n = (v: unknown) => Number(v ?? 0);
 
 export async function cargarCiclo(ordenId: string): Promise<CicloOrden> {
   const [items, avance, recepciones, facturas] = await Promise.all([
-    supabase.from("items_compra").select("id, descripcion, unidad, precio_unitario").eq("orden_id", ordenId).order("id"),
+    supabase.from("items_compra").select("id, descripcion, unidad, precio_unitario, pagnol_material_id").eq("orden_id", ordenId).order("id"),
     supabase.from("items_avance").select("*").eq("orden_id", ordenId),
     supabase
       .from("recepciones")
@@ -93,6 +97,18 @@ export async function cargarCiclo(ordenId: string): Promise<CicloOrden> {
   if (fallo) throw new Error(fallo.message);
 
   const porId = new Map((avance.data ?? []).map((a) => [a.id as string, a]));
+
+  /* Lo informado a Pagnol, por recepción. Si la tabla no existe todavía (0055
+     sin aplicar) la pantalla sigue igual, sin el estado de Pagnol. */
+  const idsRecepcion = (recepciones.data ?? []).map((r) => (r as { id: string }).id);
+  const envios = idsRecepcion.length
+    ? await supabase.from("pagnol_envios").select("recepcion_id, tipo, estado, error, external_ref").in("recepcion_id", idsRecepcion)
+    : { data: [], error: null };
+  const enviosPor = new Map<string, { tipo: string; estado: string; error: string | null; external_ref: string }[]>();
+  for (const e of (envios.error ? [] : envios.data ?? []) as { recepcion_id: string; tipo: string; estado: string; error: string | null; external_ref: string }[]) {
+    if (e.tipo !== "activo" && e.tipo !== "ingreso") continue;
+    enviosPor.set(e.recepcion_id, [...(enviosPor.get(e.recepcion_id) ?? []), e]);
+  }
   type Detalle = { item_id: string; cantidad: unknown }[] | null;
   const lineasDe = (d: Detalle) => (d ?? []).map((x) => ({ itemId: x.item_id, cantidad: n(x.cantidad) }));
 
@@ -114,6 +130,7 @@ export async function cargarCiclo(ordenId: string): Promise<CicloOrden> {
         sinRecibir: n(a.sin_recibir),
         recibidaSinFacturar: n(a.recibida_sin_facturar),
         porRecibir: n(a.por_recibir),
+        pagnolMaterialId: (i.pagnol_material_id as string | null) ?? null,
       };
     }),
     recepciones: ((recepciones.data ?? []) as unknown as {
@@ -126,6 +143,13 @@ export async function cargarCiclo(ordenId: string): Promise<CicloOrden> {
       recibidoPor: r.recibido_por,
       observaciones: r.observaciones,
       lineas: lineasDe(r.recepcion_items),
+      pagnol: enviosPor.has(r.id)
+        ? {
+            total: enviosPor.get(r.id)!.length,
+            enviados: enviosPor.get(r.id)!.filter((e) => e.estado === "enviado").length,
+            errores: [...new Set(enviosPor.get(r.id)!.filter((e) => e.estado === "error").map((e) => e.error ?? "Error sin detalle"))],
+          }
+        : null,
     })),
     facturas: ((facturas.data ?? []) as unknown as {
       id: string; documento: string | null; fecha_factura: string | null; fecha_vencimiento: string | null;
@@ -168,15 +192,17 @@ async function llamar<T>(funcion: string, argumentos: Record<string, unknown>): 
   return data as T;
 }
 
-export function registrarRecepcion(datos: {
+export async function registrarRecepcion(datos: {
   ordenId: string;
   fecha: string;
   guia: string;
   recibidoPor: string;
   observaciones: string;
   lineas: CantidadPorLinea;
+  /** Pañol de Pagnol donde entra. Solo cuando hay líneas del catálogo de Pagnol. */
+  panolId?: string | null;
 }) {
-  return llamar<string>("registrar_recepcion", {
+  const id = await llamar<string>("registrar_recepcion", {
     p_orden_id: datos.ordenId,
     p_fecha: datos.fecha,
     p_guia: datos.guia,
@@ -184,6 +210,11 @@ export function registrarRecepcion(datos: {
     p_observaciones: datos.observaciones,
     p_lineas: datos.lineas,
   });
+  if (datos.panolId) {
+    const { error } = await supabase.from("recepciones").update({ pagnol_panol_id: datos.panolId }).eq("id", id);
+    if (error) throw new Error(traducir(error.message));
+  }
+  return id;
 }
 
 export async function registrarFacturaOC(datos: {

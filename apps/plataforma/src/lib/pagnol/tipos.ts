@@ -8,3 +8,15 @@ export type ProveedorPagnol = components["schemas"]["Proveedor"];
 export type Resultado<T> =
   | { ok: true; datos: T[]; siguiente: string | null }
   | { ok: false; error: string };
+
+/** Lo que la plataforma usa de un pañol (`GET /panoles`). */
+export type PanolPagnol = { id: string; nombre: string; ubicacion: string | null; activo: boolean };
+
+/** Cómo quedó lo que se le informó a Pagnol de una recepción. */
+export type ResumenEnvio = {
+  /** Envíos directos (activos por unidad + ingresos de stock). */
+  total: number;
+  enviados: number;
+  /** Lo que falló o no se pudo preparar, escrito para la pantalla. */
+  errores: string[];
+};

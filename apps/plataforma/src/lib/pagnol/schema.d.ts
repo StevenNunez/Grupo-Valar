@@ -137,7 +137,11 @@ export interface paths {
          */
         get: operations["listActivos"];
         put?: never;
-        post?: never;
+        /**
+         * Crea UNA unidad rastreable al recibirla (una llamada por unidad).
+         * @description Requiere `activos:write`. Copia los datos del ítem del catálogo, le asigna código y QR propios, y la deja en el pañol indicado. No genera gasto en Pagnol: el gasto vive en el sistema que compró. Repetir la misma `external_ref` devuelve el activo ya creado (200).
+         */
+        post: operations["createActivo"];
         delete?: never;
         options?: never;
         head?: never;
@@ -158,6 +162,70 @@ export interface paths {
         get: operations["getActivo"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Cambia el estado y/o la ubicación de un activo.
+         * @description Requiere `activos:write`. `de_baja` lo marca para baja (no borra nada). Un activo archivado en Pagnol responde 409.
+         */
+        patch: operations["patchActivo"];
+        trace?: never;
+    };
+    "/panoles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pañoles (bodegas) de la empresa, con los contratos que atienden.
+         * @description Requiere `activos:read`, `materiales:read` o `productos:read`. Una sola página.
+         */
+        get: operations["listPanoles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/materiales/{id}/existencias": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cuánto hay de un material (o activo) en cada pañol y contrato.
+         * @description Requiere `materiales:read`, `productos:read` o `activos:read`.
+         */
+        get: operations["getExistencias"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/movimientos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ingresa stock de un consumible al recibirlo, o revierte un ingreso.
+         * @description Requiere `stock:write`. Sólo materiales NO rastreables. Un reverso es un movimiento nuevo que descuenta lo ingresado (nunca se borra el original); si esas unidades ya se entregaron o movieron, responde 409 y se ajusta en Pagnol. No genera gasto en Pagnol.
+         */
+        post: operations["createMovimiento"];
         delete?: never;
         options?: never;
         head?: never;
@@ -183,6 +251,10 @@ export interface components {
             stock_minimo: number | null;
             /** @description `false` si el material fue archivado o eliminado. */
             activo: boolean;
+            /** @description `true`: cada unidad es un activo con su propio código y QR; al recibirlo se crea con `POST /activos`, una llamada por unidad. `false`: se controla por cantidad; al recibirlo se ingresa con `POST /movimientos`. */
+            rastreable: boolean;
+            /** @description Tipo de uso tal como está en Pagnol (ej. "Herramienta Menor", "Consumible"). */
+            tipo_uso: string | null;
             /** Format: date-time */
             updated_at: string;
         };
@@ -224,6 +296,12 @@ export interface components {
             /** @description `null` cuando no hay más páginas. */
             next_cursor: string | null;
         };
+        /** @description Pañol donde está. `null` si está prestado, sin pañol asignado, o repartido en varios lugares (ver `/materiales/{id}/existencias`). */
+        Ref: {
+            /** Format: uuid */
+            id: string;
+            nombre: string;
+        } | null;
         Activo: {
             /** Format: uuid */
             id: string;
@@ -232,20 +310,23 @@ export interface components {
             nombre: string;
             /**
              * Format: uuid
-             * @description Reservado. Siempre `null` en esta versión.
+             * @description Ítem del catálogo desde el que se creó esta unidad (`POST /activos`). `null` en los activos cargados directamente en Pagnol.
              */
             material_id: string | null;
             /** Format: uuid */
             proveedor_id: string | null;
             /** @enum {string} */
             estado: "operativo" | "en_mantencion" | "de_baja" | "extraviado";
+            /** @description Ubicación descriptiva (texto libre). */
             ubicacion: string | null;
-            /** @description Reservado. Siempre `null` en esta versión. */
+            panol: components["schemas"]["Ref"];
+            contrato: components["schemas"]["Ref"] & unknown;
+            /** @description Quién lo tiene en su poder (última entrega sin devolución). `null` si está en el pañol. */
             responsable: string | null;
             valor_compra: number | null;
             /** @description Fecha (YYYY-MM-DD). */
             fecha_compra: string | null;
-            /** @description Referencia al sistema que originó el activo. Siempre `null` en esta versión. */
+            /** @description Referencia del sistema que originó el activo (ej. `valar:recepcion:…:unidad:2`). */
             external_ref: string | null;
             /** Format: date-time */
             updated_at: string;
@@ -254,6 +335,96 @@ export interface components {
             data: components["schemas"]["Activo"][];
             /** @description `null` cuando no hay más páginas. */
             next_cursor: string | null;
+        };
+        Panol: {
+            /** Format: uuid */
+            id: string;
+            nombre: string;
+            ubicacion: string | null;
+            /** @description `false` si el pañol está inactivo (no recibe ingresos). */
+            activo: boolean;
+            /** @description Contratos que atiende el pañol. */
+            contratos: (components["schemas"]["Ref"] & Record<string, never>)[];
+        };
+        PanolList: {
+            data: components["schemas"]["Panol"][];
+            /** @description `null` cuando no hay más páginas. */
+            next_cursor: string | null;
+        };
+        Existencias: {
+            /** Format: uuid */
+            material_id: string;
+            stock_actual: number | null;
+            existencias: {
+                panol: components["schemas"]["Ref"] & unknown;
+                contrato: components["schemas"]["Ref"] & unknown;
+                cantidad: number;
+            }[];
+        };
+        CreateActivo: {
+            /**
+             * Format: uuid
+             * @description Ítem rastreable del catálogo (`rastreable: true` en `/materiales`). La unidad copia sus datos.
+             */
+            material_id: string;
+            /** @description Por defecto, el nombre del ítem del catálogo. */
+            nombre?: string;
+            /** Format: uuid */
+            proveedor_id?: string | null;
+            valor_compra?: number | null;
+            /** @description Fecha de recepción (YYYY-MM-DD). Por defecto, hoy. */
+            fecha_compra?: string;
+            ubicacion?: string | null;
+            /**
+             * Format: uuid
+             * @description Pañol donde queda (ver `/panoles`). Sin él, queda sin pañol asignado.
+             */
+            panol_id?: string | null;
+            /** @description Referencia única del sistema que origina la operación. Repetirla devuelve lo ya creado, nunca duplica. */
+            external_ref: string;
+        };
+        PatchActivo: {
+            /** @enum {string} */
+            estado?: "operativo" | "en_mantencion" | "extraviado" | "de_baja";
+            ubicacion?: string | null;
+        };
+        Movimiento: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            tipo: "ingreso" | "reverso";
+            /** Format: uuid */
+            material_id: string;
+            /** @description Unidades ingresadas (o revertidas), siempre positivo. */
+            cantidad: number;
+            /** @description Stock total del material después del movimiento. */
+            stock_actual: number;
+            /** @description En un reverso, la referencia del ingreso revertido. */
+            external_ref: string;
+        };
+        CreateMovimiento: {
+            /** @enum {string} */
+            tipo: "ingreso";
+            /**
+             * Format: uuid
+             * @description Material NO rastreable (`rastreable: false`).
+             */
+            material_id: string;
+            cantidad: number;
+            /** @description Fecha de la recepción (ISO 8601 o YYYY-MM-DD). Por defecto, ahora. */
+            fecha?: string;
+            /**
+             * Format: uuid
+             * @description Pañol donde entra (ver `/panoles`). Sin él, entra sin pañol asignado.
+             */
+            panol_id?: string | null;
+            /** @description Referencia única del sistema que origina la operación. Repetirla devuelve lo ya creado, nunca duplica. */
+            external_ref: string;
+        } | {
+            /** @enum {string} */
+            tipo: "reverso";
+            /** @description La `external_ref` del ingreso que se revierte. */
+            external_ref: string;
         };
     };
     responses: never;
@@ -723,6 +894,7 @@ export interface operations {
                 q?: string;
                 estado?: "operativo" | "en_mantencion" | "de_baja" | "extraviado";
                 material_id?: string;
+                external_ref?: string;
                 updated_since?: string;
                 limit?: number;
                 cursor?: string;
@@ -762,6 +934,106 @@ export interface operations {
             };
             /** @description La API key no tiene el scope requerido (`forbidden`). */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Límite de peticiones superado (`rate_limited`). */
+            429: {
+                headers: {
+                    /** @description Segundos a esperar antes de reintentar. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Error interno (`internal_error`). */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createActivo: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CreateActivo"];
+            };
+        };
+        responses: {
+            /** @description Ya existía un activo con esa `external_ref`. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Activo"];
+                };
+            };
+            /** @description Activo creado. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Activo"];
+                };
+            };
+            /** @description Parámetros inválidos (`validation_error`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Falta la API key, es inválida o está revocada (`unauthorized`). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description La API key no tiene el scope requerido (`forbidden`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description El material, pañol, proveedor o activo no existe en la empresa de la API key (`not_found`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `idempotency_conflict` (misma llave, otro cuerpo) o `conflict` (external_ref ya usada para otra cosa, petición en curso, o reverso imposible). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -840,6 +1112,344 @@ export interface operations {
             };
             /** @description No existe en la empresa de la API key (`not_found`). */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Límite de peticiones superado (`rate_limited`). */
+            429: {
+                headers: {
+                    /** @description Segundos a esperar antes de reintentar. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Error interno (`internal_error`). */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    patchActivo: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchActivo"];
+            };
+        };
+        responses: {
+            /** @description Activo actualizado. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Activo"];
+                };
+            };
+            /** @description Parámetros inválidos (`validation_error`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Falta la API key, es inválida o está revocada (`unauthorized`). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description La API key no tiene el scope requerido (`forbidden`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description El material, pañol, proveedor o activo no existe en la empresa de la API key (`not_found`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `idempotency_conflict` (misma llave, otro cuerpo) o `conflict` (external_ref ya usada para otra cosa, petición en curso, o reverso imposible). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Límite de peticiones superado (`rate_limited`). */
+            429: {
+                headers: {
+                    /** @description Segundos a esperar antes de reintentar. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Error interno (`internal_error`). */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listPanoles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pañoles. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PanolList"];
+                };
+            };
+            /** @description Parámetros inválidos (`validation_error`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Falta la API key, es inválida o está revocada (`unauthorized`). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description La API key no tiene el scope requerido (`forbidden`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Límite de peticiones superado (`rate_limited`). */
+            429: {
+                headers: {
+                    /** @description Segundos a esperar antes de reintentar. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Error interno (`internal_error`). */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getExistencias: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Existencias. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Existencias"];
+                };
+            };
+            /** @description Parámetros inválidos (`validation_error`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Falta la API key, es inválida o está revocada (`unauthorized`). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description La API key no tiene el scope requerido (`forbidden`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No existe en la empresa (`not_found`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Límite de peticiones superado (`rate_limited`). */
+            429: {
+                headers: {
+                    /** @description Segundos a esperar antes de reintentar. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Error interno (`internal_error`). */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createMovimiento: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CreateMovimiento"];
+            };
+        };
+        responses: {
+            /** @description Ya existía con esa `external_ref`. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Movimiento"];
+                };
+            };
+            /** @description Movimiento registrado. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Movimiento"];
+                };
+            };
+            /** @description Parámetros inválidos (`validation_error`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Falta la API key, es inválida o está revocada (`unauthorized`). */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description La API key no tiene el scope requerido (`forbidden`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description El material, pañol, proveedor o activo no existe en la empresa de la API key (`not_found`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description `idempotency_conflict` (misma llave, otro cuerpo) o `conflict` (external_ref ya usada para otra cosa, petición en curso, o reverso imposible). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

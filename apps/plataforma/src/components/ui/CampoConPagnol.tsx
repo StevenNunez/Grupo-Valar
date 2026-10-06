@@ -25,7 +25,7 @@ const MOSTRAR = 6;
 export function unidadDesdePagnol(texto: string) {
   const t = texto.trim().toLowerCase();
   const tabla: [RegExp, string][] = [
-    [/^unidad(es)?$|^un$|^u$/, "UN"],
+    [/^unidad(es)?$|^und?$|^uds?$|^u$/, "UN"],
     [/^metros?$|^m$/, "M"],
     [/^metros? cuadrados?$|^m2$/, "M2"],
     [/^metros? c[uú]bicos?$|^m3$/, "M3"],
