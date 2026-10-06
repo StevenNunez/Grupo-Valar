@@ -58,6 +58,12 @@ export type Anexo = {
   observaciones: string | null;
   /** Nombre corto para elegirlo al cargar ("Carpas"). */
   nombre: string | null;
+  /** Desde cuándo rige. */
+  inicio: string | null;
+  /** Lo propio de la forma de contratación del contrato (mismo formato que el contrato). */
+  condiciones: Record<string, unknown>;
+  /** Si es adenda de otro anexo del mismo contrato. */
+  padreId: string | null;
 };
 
 /** Cómo se nombra un anexo en los selectores: "Anexo N°2 · Carpas". */
@@ -94,7 +100,45 @@ export async function cargarAnexos(contratoId: string): Promise<Anexo[]> {
     estado: f.estado as EstadoAnexo,
     observaciones: (f.observaciones as string | null) ?? null,
     nombre: (f.nombre as string | null) ?? null,
+    inicio: (f.inicio as string | null) ?? null,
+    condiciones: (f.condiciones as Record<string, unknown> | null) ?? {},
+    padreId: (f.anexo_padre_id as string | null) ?? null,
   }));
+}
+
+/**
+ * Los anexos en árbol: cada uno seguido de sus adendas, con su profundidad.
+ * Si la base aún no tiene la columna (0060 sin aplicar), todo queda en nivel 0.
+ */
+export function anexosEnArbol(anexos: Anexo[]): { anexo: Anexo; nivel: number }[] {
+  const ids = new Set(anexos.map((a) => a.id));
+  const hijos = new Map<string | null, Anexo[]>();
+  for (const a of anexos) {
+    const padre = a.padreId && ids.has(a.padreId) ? a.padreId : null;
+    hijos.set(padre, [...(hijos.get(padre) ?? []), a]);
+  }
+  const salida: { anexo: Anexo; nivel: number }[] = [];
+  const vistos = new Set<string>();
+  const recorrer = (padre: string | null, nivel: number) => {
+    for (const a of hijos.get(padre) ?? []) {
+      if (vistos.has(a.id)) continue;
+      vistos.add(a.id);
+      salida.push({ anexo: a, nivel });
+      recorrer(a.id, nivel + 1);
+    }
+  };
+  recorrer(null, 0);
+  return salida;
+}
+
+/** El anexo principal del que cuelga (él mismo si no es adenda). */
+export function anexoRaiz(anexos: Anexo[], id: string): string {
+  const porId = new Map(anexos.map((a) => [a.id, a]));
+  let actual = porId.get(id);
+  for (let i = 0; actual?.padreId && porId.has(actual.padreId) && i < 20; i++) {
+    actual = porId.get(actual.padreId);
+  }
+  return actual?.id ?? id;
 }
 
 /** El correlativo que le toca al próximo, dentro de su contrato. */

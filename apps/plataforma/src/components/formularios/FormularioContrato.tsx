@@ -5,6 +5,7 @@ import {
   Ancho,
   CampoDinero,
   CampoFecha,
+  CampoNumero,
   CampoSeleccion,
   CampoTexto,
   Campos,
@@ -18,7 +19,9 @@ import { actualizar, crear } from "@/lib/crud";
 import { borrarContratoDemo, estadosContrato, type ResumenBorradoContratoDemo } from "@/lib/contratos";
 import { useUsuario } from "@/lib/sesion";
 import { plantillasEdp, type PlantillaEdp } from "@/lib/plantillas-edp";
-import { condicionesDe, condicionesParaGuardar, plantillaSugerida, type Condiciones } from "@/lib/condiciones";
+import { condicionesDe, condicionesParaGuardar, montoMensualArriendo, plantillaSugerida, type Condiciones } from "@/lib/condiciones";
+import { mesesDePlazo, ufAPesos, useUfHoy } from "@/lib/uf";
+import { formatearNumero, formatearPesos, formatearUf } from "@/lib/formato";
 import {
   formasContrato,
   modalidades,
@@ -37,6 +40,8 @@ type Borrador = {
   cliente: string;
   faena: string;
   presupuesto: number;
+  /** Contratos en UF: el total en UF (en pesos lo calcula la base con la UF del día). */
+  monto_uf: number;
   inicio: string;
   termino: string;
   modalidad: Modalidad;
@@ -57,6 +62,7 @@ function borradorDe(c: Contrato | null): Borrador {
     cliente: c?.cliente ?? "",
     faena: c?.faena ?? "",
     presupuesto: c?.presupuesto ?? 0,
+    monto_uf: c?.montoUf ?? 0,
     inicio: c?.inicio ?? "",
     termino: c?.termino ?? "",
     modalidad: c?.modalidad ?? "largo_plazo",
@@ -92,6 +98,25 @@ export function FormularioContrato({
       plantilla_edp: plantillaElegida ? d.plantilla_edp : plantillaSugerida[forma],
     }));
   }
+  /* Arriendo: el total sale solo de los equipos (arriendo mensual × meses de
+     plazo), mientras nadie lo escriba a mano. Si se escribe, manda lo escrito
+     y queda el botón para volver al calculado. */
+  const ufHoy = useUfHoy();
+  const calculado = montoCalculado(f.datos);
+  const [montoManual, setMontoManual] = useState(() => {
+    const inicial = borradorDe(contrato);
+    const guardado = inicial.moneda === "UF" ? inicial.monto_uf : inicial.presupuesto;
+    const sugerido = montoCalculado(inicial);
+    return guardado > 0 && (sugerido === null || Math.abs(sugerido.total - guardado) > 0.005);
+  });
+  const enUf = f.datos.moneda === "UF";
+  const montoEscrito = enUf ? f.datos.monto_uf : f.datos.presupuesto;
+  const montoTotal = !montoManual && calculado ? calculado.total : montoEscrito;
+  const escribirMonto = (n: number) => {
+    setMontoManual(true);
+    f.cambiar(enUf ? "monto_uf" : "presupuesto", n);
+  };
+
   const usuario = useUsuario();
   const esDemo = usuario.empresa === "demo";
   const [confirmandoDemo, setConfirmandoDemo] = useState(false);
@@ -179,7 +204,14 @@ export function FormularioContrato({
       ...campos,
       inicio: campos.inicio || null,
       // Sin monto total es válido (contratos recurrentes): cero se guarda como "sin monto".
-      presupuesto: campos.presupuesto > 0 ? campos.presupuesto : null,
+      // En UF manda monto_uf; presupuesto queda como la foto en pesos al guardar
+      // (la base lo recalcula cada día con la UF vigente, 0061).
+      monto_uf: enUf && montoTotal > 0 ? montoTotal : null,
+      presupuesto: montoTotal > 0
+        ? enUf
+          ? ufHoy ? ufAPesos(montoTotal, ufHoy.valorHoy) : null
+          : Math.round(montoTotal)
+        : null,
       // Solo lo de la forma elegida: si se cambió de forma, lo anterior no queda colgando.
       condiciones: condicionesParaGuardar(campos.condiciones, campos.tipo),
       edp_campos: campos.plantilla_edp === "configurable" ? campos.edp_campos : [],
@@ -268,12 +300,40 @@ export function FormularioContrato({
             />
 
             <div>
-              <CampoDinero
-                etiqueta="Monto total del contrato (neto)"
-                ayuda="Opcional. Neto, sin IVA: el IVA se calcula solo. Déjalo en cero si el contrato no tiene monto total."
-                {...f.campo("presupuesto")}
-              />
-              <div className="mt-2"><NetoConIva neto={f.datos.presupuesto} moneda="CLP" /></div>
+              {enUf ? (
+                <CampoNumero
+                  etiqueta="Monto total del contrato (neto, UF)"
+                  sufijo="UF"
+                  min={0}
+                  ayuda="Opcional. En UF y neto: el IVA y el valor en pesos se calculan solos."
+                  valor={montoTotal}
+                  alCambiar={escribirMonto}
+                />
+              ) : (
+                <CampoDinero
+                  etiqueta="Monto total del contrato (neto)"
+                  ayuda="Opcional. Neto, sin IVA: el IVA se calcula solo. Déjalo en cero si el contrato no tiene monto total."
+                  valor={montoTotal}
+                  alCambiar={escribirMonto}
+                />
+              )}
+              {calculado && (
+                <p className="mt-1.5 text-xs text-ink-soft">
+                  {montoManual ? "Calculado de los equipos: " : "Calculado solo: "}
+                  {enUf ? `${formatearUf(calculado.mensual)} UF` : formatearPesos(calculado.mensual)} al mes ×{" "}
+                  {formatearNumero(calculado.meses)} {calculado.meses === 1 ? "mes" : "meses"} de plazo
+                  {montoManual && (
+                    <>
+                      {" "}= {enUf ? `${formatearUf(calculado.total)} UF` : formatearPesos(calculado.total)}.{" "}
+                      <button type="button" onClick={() => setMontoManual(false)} className="font-semibold text-cyan-deep hover:underline">
+                        Usar el calculado
+                      </button>
+                    </>
+                  )}
+                  {!montoManual && ". Si el contrato dice otro total, escríbelo."}
+                </p>
+              )}
+              <div className="mt-2"><NetoConIva neto={montoTotal} moneda={f.datos.moneda} /></div>
             </div>
 
             <CampoSeleccion
@@ -360,4 +420,17 @@ export function FormularioContrato({
       />
     </>
   );
+}
+
+/**
+ * Arriendo: lo que suman los equipos al mes por los meses de plazo, en la
+ * moneda del contrato. Nulo si no es arriendo o falta algún dato.
+ */
+function montoCalculado(d: Borrador): { mensual: number; meses: number; total: number } | null {
+  if (d.tipo !== "arriendo") return null;
+  const mensual = montoMensualArriendo(d.condiciones.arriendo);
+  const meses = mesesDePlazo(d.inicio, d.termino);
+  if (!mensual || !meses) return null;
+  const total = d.moneda === "UF" ? Math.round(mensual * meses * 100) / 100 : Math.round(mensual * meses);
+  return { mensual, meses, total };
 }

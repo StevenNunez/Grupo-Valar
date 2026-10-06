@@ -16,7 +16,9 @@ import {
 } from "./ui/Formulario";
 import { useConsulta } from "@/lib/consulta";
 import {
+  anexosEnArbol,
   cargarAnexos,
+  etiquetaAnexo,
   estadosAnexo,
   idDeAnexo,
   montoConSigno,
@@ -29,6 +31,8 @@ import {
 } from "@/lib/anexos";
 import type { Contrato } from "@/lib/control-de-gestion";
 import { actualizar, crear } from "@/lib/crud";
+import { condicionesDe, condicionesParaGuardar, condicionesVacias, type Condiciones } from "@/lib/condiciones";
+import { CondicionesContrato } from "./formularios/CondicionesContrato";
 import { formatearFecha, formatearPesos } from "@/lib/formato";
 import { usePuede } from "@/lib/sesion";
 
@@ -172,8 +176,8 @@ function Lista({
 
       {anexos.length > 0 && (
         <ul className="mt-4 flex flex-col gap-2">
-          {anexos.map((a) => (
-            <li key={a.id}>
+          {anexosEnArbol(anexos).map(({ anexo: a, nivel }) => (
+            <li key={a.id} style={{ marginLeft: `${Math.min(nivel, 4) * 1.5}rem` }}>
               <button
                 type="button"
                 onClick={() => alEditar(a)}
@@ -182,7 +186,7 @@ function Lista({
               >
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-ink">
-                    N° {a.numero} · {nombreTipoAnexo[a.tipo]}
+                    {nivel > 0 ? "↳ Adenda " : ""}N° {a.numero} · {a.nombre ? `${a.nombre} · ` : ""}{nombreTipoAnexo[a.tipo]}
                     {a.documento ? ` · ${a.documento}` : ""}
                   </p>
                   <p className="mt-0.5 text-sm text-ink-soft">{a.descripcion}</p>
@@ -269,18 +273,25 @@ type Borrador = {
   documento: string;
   estado: EstadoAnexo;
   observaciones: string;
+  inicio: string;
+  /** "" = anexo directo del contrato. */
+  padre: string;
+  condiciones: Condiciones;
 };
 
-function FormularioAnexo({
+export function FormularioAnexo({
   contrato,
   anexo,
   existentes,
+  padreInicial = "",
   alCerrar,
   alGuardado,
 }: {
   contrato: Contrato;
   anexo: Anexo | null;
   existentes: Anexo[];
+  /** Al agregar una adenda desde su anexo. */
+  padreInicial?: string;
   alCerrar: () => void;
   alGuardado: () => void;
 }) {
@@ -301,6 +312,9 @@ function FormularioAnexo({
           documento: anexo.documento ?? "",
           estado: anexo.estado,
           observaciones: anexo.observaciones ?? "",
+          inicio: anexo.inicio ?? "",
+          padre: anexo.padreId ?? "",
+          condiciones: condicionesDe(anexo.condiciones, contrato.forma),
         }
       : {
           numero: siguienteNumeroAnexo(existentes),
@@ -314,11 +328,29 @@ function FormularioAnexo({
           documento: "",
           estado: "vigente",
           observaciones: "",
+          inicio: "",
+          padre: padreInicial,
+          condiciones: condicionesVacias(contrato.forma),
         },
   );
 
   const ayudaTipo = tiposAnexo.find((t) => t.id === f.datos.tipo)?.ayuda ?? "";
   const esPlazo = f.datos.tipo === "extension_plazo";
+
+  // Puede ser adenda de cualquier otro anexo del contrato, salvo de sí mismo o de una adenda suya.
+  const descendientes = new Set<string>();
+  if (anexo) {
+    for (let cambio = true; cambio; ) {
+      cambio = false;
+      for (const a of existentes) {
+        if (a.padreId && (a.padreId === anexo.id || descendientes.has(a.padreId)) && !descendientes.has(a.id)) {
+          descendientes.add(a.id);
+          cambio = true;
+        }
+      }
+    }
+  }
+  const posiblesPadres = existentes.filter((a) => a.id !== anexo?.id && !descendientes.has(a.id));
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -337,6 +369,9 @@ function FormularioAnexo({
       documento: d.documento.trim() || null,
       estado: d.estado,
       observaciones: d.observaciones.trim() || null,
+      inicio: d.inicio || null,
+      anexo_padre_id: d.padre || null,
+      condiciones: condicionesParaGuardar(d.condiciones, contrato.forma),
     };
 
     f.enviar(
@@ -353,7 +388,7 @@ function FormularioAnexo({
 
   return (
     <Dialogo
-      titulo={editando ? `Anexo N° ${anexo.numero}` : "Nuevo anexo"}
+      titulo={editando ? `Anexo N° ${anexo.numero}` : f.datos.padre ? "Nueva adenda" : "Nuevo anexo"}
       descripcion={
         editando
           ? "El contrato original no cambia: lo que cambia es lo que este anexo le suma o le resta."
@@ -361,6 +396,7 @@ function FormularioAnexo({
       }
       abierto
       alCerrar={alCerrar}
+      ancho="max-w-3xl"
     >
       <form onSubmit={onSubmit}>
         <Campos>
@@ -379,6 +415,18 @@ function FormularioAnexo({
             ayuda={ayudaTipo}
             {...f.campo("tipo")}
           />
+
+          {posiblesPadres.length > 0 && (
+            <CampoSeleccion
+              etiqueta="Es adenda de"
+              opciones={[
+                { id: "", titulo: "Ninguno: anexo del contrato" },
+                ...posiblesPadres.map((a) => ({ id: a.id, titulo: etiquetaAnexo(a) })),
+              ]}
+              ayuda="Si modifica a otro anexo y no al contrato directamente."
+              {...f.campo("padre")}
+            />
+          )}
 
           <CampoTexto
             etiqueta="Nombre corto"
@@ -410,6 +458,12 @@ function FormularioAnexo({
             etiqueta="Días de plazo"
             ayuda="Puede ser negativo si el plazo se acorta."
             {...f.campo("dias_plazo")}
+          />
+
+          <CampoFecha
+            etiqueta="Inicio"
+            ayuda="Desde cuándo rige. Opcional."
+            {...f.campo("inicio")}
           />
 
           <CampoFecha
@@ -446,6 +500,13 @@ function FormularioAnexo({
               {...f.campo("observaciones")}
             />
           </Ancho>
+
+          <CondicionesContrato
+            forma={contrato.forma}
+            moneda={contrato.moneda}
+            condiciones={f.datos.condiciones}
+            alCambiar={(c) => f.cambiar("condiciones", c)}
+          />
         </Campos>
 
         <Pie

@@ -1,6 +1,6 @@
 "use client";
 
-import type { Haberes } from "./haberes";
+import { detalleDeOtrosHaberes, type Haberes } from "./haberes";
 import { supabase } from "./supabase";
 
 export const categoriasOficina = [
@@ -71,6 +71,7 @@ export type NominaOficina = Haberes & {
 const NUMERICAS = [
   "dotacion", "horas_hombre",
   "sueldo_bruto", "hh_reemplazo", "hh_parada_planta", "hh_feriado_compensado", "hh_apoyo_oficina", "hh_otras",
+  "monto_hh_reemplazo", "monto_hh_parada_planta", "monto_hh_feriado_compensado", "monto_hh_apoyo_oficina", "monto_hh_otras",
   "horas_extra_monto", "total_no_imponible", "otros_haberes", "leyes_sociales",
   "horas_extra_cantidad", "total_haberes", "costo_total",
 ] as const;
@@ -78,7 +79,7 @@ const NUMERICAS = [
 export async function cargarNominasOficina(): Promise<NominaOficina[]> {
   const { data, error } = await supabase
     .from("nominas_oficina_central")
-    .select(`id, periodo, observaciones, ${NUMERICAS.join(", ")}`)
+    .select(`id, periodo, observaciones, otros_haberes_detalle, ${NUMERICAS.join(", ")}`)
     .order("periodo", { ascending: false });
   if (error) throw new Error(error.message);
 
@@ -88,5 +89,6 @@ export async function cargarNominasOficina(): Promise<NominaOficina[]> {
     observaciones: (n.observaciones as string | null) ?? null,
     // Numeric de Postgres llega como texto: se convierte una vez acá.
     ...(Object.fromEntries(NUMERICAS.map((k) => [k, Number(n[k] ?? 0)])) as Record<(typeof NUMERICAS)[number], number>),
+    otros_haberes_detalle: detalleDeOtrosHaberes(n.otros_haberes_detalle, Number(n.otros_haberes ?? 0)),
   }));
 }

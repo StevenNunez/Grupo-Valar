@@ -18,7 +18,7 @@ import {
 } from "../ui/Formulario";
 import { CamposDelContrato } from "../ui/CamposDelContrato";
 import { FichaHaberes } from "./FichaHaberes";
-import { errorDeHaberes, haberesEnCero, type Haberes } from "@/lib/haberes";
+import { errorDeHaberes, haberesEnCero, haberesParaGuardar, type Haberes } from "@/lib/haberes";
 import { actualizar, crear } from "@/lib/crud";
 import type { CampoContrato, Datos } from "@/lib/campos";
 import { categoriasDe, type Categoria } from "@/lib/categorias";
@@ -63,9 +63,11 @@ function borradorDe(p: CostoPersonal | null, contratos: ContratoBreve[]): Borrad
     hh_feriado_compensado: p.hhFeriadoCompensado,
     hh_apoyo_oficina: p.hhApoyoOficina,
     hh_otras: p.hhOtras,
+    ...p.montosHh,
     horas_extra_monto: p.horasExtraMonto,
     total_no_imponible: p.totalNoImponible,
     otros_haberes: p.otrosHaberes,
+    otros_haberes_detalle: p.otrosHaberesDetalle,
     leyes_sociales: p.leyesSociales,
   };
 }
@@ -132,7 +134,7 @@ export function FormularioPersonal({
       return;
     }
     const fila = {
-      ...f.datos,
+      ...haberesParaGuardar(f.datos),
       faena: f.datos.faena || faenaDelContrato,
       anexo_id: f.datos.anexo_id || null,
       // Al editar se respeta la línea que ya tenía; al crear, la de personal del contrato.

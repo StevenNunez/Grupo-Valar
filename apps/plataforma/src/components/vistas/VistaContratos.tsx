@@ -12,7 +12,7 @@ import { AccionesFila, BotonNuevo, DialogoHistorial, useEdicion } from "../ui/Hi
 import { Contenido, Encabezado, Filtro, Resumen } from "../ui/Vista";
 import { useConsulta } from "@/lib/consulta";
 import { cargarContratos } from "@/lib/contratos";
-import { formatearFecha, formatearMonto } from "@/lib/formato";
+import { formatearFecha, formatearMonto, formatearUf } from "@/lib/formato";
 import {
   formasContrato,
   modalidades,
@@ -60,7 +60,6 @@ export function VistaContratos() {
   const { estado, recargar } = useConsulta<Contrato[]>(cargarContratos);
   const edicion = useEdicion<Contrato>("contratos");
   const [anexos, setAnexos] = useState<Contrato | null>(null);
-  const [respaldosAnexo, setRespaldosAnexo] = useState<{ id: string; titulo: string } | null>(null);
   const [plantilla, setPlantilla] = useState<Contrato | null>(null);
   const [categorias, setCategorias] = useState<Contrato | null>(null);
 
@@ -79,7 +78,7 @@ export function VistaContratos() {
               filas={datos}
               edicion={edicion}
               alVerAnexos={setAnexos}
-              alVerRespaldosAnexo={setRespaldosAnexo}
+              alCambiar={recargar}
               alVerPlantilla={setPlantilla}
               alVerCategorias={setCategorias}
             />
@@ -120,16 +119,6 @@ export function VistaContratos() {
         />
       )}
 
-      {respaldosAnexo && (
-        <DialogoAdjuntos
-          tabla="anexos"
-          registroId={respaldosAnexo.id}
-          titulo={respaldosAnexo.titulo}
-          abierto
-          alCerrar={() => setRespaldosAnexo(null)}
-        />
-      )}
-
       {edicion.adjuntos && (
         <DialogoAdjuntos
           tabla="contratos"
@@ -148,14 +137,14 @@ function Contenidos({
   filas,
   edicion,
   alVerAnexos,
-  alVerRespaldosAnexo,
+  alCambiar,
   alVerPlantilla,
   alVerCategorias,
 }: {
   filas: Contrato[];
   edicion: ReturnType<typeof useEdicion<Contrato>>;
   alVerAnexos: (c: Contrato) => void;
-  alVerRespaldosAnexo: (r: { id: string; titulo: string }) => void;
+  alCambiar: () => void;
   alVerPlantilla: (c: Contrato) => void;
   alVerCategorias: (c: Contrato) => void;
 }) {
@@ -240,7 +229,7 @@ function Contenidos({
               c={c}
               edicion={edicion}
               alGestionarAnexos={() => alVerAnexos(c)}
-              alVerRespaldosAnexo={alVerRespaldosAnexo}
+              alCambiar={alCambiar}
               alVerPlantilla={() => alVerPlantilla(c)}
               alVerCategorias={() => alVerCategorias(c)}
             />
@@ -255,14 +244,14 @@ function TarjetaContrato({
   c,
   edicion,
   alGestionarAnexos,
-  alVerRespaldosAnexo,
+  alCambiar,
   alVerPlantilla,
   alVerCategorias,
 }: {
   c: Contrato;
   edicion: ReturnType<typeof useEdicion<Contrato>>;
   alGestionarAnexos: () => void;
-  alVerRespaldosAnexo: (r: { id: string; titulo: string }) => void;
+  alCambiar: () => void;
   alVerPlantilla: () => void;
   alVerCategorias: () => void;
 }) {
@@ -302,7 +291,7 @@ function TarjetaContrato({
 
       <dl className="mt-4 grid grid-cols-3 gap-3 border-t border-mist pt-4">
         <Cifra etiqueta="Monto vigente" valor={c.montoVigente === null ? "—" : formatearMonto(c.montoVigente)}
-          nota={c.montoAnexos !== 0 ? `base ${formatearMonto(c.presupuesto)} ${c.montoAnexos > 0 ? "+" : "−"} ${formatearMonto(Math.abs(c.montoAnexos))} anexos` : c.montoVigente === null ? "sin monto total" : undefined} />
+          nota={c.montoAnexos !== 0 ? `base ${formatearMonto(c.presupuesto)} ${c.montoAnexos > 0 ? "+" : "−"} ${formatearMonto(Math.abs(c.montoAnexos))} anexos` : c.montoVigente === null ? "sin monto total" : c.moneda === "UF" && c.montoUf ? `${formatearUf(c.montoUf)} UF a la UF de hoy` : undefined} />
         <Cifra etiqueta="Costo real" valor={formatearMonto(c.costoReal)} />
         <Cifra etiqueta="Facturado" valor={formatearMonto(c.facturado)} />
       </dl>
@@ -359,7 +348,7 @@ function TarjetaContrato({
         <AnexosDesplegados
           c={c}
           alGestionar={alGestionarAnexos}
-          alVerAdjuntos={(x) => alVerRespaldosAnexo({ id: x.id, titulo: `Anexo N° ${x.numero} · ${c.nombre}` })}
+          alCambiar={alCambiar}
         />
       )}
     </article>

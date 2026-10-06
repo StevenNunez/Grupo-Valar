@@ -1,6 +1,7 @@
 "use client";
 
 import type { Datos } from "./campos";
+import { detalleDeOtrosHaberes, motivosHhExtra, type MontoHh, type OtroHaber } from "./haberes";
 import { supabase } from "./supabase";
 
 /**
@@ -196,8 +197,12 @@ export type CostoPersonal = {
   hhFeriadoCompensado: number;
   hhApoyoOficina: number;
   hhOtras: number;
+  /** Lo que se pagó por las HH extra de cada motivo (0063). */
+  montosHh: Record<MontoHh, number>;
   totalNoImponible: number;
   otrosHaberes: number;
+  /** Qué son los otros haberes (0064). */
+  otrosHaberesDetalle: OtroHaber[];
   leyesSociales: number;
   costoTotal: number;
 };
@@ -220,9 +225,15 @@ type FilaPersonal = {
   hh_feriado_compensado: number;
   hh_apoyo_oficina: number;
   hh_otras: number;
+  monto_hh_reemplazo: number;
+  monto_hh_parada_planta: number;
+  monto_hh_feriado_compensado: number;
+  monto_hh_apoyo_oficina: number;
+  monto_hh_otras: number;
   horas_extra_cantidad: number;
   total_no_imponible: number;
   otros_haberes: number;
+  otros_haberes_detalle: unknown;
   leyes_sociales: number;
   costo_total: number;
   contratos: { nombre: string } | null;
@@ -235,7 +246,8 @@ export async function cargarPersonal(): Promise<CostoPersonal[]> {
       "id, contrato_id, anexo_id, categoria_id, faena, periodo, dotacion, horas_hombre, remuneraciones, " +
         "sueldo_bruto, horas_extra_monto, hh_reemplazo, hh_parada_planta, " +
         "hh_feriado_compensado, hh_apoyo_oficina, hh_otras, horas_extra_cantidad, " +
-        "total_no_imponible, otros_haberes, leyes_sociales, costo_total, datos, contratos(nombre)",
+        "monto_hh_reemplazo, monto_hh_parada_planta, monto_hh_feriado_compensado, monto_hh_apoyo_oficina, monto_hh_otras, " +
+        "total_no_imponible, otros_haberes, otros_haberes_detalle, leyes_sociales, costo_total, datos, contratos(nombre)",
     )
     .order("periodo", { ascending: false })
     .order("contrato_id");
@@ -261,9 +273,11 @@ export async function cargarPersonal(): Promise<CostoPersonal[]> {
     hhFeriadoCompensado: Number(f.hh_feriado_compensado ?? 0),
     hhApoyoOficina: Number(f.hh_apoyo_oficina ?? 0),
     hhOtras: Number(f.hh_otras ?? 0),
+    montosHh: Object.fromEntries(motivosHhExtra.map((m) => [m.monto, Number(f[m.monto] ?? 0)])) as Record<MontoHh, number>,
     horasExtraCantidad: Number(f.horas_extra_cantidad ?? 0),
     totalNoImponible: Number(f.total_no_imponible ?? 0),
     otrosHaberes: Number(f.otros_haberes ?? 0),
+    otrosHaberesDetalle: detalleDeOtrosHaberes(f.otros_haberes_detalle, Number(f.otros_haberes ?? 0)),
     leyesSociales: f.leyes_sociales,
     costoTotal: f.costo_total,
   }));

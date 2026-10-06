@@ -12,22 +12,27 @@ import { useConsulta } from "@/lib/consulta";
 import { cargarContratosBreve, type ContratoBreve } from "@/lib/contratos";
 import { formatearMonto, formatearNumero, formatearPesos, mesLargo } from "@/lib/formato";
 import { cargarPersonal, type CostoPersonal } from "@/lib/egresos";
+import { cargarFiniquitos, type Finiquito } from "@/lib/finiquitos";
+import { motivosHhExtra } from "@/lib/haberes";
+import { PanelFiniquitos } from "../Finiquitos";
 
 type Datos = {
   personal: CostoPersonal[];
+  finiquitos: Finiquito[];
   contratos: ContratoBreve[];
   campos: CampoContrato[];
   categorias: Categoria[];
 };
 
 async function cargar(): Promise<Datos> {
-  const [personal, contratos, campos, categorias] = await Promise.all([
+  const [personal, finiquitos, contratos, campos, categorias] = await Promise.all([
     cargarPersonal(),
+    cargarFiniquitos("contratos"),
     cargarContratosBreve(),
     cargarCampos(),
     cargarCategorias(),
   ]);
-  return { personal, contratos, campos, categorias };
+  return { personal, finiquitos, contratos, campos, categorias };
 }
 
 export function VistaPersonal() {
@@ -45,7 +50,7 @@ export function VistaPersonal() {
       <Contenido consulta={estado}>
         {(datos) => (
           <>
-            <Contenidos filas={datos.personal} edicion={edicion} />
+            <Contenidos datos={datos} edicion={edicion} alCambiar={recargar} />
             {edicion.editando && (
               <FormularioPersonal
                 registro={edicion.registro}
@@ -86,21 +91,24 @@ export function VistaPersonal() {
 }
 
 function Contenidos({
-  filas,
+  datos,
   edicion,
+  alCambiar,
 }: {
-  filas: CostoPersonal[];
+  datos: Datos;
   edicion: ReturnType<typeof useEdicion<CostoPersonal>>;
+  alCambiar: () => void;
 }) {
+  const filas = datos.personal;
   const [mes, setMes] = useState<string>("todos");
 
   const meses = useMemo(() => {
-    const unicos = [...new Set(filas.map((f) => f.periodo))].sort().reverse();
+    const unicos = [...new Set([...filas, ...datos.finiquitos].map((f) => f.periodo))].sort().reverse();
     return [
       { id: "todos", titulo: "Todos" },
       ...unicos.map((m) => ({ id: m, titulo: mesLargo(m).replace(/ \d{4}$/, "") })),
     ];
-  }, [filas]);
+  }, [filas, datos.finiquitos]);
 
   const visibles = useMemo(
     () => (mes === "todos" ? filas : filas.filter((f) => f.periodo === mes)),
@@ -110,6 +118,8 @@ function Contenidos({
   const remuneraciones = visibles.reduce((t, f) => t + f.remuneraciones, 0);
   const leyes = visibles.reduce((t, f) => t + f.leyesSociales, 0);
   const costo = visibles.reduce((t, f) => t + f.costoTotal, 0);
+  const finiquitosVisibles = mes === "todos" ? datos.finiquitos : datos.finiquitos.filter((f) => f.periodo === mes);
+  const finiquitos = finiquitosVisibles.reduce((t, f) => t + f.total, 0);
   const horas = visibles.reduce((t, f) => t + f.horasHombre, 0);
 
   // La dotación del último mes es la foto de hoy; sumar todos los meses daría
@@ -126,9 +136,9 @@ function Contenidos({
       <Resumen
         datos={[
           {
-            etiqueta: "Costo de personal",
-            valor: formatearMonto(costo),
-            nota: mes === "todos" ? "Acumulado del año" : mesLargo(mes),
+            etiqueta: "Pago de personal",
+            valor: formatearMonto(costo + finiquitos),
+            nota: `${mes === "todos" ? "Acumulado" : mesLargo(mes)} · haberes ${formatearMonto(remuneraciones)} · leyes sociales ${formatearMonto(leyes)}${finiquitos > 0 ? ` · finiquitos ${formatearMonto(finiquitos)}` : ""}`,
           },
           {
             etiqueta: "Dotación actual",
@@ -143,7 +153,7 @@ function Contenidos({
           {
             etiqueta: "Costo por HH",
             valor: formatearPesos(Math.round(costoPorHora)),
-            nota: "Remuneraciones y leyes sociales",
+            nota: "Haberes y leyes sociales, sin finiquitos",
           },
         ]}
       />
@@ -171,9 +181,19 @@ function Contenidos({
         />
       </Panel>
 
+      <div className="mt-6">
+        <PanelFiniquitos
+          de="contratos"
+          filas={finiquitosVisibles}
+          contratos={datos.contratos}
+          categorias={datos.categorias}
+          alCambiar={alCambiar}
+        />
+      </div>
+
       {visibles.some((f) => f.horasExtraCantidad > 0 || f.horasExtraMonto > 0) && (
         <div className="mt-6">
-          <Panel titulo="Desglose de horas extra" nota="Motivos, horas y costo que antes se resumían en la planilla de Misceláneos.">
+          <Panel titulo="Desglose de horas extra" nota="Horas y costo de cada motivo, que antes se resumían en la planilla de Misceláneos.">
             <Tabla
               filas={visibles.filter((f) => f.horasExtraCantidad > 0 || f.horasExtraMonto > 0)}
               claveDe={(f) => f.id}
@@ -188,14 +208,34 @@ function Contenidos({
 
 const columnasHorasExtra: Columna<CostoPersonal>[] = [
   { clave: "mes", titulo: "Mes", encabezado: true, celda: (f) => <><span className="block font-semibold text-ink">{mesLargo(f.periodo)}</span><span className="text-xs text-ink-soft">{f.contratoId}</span></> },
-  { clave: "reemplazo", titulo: "Reemplazos", derecha: true, celda: (f) => formatearNumero(f.hhReemplazo) },
-  { clave: "parada", titulo: "Parada de planta", derecha: true, celda: (f) => formatearNumero(f.hhParadaPlanta) },
-  { clave: "feriado", titulo: "Feriado compensado", derecha: true, celda: (f) => formatearNumero(f.hhFeriadoCompensado) },
-  { clave: "oficina", titulo: "Apoyo oficina", derecha: true, celda: (f) => formatearNumero(f.hhApoyoOficina) },
-  { clave: "otras", titulo: "Otras", derecha: true, celda: (f) => formatearNumero(f.hhOtras) },
+  ...motivosHhExtra.map((m) => ({
+    clave: m.horas,
+    titulo: m.corto,
+    derecha: true,
+    celda: (f: CostoPersonal) => <HorasYCosto horas={horasDe(f)[m.horas]} costo={f.montosHh[m.monto]} />,
+  })),
   { clave: "total", titulo: "Total HH extra", derecha: true, celda: (f) => <strong className="text-ink">{formatearNumero(f.horasExtraCantidad)}</strong> },
   { clave: "costo", titulo: "Costo HH extra", derecha: true, celda: (f) => <strong className="text-ink">{formatearPesos(f.horasExtraMonto)}</strong> },
 ];
+
+const horasDe = (f: CostoPersonal) => ({
+  hh_reemplazo: f.hhReemplazo,
+  hh_parada_planta: f.hhParadaPlanta,
+  hh_feriado_compensado: f.hhFeriadoCompensado,
+  hh_apoyo_oficina: f.hhApoyoOficina,
+  hh_otras: f.hhOtras,
+});
+
+/** Una celda del desglose: las horas y, debajo, lo que costaron. */
+export function HorasYCosto({ horas, costo }: { horas: number; costo: number }) {
+  if (!horas && !costo) return <span className="text-ink-soft">—</span>;
+  return (
+    <>
+      <span className="block">{formatearNumero(horas)} HH</span>
+      <span className="text-xs text-ink-soft">{formatearPesos(costo)}</span>
+    </>
+  );
+}
 
 const columnas = (
   edicion: ReturnType<typeof useEdicion<CostoPersonal>>,

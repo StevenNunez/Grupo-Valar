@@ -102,7 +102,7 @@ export function opcionesDeContrato(contratos: ContratoBreve[]) {
 export async function cargarContratos(): Promise<Contrato[]> {
   const [detalle, configuracion] = await Promise.all([
     supabase.from("contratos_detalle").select("*").order("termino"),
-    supabase.from("contratos").select("id, plantilla_edp, edp_campos, condiciones, moneda"),
+    supabase.from("contratos").select("id, plantilla_edp, edp_campos, condiciones, moneda, monto_uf"),
   ]);
 
   const error = detalle.error ?? configuracion.error;
@@ -132,6 +132,7 @@ export async function cargarContratos(): Promise<Contrato[]> {
     camposEdp: (config.get(c.id)?.edp_campos as string[] | null) ?? [],
     condiciones: (config.get(c.id)?.condiciones as Condiciones | null) ?? {},
     moneda: ((config.get(c.id)?.moneda as Moneda | null) ?? "CLP"),
+    montoUf: config.get(c.id)?.monto_uf == null ? null : Number(config.get(c.id)?.monto_uf),
     nombre: c.nombre,
     cliente: c.cliente,
     faena: c.faena,

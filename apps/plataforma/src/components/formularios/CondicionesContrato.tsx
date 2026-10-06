@@ -16,7 +16,8 @@ import {
   type Servicio,
 } from "@/lib/condiciones";
 import type { FormaContrato, Moneda } from "@/lib/control-de-gestion";
-import { formatearNumero, formatearPesos, formatearUf } from "@/lib/formato";
+import { formatearFecha, formatearNumero, formatearPesos, formatearUf } from "@/lib/formato";
+import { ufAPesos, useUfHoy } from "@/lib/uf";
 import { catalogoCamposEdp } from "@/lib/plantillas-edp";
 
 /**
@@ -65,17 +66,32 @@ function CeldaNumero({ valor, alCambiar, decimales = false, etiqueta }: { valor:
   );
 }
 
-/** Neto → IVA → total, en la moneda del contrato. */
+/**
+ * Neto → IVA → total, en la moneda del contrato. Si es en UF, debajo va lo
+ * mismo en pesos con la UF de hoy.
+ */
 export function NetoConIva({ neto, moneda, etiqueta = "Neto" }: { neto: number; moneda: Moneda; etiqueta?: string }) {
+  const ufHoy = useUfHoy();
   if (!neto) return null;
   const uf = moneda === "UF";
   const { iva, total } = uf ? conIvaUf(neto) : conIva(neto);
   const f = (n: number) => (uf ? `${formatearUf(n)} UF` : formatearPesos(n));
+  const pesos = uf && ufHoy ? conIva(ufAPesos(neto, ufHoy.valorHoy)) : null;
   return (
-    <p className="text-sm text-ink-soft">
-      {etiqueta} <strong className="text-ink">{f(neto)}</strong> · IVA 19% <strong className="text-ink">{f(iva)}</strong> ·
-      Total <strong className="text-ink">{f(total)}</strong>
-    </p>
+    <div className="text-sm text-ink-soft">
+      <p>
+        {etiqueta} <strong className="text-ink">{f(neto)}</strong> · IVA 19% <strong className="text-ink">{f(iva)}</strong> ·
+        Total <strong className="text-ink">{f(total)}</strong>
+      </p>
+      {pesos && ufHoy && (
+        <p className="mt-0.5 text-xs">
+          En pesos, UF ${formatearUf(ufHoy.valorHoy)} del {formatearFecha(ufHoy.fechaValor)}: neto{" "}
+          <strong className="text-ink">{formatearPesos(ufAPesos(neto, ufHoy.valorHoy))}</strong> · IVA{" "}
+          <strong className="text-ink">{formatearPesos(pesos.iva)}</strong> · total{" "}
+          <strong className="text-ink">{formatearPesos(pesos.total)}</strong>
+        </p>
+      )}
+    </div>
   );
 }
 

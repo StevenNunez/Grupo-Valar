@@ -44,6 +44,8 @@ export type Contrato = {
   condiciones: Condiciones;
   /** En qué moneda se pactan sus tarifas. */
   moneda: Moneda;
+  /** Contratos en UF: el total pactado en UF. `presupuesto` es eso en pesos a la UF de hoy (0061). */
+  montoUf: number | null;
   nombre: string;
   cliente: string;
   faena: string;

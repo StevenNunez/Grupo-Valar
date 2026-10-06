@@ -4,8 +4,12 @@ import { useMemo, useState, type FormEvent } from "react";
 import { actualizar, crear } from "@/lib/crud";
 import { useConsulta } from "@/lib/consulta";
 import { formatearMonto, formatearNumero, formatearPesos, mesLargo } from "@/lib/formato";
-import { errorDeHaberes, haberesEnCero, type Haberes } from "@/lib/haberes";
+import { errorDeHaberes, haberesEnCero, haberesParaGuardar, type Haberes } from "@/lib/haberes";
 import { cargarNominasOficina, type NominaOficina } from "@/lib/oficina-central";
+import { cargarFiniquitos, type Finiquito } from "@/lib/finiquitos";
+import { motivosHhExtra } from "@/lib/haberes";
+import { PanelFiniquitos } from "../Finiquitos";
+import { HorasYCosto } from "./VistaPersonal";
 import { FichaHaberes } from "../formularios/FichaHaberes";
 import { DialogoAdjuntos } from "../ui/Adjuntos";
 import {
@@ -27,8 +31,13 @@ import { Contenido, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
 const PERMISO = "personal.editar";
 const TABLA = "nominas_oficina_central";
 
+async function cargar(): Promise<{ nominas: NominaOficina[]; finiquitos: Finiquito[] }> {
+  const [nominas, finiquitos] = await Promise.all([cargarNominasOficina(), cargarFiniquitos("oficina")]);
+  return { nominas, finiquitos };
+}
+
 export function VistaPersonalOficina() {
-  const { estado, recargar } = useConsulta(cargarNominasOficina);
+  const { estado, recargar } = useConsulta(cargar);
   const edicion = useEdicion<NominaOficina>(TABLA);
 
   return (
@@ -40,9 +49,9 @@ export function VistaPersonalOficina() {
       />
 
       <Contenido consulta={estado}>
-        {(nominas) => (
+        {({ nominas, finiquitos }) => (
           <>
-            <Contenidos filas={nominas} edicion={edicion} />
+            <Contenidos filas={nominas} finiquitos={finiquitos} edicion={edicion} alCambiar={recargar} />
             {edicion.editando && (
               <FormularioNominaOficina registro={edicion.registro} nominas={nominas}
                 alCerrar={edicion.cerrar} alGuardado={recargar} />
@@ -63,18 +72,26 @@ export function VistaPersonalOficina() {
   );
 }
 
-function Contenidos({ filas, edicion }: { filas: NominaOficina[]; edicion: ReturnType<typeof useEdicion<NominaOficina>> }) {
+function Contenidos({ filas, finiquitos: todosFiniquitos, edicion, alCambiar }: {
+  filas: NominaOficina[];
+  finiquitos: Finiquito[];
+  edicion: ReturnType<typeof useEdicion<NominaOficina>>;
+  alCambiar: () => void;
+}) {
   const [mes, setMes] = useState<string>("todos");
 
   const meses = useMemo(() => [
     { id: "todos", titulo: "Todos" },
-    ...filas.map((f) => ({ id: f.periodo, titulo: mesLargo(f.periodo).replace(/ \d{4}$/, "") })),
-  ], [filas]);
+    ...[...new Set([...filas, ...todosFiniquitos].map((f) => f.periodo))].sort().reverse()
+      .map((p) => ({ id: p, titulo: mesLargo(p).replace(/ \d{4}$/, "") })),
+  ], [filas, todosFiniquitos]);
   const visibles = mes === "todos" ? filas : filas.filter((f) => f.periodo === mes);
 
   const suma = (campo: "total_haberes" | "leyes_sociales" | "costo_total" | "horas_hombre") =>
     visibles.reduce((t, f) => t + f[campo], 0);
   const costo = suma("costo_total");
+  const finiquitosVisibles = mes === "todos" ? todosFiniquitos : todosFiniquitos.filter((f) => f.periodo === mes);
+  const finiquitos = finiquitosVisibles.reduce((t, f) => t + f.total, 0);
   const horas = suma("horas_hombre");
   // La dotación del último mes es la foto de hoy; sumar meses contaría a la misma persona varias veces.
   const ultimo = filas[0] ?? null;
@@ -82,10 +99,11 @@ function Contenidos({ filas, edicion }: { filas: NominaOficina[]; edicion: Retur
   return (
     <>
       <Resumen datos={[
-        { etiqueta: "Costo de personal", valor: formatearMonto(costo), nota: mes === "todos" ? "Acumulado" : mesLargo(mes) },
+        { etiqueta: "Pago de personal", valor: formatearMonto(costo + finiquitos),
+          nota: `${mes === "todos" ? "Acumulado" : mesLargo(mes)} · haberes ${formatearMonto(suma("total_haberes"))} · leyes sociales ${formatearMonto(suma("leyes_sociales"))}${finiquitos > 0 ? ` · finiquitos ${formatearMonto(finiquitos)}` : ""}` },
         { etiqueta: "Dotación actual", valor: formatearNumero(ultimo?.dotacion ?? 0), nota: ultimo ? `Personas en ${mesLargo(ultimo.periodo)}` : "Sin registro" },
         { etiqueta: "Horas hombre", valor: formatearNumero(horas), nota: "En el período seleccionado" },
-        { etiqueta: "Costo por HH", valor: formatearPesos(horas > 0 ? Math.round(costo / horas) : 0), nota: "Haberes y leyes sociales" },
+        { etiqueta: "Costo por HH", valor: formatearPesos(horas > 0 ? Math.round(costo / horas) : 0), nota: "Haberes y leyes sociales, sin finiquitos" },
       ]} />
 
       <Panel titulo="Detalle por mes" nota={`${visibles.length} de ${filas.length} nóminas`}
@@ -101,6 +119,10 @@ function Contenidos({ filas, edicion }: { filas: NominaOficina[]; edicion: Retur
             <Total />
           </> : undefined} />
       </Panel>
+
+      <div className="mt-6">
+        <PanelFiniquitos de="oficina" filas={finiquitosVisibles} alCambiar={alCambiar} />
+      </div>
 
       {visibles.some((f) => f.horas_extra_cantidad > 0 || f.horas_extra_monto > 0) && (
         <div className="mt-6">
@@ -135,11 +157,12 @@ const columnas = (edicion: ReturnType<typeof useEdicion<NominaOficina>>): Column
 
 const columnasHorasExtra: Columna<NominaOficina>[] = [
   { clave: "mes", titulo: "Mes", encabezado: true, celda: (f) => <span className="font-semibold text-ink">{mesLargo(f.periodo)}</span> },
-  { clave: "reemplazo", titulo: "Reemplazos", derecha: true, celda: (f) => formatearNumero(f.hh_reemplazo) },
-  { clave: "parada", titulo: "Parada de planta", derecha: true, celda: (f) => formatearNumero(f.hh_parada_planta) },
-  { clave: "feriado", titulo: "Feriado compensado", derecha: true, celda: (f) => formatearNumero(f.hh_feriado_compensado) },
-  { clave: "oficina", titulo: "Apoyo oficina", derecha: true, celda: (f) => formatearNumero(f.hh_apoyo_oficina) },
-  { clave: "otras", titulo: "Otras", derecha: true, celda: (f) => formatearNumero(f.hh_otras) },
+  ...motivosHhExtra.map((m) => ({
+    clave: m.horas,
+    titulo: m.corto,
+    derecha: true,
+    celda: (f: NominaOficina) => <HorasYCosto horas={f[m.horas]} costo={f[m.monto]} />,
+  })),
   { clave: "total", titulo: "Total HH extra", derecha: true, celda: (f) => <strong className="text-ink">{formatearNumero(f.horas_extra_cantidad)}</strong> },
   { clave: "costo", titulo: "Costo HH extra", derecha: true, celda: (f) => <strong className="text-ink">{formatearPesos(f.horas_extra_monto)}</strong> },
 ];
@@ -174,7 +197,7 @@ function FormularioNominaOficina({ registro, nominas, alCerrar, alGuardado }: {
     }
     const problema = errorDeHaberes(f.datos);
     if (problema) return f.setError(problema);
-    const fila = { ...f.datos, observaciones: f.datos.observaciones.trim() || null };
+    const fila = { ...haberesParaGuardar(f.datos), observaciones: f.datos.observaciones.trim() || null };
     f.enviar(() => registro ? actualizar(TABLA, registro.id, fila) : crear(TABLA, fila), () => { alGuardado(); alCerrar(); });
   }
 
