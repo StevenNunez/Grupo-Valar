@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ReposicionPagnol } from "./ReposicionPagnol";
 import { Chip, type Tono } from "./ui/Chip";
 import { Contenido, Resumen } from "./ui/Vista";
 import { useConsulta } from "@/lib/consulta";
@@ -56,6 +57,7 @@ export function PanelAbastecimiento() {
       </header>
 
       <Contenido consulta={estado}>{(datos) => <Tablero datos={datos} />}</Contenido>
+      <ReposicionPagnol />
     </>
   );
 }

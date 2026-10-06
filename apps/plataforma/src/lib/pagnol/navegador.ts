@@ -54,3 +54,9 @@ export const informarRecepcionAPagnol = (recepcionId: string) =>
 /** Anula la recepción: primero en Pagnol, después en Valar. */
 export const anularRecepcionConPagnol = (recepcionId: string) =>
   llamar<{ ok: true }>(`/api/pagnol/recepciones/${recepcionId}/`, "DELETE");
+
+/* ── Fase 4: reposición ───────────────────────────────────────────────────── */
+
+/** Reprocesa los avisos de stock bajo que quedaron en la bandeja. */
+export const procesarReposicionPendiente = () =>
+  llamar<{ ok: true; revisados: number; listos: number }>("/api/pagnol/reposicion/", "POST");
