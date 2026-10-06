@@ -1,5 +1,6 @@
 "use client";
 
+import { SelectorAnexo } from "../ui/SelectorAnexo";
 import { useEffect, useState } from "react";
 import {
   Ancho,
@@ -48,6 +49,8 @@ const hoy = () => new Date().toISOString().slice(0, 10);
 
 type Cabecera = {
   contrato_id: string;
+  /** El anexo al que se carga; vacío = contrato base. */
+  anexo_id: string;
   proveedor_id: string;
   proveedor: string;
   documento: string;
@@ -60,6 +63,7 @@ function cabeceraDe(compra: Compra | null, contratos: ContratoBreve[]): Cabecera
   if (!compra) {
     return {
       contrato_id: contratos[0]?.id ?? "",
+      anexo_id: "",
       proveedor_id: "",
       proveedor: "",
       documento: "",
@@ -70,6 +74,7 @@ function cabeceraDe(compra: Compra | null, contratos: ContratoBreve[]): Cabecera
   }
   return {
     contrato_id: compra.contratoId,
+    anexo_id: compra.anexoId ?? "",
     proveedor_id: compra.proveedorId ?? "",
     proveedor: compra.proveedor,
     documento: compra.documento ?? "",
@@ -192,6 +197,7 @@ export function FormularioCompra({
         guardarCompraDirecta({
           id: codigo,
           contratoId: f.datos.contrato_id,
+          anexoId: f.datos.anexo_id || null,
           proveedorId: f.datos.proveedor_id,
           proveedor: f.datos.proveedor,
           documento: f.datos.documento,
@@ -267,6 +273,7 @@ export function FormularioCompra({
               valor={f.datos.contrato_id}
               alCambiar={elegirContrato}
             />
+            <SelectorAnexo contratoId={f.datos.contrato_id} valor={f.datos.anexo_id} alCambiar={(v) => f.cambiar("anexo_id", v)} />
 
             <CampoTexto
               etiqueta="N° de documento"

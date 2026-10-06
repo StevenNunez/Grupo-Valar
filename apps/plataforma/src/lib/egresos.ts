@@ -27,6 +27,8 @@ export const tiposCompra: { id: TipoCompra; titulo: string }[] = [
 export type EstadoPagoCompra = "pendiente" | "pagada";
 
 export type Compra = {
+  /** El anexo al que se carga (0059); nulo = contrato base. */
+  anexoId: string | null;
   /** Los campos propios del contrato. */
   datos: Datos;
   id: string;
@@ -52,6 +54,7 @@ export type Compra = {
 };
 
 type FilaCompra = {
+  anexo_id?: string | null;
   datos: Datos | null;
   id: string;
   contrato_id: string;
@@ -75,7 +78,7 @@ export async function cargarCompras(): Promise<Compra[]> {
   const { data, error } = await supabase
     .from("compras")
     .select(
-      "id, contrato_id, proveedor, proveedor_id, categoria_id, documento, detalle, tipo, neto, iva, total, fecha, periodo_control, estado_pago, orden_id, datos, contratos(nombre)",
+      "id, contrato_id, proveedor, proveedor_id, categoria_id, documento, detalle, tipo, neto, iva, total, fecha, periodo_control, estado_pago, orden_id, anexo_id, datos, contratos(nombre)",
     )
     .order("fecha", { ascending: false });
 
@@ -84,6 +87,7 @@ export async function cargarCompras(): Promise<Compra[]> {
   return ((data ?? []) as unknown as FilaCompra[]).map((f) => ({
     id: f.id,
     contratoId: f.contrato_id,
+    anexoId: (f.anexo_id as string | null | undefined) ?? null,
     datos: f.datos ?? {},
     contrato: f.contratos?.nombre ?? f.contrato_id,
     proveedor: f.proveedor,
@@ -135,6 +139,8 @@ export async function guardarCompraDirecta(datos: {
   documento: string;
   fecha: string;
   periodoControl: string;
+  /** El anexo al que se carga; null = contrato base. */
+  anexoId?: string | null;
   iva: number;
   datos: Datos;
   lineas: { descripcion: string; unidad: string; cantidad: number; precio_unitario: number; categoria_id: string; tipo: TipoCompra }[];
@@ -156,11 +162,16 @@ export async function guardarCompraDirecta(datos: {
       ? "Tu acceso no permite este cambio (o ese contrato no está entre los tuyos)."
       : error.message);
   }
+  // El anexo va aparte de la función de la base: es del documento, no de sus líneas.
+  const { error: errorAnexo } = await supabase.from("compras").update({ anexo_id: datos.anexoId ?? null }).eq("id", datos.id);
+  if (errorAnexo) throw new Error(errorAnexo.message);
 }
 
 /* ── Personal ─────────────────────────────────────────────────────────────── */
 
 export type CostoPersonal = {
+  /** El anexo al que se carga (0059); nulo = contrato base. */
+  anexoId: string | null;
   /** Los campos propios del contrato. */
   datos: Datos;
   id: string;
@@ -192,6 +203,7 @@ export type CostoPersonal = {
 };
 
 type FilaPersonal = {
+  anexo_id?: string | null;
   datos: Datos | null;
   id: string;
   contrato_id: string;
@@ -220,7 +232,7 @@ export async function cargarPersonal(): Promise<CostoPersonal[]> {
   const { data, error } = await supabase
     .from("costos_personal")
     .select(
-      "id, contrato_id, categoria_id, faena, periodo, dotacion, horas_hombre, remuneraciones, " +
+      "id, contrato_id, anexo_id, categoria_id, faena, periodo, dotacion, horas_hombre, remuneraciones, " +
         "sueldo_bruto, horas_extra_monto, hh_reemplazo, hh_parada_planta, " +
         "hh_feriado_compensado, hh_apoyo_oficina, hh_otras, horas_extra_cantidad, " +
         "total_no_imponible, otros_haberes, leyes_sociales, costo_total, datos, contratos(nombre)",
@@ -233,6 +245,7 @@ export async function cargarPersonal(): Promise<CostoPersonal[]> {
   return ((data ?? []) as unknown as FilaPersonal[]).map((f) => ({
     id: f.id,
     contratoId: f.contrato_id,
+    anexoId: (f.anexo_id as string | null | undefined) ?? null,
     datos: f.datos ?? {},
     contrato: f.contratos?.nombre ?? f.contrato_id,
     categoriaId: f.categoria_id ?? null,
@@ -269,6 +282,8 @@ export const tiposServicio: { id: TipoServicio; titulo: string }[] = [
 ];
 
 export type Servicio = {
+  /** El anexo al que se carga (0059); nulo = contrato base. */
+  anexoId: string | null;
   /** Los campos propios del contrato. */
   datos: Datos;
   id: string;
@@ -303,6 +318,7 @@ export const periodicidades: { id: Periodicidad; titulo: string }[] = [
 ];
 
 type FilaServicio = {
+  anexo_id?: string | null;
   datos: Datos | null;
   id: string;
   contrato_id: string;
@@ -328,7 +344,7 @@ export async function cargarServicios(): Promise<Servicio[]> {
   const { data, error } = await supabase
     .from("servicios")
     .select(
-      "id, contrato_id, categoria_id, contratista, documento, detalle, tipo_servicio, tipo, neto, iva, total, fecha, desde, hasta, recurrente, periodicidad, estado_pago, datos, contratos(nombre)",
+      "id, contrato_id, anexo_id, categoria_id, contratista, documento, detalle, tipo_servicio, tipo, neto, iva, total, fecha, desde, hasta, recurrente, periodicidad, estado_pago, datos, contratos(nombre)",
     )
     .order("fecha", { ascending: false });
 
@@ -337,6 +353,7 @@ export async function cargarServicios(): Promise<Servicio[]> {
   return ((data ?? []) as unknown as FilaServicio[]).map((f) => ({
     id: f.id,
     contratoId: f.contrato_id,
+    anexoId: (f.anexo_id as string | null | undefined) ?? null,
     datos: f.datos ?? {},
     contrato: f.contratos?.nombre ?? f.contrato_id,
     categoriaId: f.categoria_id ?? null,

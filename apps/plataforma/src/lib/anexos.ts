@@ -56,7 +56,20 @@ export type Anexo = {
   documento: string | null;
   estado: EstadoAnexo;
   observaciones: string | null;
+  /** Nombre corto para elegirlo al cargar ("Carpas"). */
+  nombre: string | null;
 };
+
+/** Cómo se nombra un anexo en los selectores: "Anexo N°2 · Carpas". */
+export function etiquetaAnexo(a: Pick<Anexo, "numero" | "nombre" | "descripcion">) {
+  const nombre = a.nombre?.trim() || a.descripcion.trim();
+  return `Anexo N°${a.numero}${nombre ? ` · ${nombre.length > 60 ? `${nombre.slice(0, 57)}…` : nombre}` : ""}`;
+}
+
+/** Lo que se imprime en la línea "Proyecto" de una OC hecha contra un anexo. */
+export function proyectoDeAnexo(a: Anexo) {
+  return `${nombreTipoAnexo[a.tipo]} N° ${a.numero} · ${a.nombre?.trim() || a.descripcion}`;
+}
 
 export async function cargarAnexos(contratoId: string): Promise<Anexo[]> {
   const { data, error } = await supabase
@@ -80,6 +93,7 @@ export async function cargarAnexos(contratoId: string): Promise<Anexo[]> {
     documento: (f.documento as string | null) ?? null,
     estado: f.estado as EstadoAnexo,
     observaciones: (f.observaciones as string | null) ?? null,
+    nombre: (f.nombre as string | null) ?? null,
   }));
 }
 

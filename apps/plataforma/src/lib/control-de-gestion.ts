@@ -1,6 +1,7 @@
 "use client";
 
 import type { PlantillaEdp } from "./plantillas-edp";
+import type { Condiciones } from "./condiciones";
 
 
 /**
@@ -37,6 +38,12 @@ export type EstadoContrato = "activo" | "cancelado";
 export type Contrato = {
   id: string;
   plantillaEdp: PlantillaEdp;
+  /** Plantilla configurable: los campos que lleva su EDP. */
+  camposEdp: string[];
+  /** Lo propio de su forma de contratación (lib/condiciones.ts). Montos netos. */
+  condiciones: Condiciones;
+  /** En qué moneda se pactan sus tarifas. */
+  moneda: Moneda;
   nombre: string;
   cliente: string;
   faena: string;
@@ -84,6 +91,12 @@ export type Contrato = {
  * suma alzada: por eso no caben en un solo campo.
  */
 export type Modalidad = "spot" | "largo_plazo";
+
+export type Moneda = "CLP" | "UF";
+export const monedas: { id: Moneda; titulo: string; ayuda: string }[] = [
+  { id: "CLP", titulo: "Pesos", ayuda: "Tarifas y montos en pesos." },
+  { id: "UF", titulo: "UF", ayuda: "Tarifas en UF; cada EDP se convierte con la UF del período." },
+];
 
 export const modalidades: { id: Modalidad; titulo: string; ayuda: string }[] = [
   { id: "largo_plazo", titulo: "Largo plazo", ayuda: "Permanente: se factura mes a mes mientras dure." },

@@ -30,6 +30,8 @@ export const estadosOrden: { id: EstadoOrden; titulo: string }[] = [
 ];
 
 export type Orden = {
+  /** El anexo al que se carga (0059); nulo = contrato base. */
+  anexoId: string | null;
   id: string;
   contratoId: string;
   numero: string;
@@ -79,6 +81,7 @@ export type Orden = {
 };
 
 type FilaOrden = {
+  anexo_id?: string | null;
   id: string;
   contrato_id: string;
   numero: string;
@@ -123,6 +126,7 @@ type FilaOrden = {
 
 function mapear(f: FilaOrden): Orden {
   return {
+    anexoId: (f.anexo_id as string | null | undefined) ?? null,
     id: f.id,
     contratoId: f.contrato_id,
     numero: f.numero,

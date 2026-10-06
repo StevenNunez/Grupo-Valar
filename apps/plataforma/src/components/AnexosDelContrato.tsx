@@ -259,6 +259,8 @@ function Dato({
 type Borrador = {
   numero: number;
   tipo: TipoAnexo;
+  /** Nombre corto para elegirlo al cargar ("Carpas"). */
+  nombre: string;
   descripcion: string;
   monto: number;
   dias_plazo: number;
@@ -289,6 +291,7 @@ function FormularioAnexo({
       ? {
           numero: anexo.numero,
           tipo: anexo.tipo,
+          nombre: anexo.nombre ?? "",
           descripcion: anexo.descripcion,
           // En pantalla el monto va siempre positivo; el signo lo pone el tipo.
           monto: Math.abs(anexo.monto),
@@ -302,6 +305,7 @@ function FormularioAnexo({
       : {
           numero: siguienteNumeroAnexo(existentes),
           tipo: "mayor_obra",
+          nombre: "",
           descripcion: "",
           monto: 0,
           dias_plazo: 0,
@@ -324,6 +328,7 @@ function FormularioAnexo({
       contrato_id: contrato.id,
       numero: d.numero,
       tipo: d.tipo,
+      nombre: d.nombre.trim() || null,
       descripcion: d.descripcion.trim(),
       monto: montoConSigno(d.tipo, d.monto),
       dias_plazo: d.dias_plazo,
@@ -373,6 +378,13 @@ function FormularioAnexo({
             opciones={tiposAnexo}
             ayuda={ayudaTipo}
             {...f.campo("tipo")}
+          />
+
+          <CampoTexto
+            etiqueta="Nombre corto"
+            marcador="Carpas"
+            ayuda="Opcional. Es como aparece al elegirlo al cargar gastos, estados de pago o compras."
+            {...f.campo("nombre")}
           />
 
           <Ancho>

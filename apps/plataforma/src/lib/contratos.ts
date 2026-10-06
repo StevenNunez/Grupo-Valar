@@ -2,11 +2,13 @@
 
 import { supabase } from "./supabase";
 import type { PlantillaEdp } from "./plantillas-edp";
+import type { Condiciones } from "./condiciones";
 import type {
   Contrato,
   EstadoContrato,
   FormaContrato,
   Modalidad,
+  Moneda,
   Vigencia,
 } from "./control-de-gestion";
 
@@ -29,12 +31,14 @@ export type ContratoBreve = {
   /** Dónde se presta el servicio. El personal del contrato la hereda. */
   faena: string;
   plantillaEdp: PlantillaEdp;
+  /** Plantilla configurable: los campos que lleva su EDP. */
+  camposEdp: string[];
 };
 
 export async function cargarContratosBreve(): Promise<ContratoBreve[]> {
   const { data, error } = await supabase
     .from("contratos")
-    .select("id, nombre, cliente, faena, plantilla_edp")
+    .select("id, nombre, cliente, faena, plantilla_edp, edp_campos")
     .order("id");
 
   if (error) throw new Error(error.message);
@@ -44,6 +48,7 @@ export async function cargarContratosBreve(): Promise<ContratoBreve[]> {
     cliente: fila.cliente,
     faena: fila.faena ?? "",
     plantillaEdp: fila.plantilla_edp as PlantillaEdp,
+    camposEdp: (fila.edp_campos as string[] | null) ?? [],
   }));
 }
 
@@ -97,12 +102,13 @@ export function opcionesDeContrato(contratos: ContratoBreve[]) {
 export async function cargarContratos(): Promise<Contrato[]> {
   const [detalle, configuracion] = await Promise.all([
     supabase.from("contratos_detalle").select("*").order("termino"),
-    supabase.from("contratos").select("id, plantilla_edp"),
+    supabase.from("contratos").select("id, plantilla_edp, edp_campos, condiciones, moneda"),
   ]);
 
   const error = detalle.error ?? configuracion.error;
   if (error) throw new Error(error.message);
   const plantillas = new Map((configuracion.data ?? []).map((fila) => [fila.id, fila.plantilla_edp as PlantillaEdp]));
+  const config = new Map((configuracion.data ?? []).map((fila) => [fila.id as string, fila]));
 
   type Fila = {
     id: string; nombre: string; cliente: string; faena: string;
@@ -123,6 +129,9 @@ export async function cargarContratos(): Promise<Contrato[]> {
   return ((detalle.data ?? []) as Fila[]).map((c) => ({
     id: c.id,
     plantillaEdp: plantillas.get(c.id) ?? "general",
+    camposEdp: (config.get(c.id)?.edp_campos as string[] | null) ?? [],
+    condiciones: (config.get(c.id)?.condiciones as Condiciones | null) ?? {},
+    moneda: ((config.get(c.id)?.moneda as Moneda | null) ?? "CLP"),
     nombre: c.nombre,
     cliente: c.cliente,
     faena: c.faena,

@@ -5,11 +5,11 @@ import { AnexosDelContrato } from "../AnexosDelContrato";
 import { CategoriasDelContrato } from "../CategoriasDelContrato";
 import { PlantillaDelContrato } from "../PlantillaDelContrato";
 import { FormularioContrato } from "../formularios/FormularioContrato";
+import { AnexosDesplegados, DetalleContrato } from "../FichaContrato";
 import { Chip, type Tono } from "../ui/Chip";
 import { DialogoAdjuntos } from "../ui/Adjuntos";
 import { AccionesFila, BotonNuevo, DialogoHistorial, useEdicion } from "../ui/Historial";
-import { Tabla, Total, type Columna } from "../ui/Tabla";
-import { Contenido, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
+import { Contenido, Encabezado, Filtro, Resumen } from "../ui/Vista";
 import { useConsulta } from "@/lib/consulta";
 import { cargarContratos } from "@/lib/contratos";
 import { formatearFecha, formatearMonto } from "@/lib/formato";
@@ -60,6 +60,7 @@ export function VistaContratos() {
   const { estado, recargar } = useConsulta<Contrato[]>(cargarContratos);
   const edicion = useEdicion<Contrato>("contratos");
   const [anexos, setAnexos] = useState<Contrato | null>(null);
+  const [respaldosAnexo, setRespaldosAnexo] = useState<{ id: string; titulo: string } | null>(null);
   const [plantilla, setPlantilla] = useState<Contrato | null>(null);
   const [categorias, setCategorias] = useState<Contrato | null>(null);
 
@@ -78,6 +79,7 @@ export function VistaContratos() {
               filas={datos}
               edicion={edicion}
               alVerAnexos={setAnexos}
+              alVerRespaldosAnexo={setRespaldosAnexo}
               alVerPlantilla={setPlantilla}
               alVerCategorias={setCategorias}
             />
@@ -118,6 +120,16 @@ export function VistaContratos() {
         />
       )}
 
+      {respaldosAnexo && (
+        <DialogoAdjuntos
+          tabla="anexos"
+          registroId={respaldosAnexo.id}
+          titulo={respaldosAnexo.titulo}
+          abierto
+          alCerrar={() => setRespaldosAnexo(null)}
+        />
+      )}
+
       {edicion.adjuntos && (
         <DialogoAdjuntos
           tabla="contratos"
@@ -136,12 +148,14 @@ function Contenidos({
   filas,
   edicion,
   alVerAnexos,
+  alVerRespaldosAnexo,
   alVerPlantilla,
   alVerCategorias,
 }: {
   filas: Contrato[];
   edicion: ReturnType<typeof useEdicion<Contrato>>;
   alVerAnexos: (c: Contrato) => void;
+  alVerRespaldosAnexo: (r: { id: string; titulo: string }) => void;
   alVerPlantilla: (c: Contrato) => void;
   alVerCategorias: (c: Contrato) => void;
 }) {
@@ -154,7 +168,7 @@ function Contenidos({
     return filas;
   }, [filas, filtro]);
 
-  const presupuesto = visibles.reduce((t, c) => t + c.presupuesto, 0);
+  const presupuesto = visibles.reduce((t, c) => t + (c.montoVigente ?? 0), 0);
   const costo = visibles.reduce((t, c) => t + c.costoReal, 0);
   const facturado = visibles.reduce((t, c) => t + c.facturado, 0);
 
@@ -200,214 +214,199 @@ function Contenidos({
         ]}
       />
 
-      <Panel
-        titulo="Detalle"
-        nota={`${visibles.length} de ${filas.length} contratos`}
-        filtros={
-          <Filtro etiqueta="Estado" opciones={opciones} valor={filtro} alCambiar={setFiltro} />
-        }
-      >
-        <Tabla
-          columnas={columnas(edicion, alVerAnexos, alVerPlantilla, alVerCategorias)}
-          filas={visibles}
-          claveDe={(c) => c.id}
-          vacio="Todavía no hay contratos. Crea el primero para poder cargar movimientos."
-          pie={
-            <>
-              <Total colSpan={3}>Total</Total>
-              <Total derecha>{formatearMonto(presupuesto)}</Total>
-              <Total derecha>{formatearMonto(costo)}</Total>
-              <Total derecha>{formatearMonto(facturado)}</Total>
-              <Total colSpan={3} />
-            </>
-          }
-        />
-      </Panel>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-ink-soft">
+          {visibles.length} de {filas.length} contratos · monto {formatearMonto(presupuesto)} · costo{" "}
+          {formatearMonto(costo)} · facturado {formatearMonto(facturado)}
+        </p>
+        <Filtro etiqueta="Estado" opciones={opciones} valor={filtro} alCambiar={setFiltro} />
+      </div>
+
+      {visibles.length === 0 ? (
+        <p className="rounded-2xl border border-dashed border-mist-deep bg-white px-6 py-14 text-center text-sm text-ink-soft">
+          {filas.length === 0
+            ? "Todavía no hay contratos. Crea el primero para poder cargar movimientos."
+            : "Ningún contrato en este filtro."}
+        </p>
+      ) : (
+        /* Tarjetas y no tabla: un nombre de contrato largo («Obras Civiles
+           Acceso Vial y Refuerzo Gasoducto Taltal…») deformaba todas las
+           columnas. En la tarjeta el nombre ocupa lo que necesita y las cifras
+           siguen alineadas debajo. */
+        <div className="grid items-start gap-4 lg:grid-cols-2">
+          {visibles.map((c) => (
+            <TarjetaContrato
+              key={c.id}
+              c={c}
+              edicion={edicion}
+              alGestionarAnexos={() => alVerAnexos(c)}
+              alVerRespaldosAnexo={alVerRespaldosAnexo}
+              alVerPlantilla={() => alVerPlantilla(c)}
+              alVerCategorias={() => alVerCategorias(c)}
+            />
+          ))}
+        </div>
+      )}
     </>
   );
 }
 
-const columnas = (
-  edicion: ReturnType<typeof useEdicion<Contrato>>,
-  alVerAnexos: (c: Contrato) => void,
-  alVerPlantilla: (c: Contrato) => void,
-  alVerCategorias: (c: Contrato) => void,
-): Columna<Contrato>[] => [
-  {
-    clave: "contrato",
-    titulo: "Contrato",
-    encabezado: true,
-    celda: (c) => (
-      <>
-        <span className="block font-semibold text-ink">{c.nombre}</span>
-        <span className="mt-0.5 block text-xs text-ink-soft">
-          {c.id} · {c.cliente} · {c.faena}
-        </span>
-        <span className="mt-1 inline-block rounded-full bg-mist px-2 py-0.5 text-[11px] font-semibold text-ink-soft">
+function TarjetaContrato({
+  c,
+  edicion,
+  alGestionarAnexos,
+  alVerRespaldosAnexo,
+  alVerPlantilla,
+  alVerCategorias,
+}: {
+  c: Contrato;
+  edicion: ReturnType<typeof useEdicion<Contrato>>;
+  alGestionarAnexos: () => void;
+  alVerRespaldosAnexo: (r: { id: string; titulo: string }) => void;
+  alVerPlantilla: () => void;
+  alVerCategorias: () => void;
+}) {
+  const pct = consumoPct(c);
+  // Una sola ficha abierta a la vez: detalle o anexos.
+  const [abierto, setAbierto] = useState<"detalle" | "anexos" | null>(null);
+  const alternar = (que: "detalle" | "anexos") => setAbierto((a) => (a === que ? null : que));
+
+  return (
+    <article className="flex flex-col rounded-2xl border border-mist-deep bg-white p-5 lg:p-6">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="font-display text-base font-semibold leading-snug text-ink">{c.nombre}</h3>
+          <p className="mt-1 text-xs text-ink-soft">
+            {c.id} · {c.cliente} · {c.faena}
+          </p>
+        </div>
+        <Chip tono={tonoVigencia[c.vigencia]}>{vigencias[c.vigencia]}</Chip>
+      </div>
+
+      <p className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-xs text-ink-soft">
+        <span className="rounded-full bg-mist px-2 py-0.5 font-semibold">
           {modalidades.find((m) => m.id === c.modalidad)?.titulo ?? c.modalidad}
           {" · "}
           {formasContrato.find((t) => t.id === c.forma)?.titulo ?? c.forma}
         </span>
-      </>
-    ),
-  },
-  {
-    clave: "estado",
-    titulo: "Vigencia",
-    celda: (c) => (
-      <>
-        <Chip tono={tonoVigencia[c.vigencia]}>{vigencias[c.vigencia]}</Chip>
-        <span className="mt-1 block text-xs text-ink-soft">
+        <span>
           {c.vigencia === "cancelado"
             ? "terminado antes de plazo"
             : c.vigencia === "cerrado"
-            ? `terminó hace ${Math.abs(c.diasRestantes)} d`
-            : `${c.diasRestantes} d restantes`}
+              ? `terminó hace ${Math.abs(c.diasRestantes)} días`
+              : `${c.diasRestantes} días restantes`}{" "}
+          · {c.inicio ? `inicio ${formatearFecha(c.inicio)} · ` : ""}término {formatearFecha(c.terminoVigente)}
+          {c.diasPlazoTotal !== null && ` · ${c.diasPlazoTotal} días de plazo`}
         </span>
-      </>
-    ),
-  },
-  {
-    clave: "presupuesto",
-    titulo: "Presupuesto",
-    derecha: true,
-    celda: (c) => {
-      if (c.montoVigente === null) return <span className="text-ink-soft">—</span>;
-      return (
-        <>
-          <span className="font-semibold text-ink">{formatearMonto(c.montoVigente)}</span>
-          {c.montoAnexos !== 0 && (
-            <span className="mt-0.5 block text-xs text-ink-soft">
-              base {formatearMonto(c.presupuesto)} {c.montoAnexos > 0 ? "+" : "−"}{" "}
-              {formatearMonto(Math.abs(c.montoAnexos))} en anexos
+      </p>
+
+      <dl className="mt-4 grid grid-cols-3 gap-3 border-t border-mist pt-4">
+        <Cifra etiqueta="Monto vigente" valor={c.montoVigente === null ? "—" : formatearMonto(c.montoVigente)}
+          nota={c.montoAnexos !== 0 ? `base ${formatearMonto(c.presupuesto)} ${c.montoAnexos > 0 ? "+" : "−"} ${formatearMonto(Math.abs(c.montoAnexos))} anexos` : c.montoVigente === null ? "sin monto total" : undefined} />
+        <Cifra etiqueta="Costo real" valor={formatearMonto(c.costoReal)} />
+        <Cifra etiqueta="Facturado" valor={formatearMonto(c.facturado)} />
+      </dl>
+      <p className="mt-2 text-xs text-ink-soft">
+        {formatearMonto(c.costoCompras)} compras · {formatearMonto(c.costoServicios)} servicios ·{" "}
+        {formatearMonto(c.costoPersonal)} personal
+      </p>
+
+      {pct !== null && (
+        <div className="mt-3">
+          <div className="flex items-baseline justify-between text-xs">
+            <span className="text-ink-soft">Consumo del monto vigente</span>
+            <span className={`font-semibold ${pct > 100 ? "text-[#a52f24]" : pct > 85 ? "text-[#8a5a09]" : "text-[#0e7a4f]"}`}>
+              {pct.toFixed(0)}%
             </span>
-          )}
-        </>
-      );
-    },
-  },
-  {
-    clave: "costo",
-    titulo: "Costo real",
-    derecha: true,
-    celda: (c) => (
-      <>
-        <span className="block text-ink-soft">{formatearMonto(c.costoReal)}</span>
-        <span className="mt-0.5 block text-xs text-ink-soft/70">
-          {formatearMonto(c.costoCompras)} compras · {formatearMonto(c.costoServicios)}{" "}
-          servicios · {formatearMonto(c.costoPersonal)} personal
-        </span>
-      </>
-    ),
-  },
-  {
-    clave: "facturado",
-    titulo: "Facturado",
-    derecha: true,
-    celda: (c) => <span className="text-ink-soft">{formatearMonto(c.facturado)}</span>,
-  },
-  {
-    clave: "consumo",
-    titulo: "Consumo",
-    derecha: true,
-    celda: (c) => {
-      const pct = consumoPct(c);
-      if (pct === null) return <span className="text-ink-soft">—</span>;
-      return (
-        <span
-          className={`font-semibold ${
-            pct > 100 ? "text-[#a52f24]" : pct > 85 ? "text-[#8a5a09]" : "text-[#0e7a4f]"
-          }`}
-        >
-          {pct.toFixed(0)}%
-        </span>
-      );
-    },
-  },
-  {
-    clave: "termino",
-    titulo: "Término",
-    celda: (c) => (
-      <span className="whitespace-nowrap text-ink-soft">{formatearFecha(c.termino)}</span>
-    ),
-  },
-  {
-    clave: "acciones",
-    titulo: "",
-    derecha: true,
-    celda: (c) => (
-      <div className="flex items-center justify-end gap-1">
-        <button
-          type="button"
-          onClick={() => alVerCategorias(c)}
-          title="Categorías de costo: de qué se compone el costo de este contrato"
-          aria-label="Categorías de costo"
-          className="rounded-lg p-2 text-ink-soft transition-colors hover:bg-mist hover:text-ink"
-        >
-          <svg
-            width="17"
-            height="17"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-          >
+          </div>
+          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-mist" aria-hidden="true">
+            <div
+              className={`h-full rounded-full ${pct > 100 ? "bg-[#a52f24]" : pct > 85 ? "bg-[#c98a1c]" : "bg-[#0e7a4f]"}`}
+              style={{ width: `${Math.min(100, pct)}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-mist pt-3">
+        <div className="flex flex-wrap gap-2">
+          <Desplegar abierto={abierto === "detalle"} onClick={() => alternar("detalle")}>Detalle</Desplegar>
+          <Desplegar abierto={abierto === "anexos"} onClick={() => alternar("anexos")}>
+            Anexos{c.anexos > 0 ? ` (${c.anexos})` : ""}
+          </Desplegar>
+        </div>
+        <div className="flex items-center gap-1">
+          <BotonIcono titulo="Categorías de costo: de qué se compone el costo de este contrato" onClick={alVerCategorias}>
             <path d="M4 6h16M4 12h16M4 18h9" strokeLinecap="round" />
             <circle cx="18.5" cy="18" r="2.2" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          onClick={() => alVerPlantilla(c)}
-          title="Planilla del contrato: qué campos pide al cargar información"
-          aria-label="Planilla del contrato"
-          className="rounded-lg p-2 text-ink-soft transition-colors hover:bg-mist hover:text-ink"
-        >
-          <svg
-            width="17"
-            height="17"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-          >
+          </BotonIcono>
+          <BotonIcono titulo="Planilla del contrato: qué campos pide al cargar información" onClick={alVerPlantilla}>
             <rect x="3.5" y="4" width="17" height="16" rx="2" />
             <path d="M3.5 9h17M9 9v11M15 9v11" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          onClick={() => alVerAnexos(c)}
-          title={c.anexos === 0 ? "Sin anexos" : `${c.anexos} anexos vigentes`}
-          className="relative rounded-lg p-2 text-ink-soft transition-colors hover:bg-mist hover:text-ink"
-          aria-label="Anexos"
-        >
-          <svg
-            width="17"
-            height="17"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-          >
-            <path d="M7 3h7l5 5v13H7Z" strokeLinejoin="round" />
-            <path d="M14 3v5h5" strokeLinejoin="round" />
-            <path d="M12 11.5v5M9.5 14h5" strokeLinecap="round" />
-          </svg>
-          {c.anexos > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-cyan px-1 text-[10px] font-bold text-white">
-              {c.anexos}
-            </span>
-          )}
-        </button>
-        <AccionesFila
-          permiso="contratos.editar"
-          alEditar={() => edicion.abrirEdicion(c)}
-          alVerHistorial={() => edicion.verHistorial(c.id, `${c.id} · ${c.nombre}`)}
-          alVerAdjuntos={() => edicion.verAdjuntos(c.id, `${c.id} · ${c.nombre}`)}
-          cuantosAdjuntos={edicion.cuantosAdjuntos(c.id)}
-        />
+          </BotonIcono>
+          <AccionesFila
+            permiso="contratos.editar"
+            alEditar={() => edicion.abrirEdicion(c)}
+            alVerHistorial={() => edicion.verHistorial(c.id, `${c.id} · ${c.nombre}`)}
+            alVerAdjuntos={() => edicion.verAdjuntos(c.id, `${c.id} · ${c.nombre}`)}
+            cuantosAdjuntos={edicion.cuantosAdjuntos(c.id)}
+          />
+        </div>
       </div>
-    ),
-  },
-];
+
+      {abierto === "detalle" && <DetalleContrato c={c} alEditar={() => edicion.abrirEdicion(c)} />}
+      {abierto === "anexos" && (
+        <AnexosDesplegados
+          c={c}
+          alGestionar={alGestionarAnexos}
+          alVerAdjuntos={(x) => alVerRespaldosAnexo({ id: x.id, titulo: `Anexo N° ${x.numero} · ${c.nombre}` })}
+        />
+      )}
+    </article>
+  );
+}
+
+function Desplegar({ abierto, onClick, children }: { abierto: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={abierto}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+        abierto ? "border-cyan bg-cyan/5 text-cyan-deep" : "border-mist-deep text-ink-soft hover:border-ink hover:text-ink"
+      }`}
+    >
+      {children}
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true"
+        className={`transition-transform ${abierto ? "rotate-180" : ""}`}>
+        <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
+  );
+}
+
+function Cifra({ etiqueta, valor, nota }: { etiqueta: string; valor: string; nota?: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-soft">{etiqueta}</dt>
+      <dd className="mt-0.5 font-display text-base font-semibold tabular-nums text-ink">{valor}</dd>
+      {nota && <dd className="mt-0.5 text-[11px] leading-snug text-ink-soft">{nota}</dd>}
+    </div>
+  );
+}
+
+function BotonIcono({ titulo, onClick, children }: { titulo: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={titulo}
+      aria-label={titulo}
+      className="rounded-lg p-2 text-ink-soft transition-colors hover:bg-mist hover:text-ink"
+    >
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+        {children}
+      </svg>
+    </button>
+  );
+}

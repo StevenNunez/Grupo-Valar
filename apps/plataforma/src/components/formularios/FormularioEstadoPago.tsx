@@ -1,5 +1,6 @@
 "use client";
 
+import { SelectorAnexo } from "../ui/SelectorAnexo";
 import { useEffect, useState } from "react";
 import {
   Ancho,
@@ -21,7 +22,7 @@ import { actualizar, crear } from "@/lib/crud";
 import { opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
 import { formatearPesos, formatearUf } from "@/lib/formato";
 import type { EstadoEP, EstadoPago, TipoEdp } from "@/lib/ingresos";
-import { camposEdp, clavesEdp, montoUfTorres, resolverPlantillaEdp } from "@/lib/plantillas-edp";
+import { camposEdp, clavesEdp, clavesRetencion, comportamientoEdp, montoUfTorres, resolverPlantillaEdp, resolverSeleccionEdp } from "@/lib/plantillas-edp";
 import { supabase } from "@/lib/supabase";
 
 const estados: { id: EstadoEP; titulo: string }[] = [
@@ -42,6 +43,8 @@ const mesActual = () => new Date().toISOString().slice(0, 8) + "01";
 const hoy = () => new Date().toISOString().slice(0, 10);
 
 type Borrador = {
+  /** El anexo al que se cobra; vacío = contrato base. Cada uno lleva su serie de EDP. */
+  anexo_id: string;
   id: string;
   contrato_id: string;
   numero: number;
@@ -62,6 +65,7 @@ function borradorDe(ep: EstadoPago | null): Borrador {
     return {
       id: "",
       contrato_id: "",
+      anexo_id: "",
       numero: 1,
       periodo: mesActual(),
       tipo_edp: "ordinario",
@@ -78,6 +82,7 @@ function borradorDe(ep: EstadoPago | null): Borrador {
   return {
     id: ep.id,
     contrato_id: ep.contratoId,
+    anexo_id: ep.anexoId ?? "",
     numero: ep.numero,
     periodo: ep.periodo,
     tipo_edp: ep.tipoEdp,
@@ -117,31 +122,36 @@ export function FormularioEstadoPago({
     estadoPago?.contratoId === f.datos.contrato_id ? estadoPago.datos.plantilla_edp : null,
     contrato?.plantillaEdp ?? "general",
   );
+  /* Plantilla configurable: los campos marcados en el contrato. Un EDP ya
+     emitido conserva los que tenía al emitirse. */
+  const seleccion = resolverSeleccionEdp(
+    estadoPago?.contratoId === f.datos.contrato_id ? estadoPago.datos.campos_edp : null,
+    contrato?.camposEdp ?? [],
+  );
+  const comportamiento = comportamientoEdp(plantilla, seleccion);
   const claveUf = `${f.datos.contrato_id}:${f.datos.periodo}`;
   const ufGuardada = estadoPago?.contratoId === f.datos.contrato_id &&
     estadoPago.periodo === f.datos.periodo &&
     typeof estadoPago.datos.valor_uf_periodo === "number"
     ? estadoPago.datos.valor_uf_periodo : null;
   const valorUf = ufGuardada ?? (ufConsultada?.clave === claveUf ? ufConsultada.valor : null);
-  const camposPlantilla = camposEdp(plantilla, f.datos.tipo_edp);
-  const ufConceptos = plantilla === "torres" ? montoUfTorres(propios) : 0;
+  const camposPlantilla = camposEdp(plantilla, f.datos.tipo_edp, seleccion);
+  const ufConceptos = comportamiento.usaUf ? montoUfTorres(propios) : 0;
   // La planilla histórica trae el total en UF, pero no el desglose. Al cargar
   // conceptos nuevos, su suma pasa a ser el total y evita contarlo dos veces.
   const ufTotal = ufConceptos > 0 ? ufConceptos : f.datos.monto_uf;
   const netoCalculado = valorUf !== null && ufTotal > 0 ? Math.round(ufTotal * valorUf) : null;
-  const netoVisible = plantilla === "torres" ? netoCalculado : f.datos.monto_neto;
-  const hayRetencionesDesglosadas = plantilla === "carpas" &&
-    ["retencion_calidad", "retencion_anticipo", "retencion_fiel_cumplimiento"]
-      .some((clave) => propios[clave] !== undefined);
+  const netoVisible = comportamiento.usaUf ? netoCalculado : f.datos.monto_neto;
+  const hayRetencionesDesglosadas = comportamiento.desglosaRetenciones &&
+    clavesRetencion.some((clave) => propios[clave] !== undefined);
   const retencionesDesglosadas = hayRetencionesDesglosadas
-    ? ["retencion_calidad", "retencion_anticipo", "retencion_fiel_cumplimiento"]
-      .reduce((total, clave) => total + (Number(propios[clave]) || 0), 0)
+    ? clavesRetencion.reduce((total, clave) => total + (Number(propios[clave]) || 0), 0)
     : 0;
   const retenciones = hayRetencionesDesglosadas ? retencionesDesglosadas : f.datos.retenciones;
-  const camposAdicionales = campos.filter((c) => !clavesEdp(plantilla).includes(c.clave));
+  const camposAdicionales = campos.filter((c) => !clavesEdp(plantilla, seleccion).includes(c.clave));
 
   useEffect(() => {
-    if (plantilla !== "torres" || !f.datos.periodo) return;
+    if (!comportamiento.usaUf || !f.datos.periodo) return;
     if (ufGuardada !== null) return;
     let vigente = true;
     const inicio = f.datos.periodo.slice(0, 7) + "-01";
@@ -154,7 +164,7 @@ export function FormularioEstadoPago({
         setErrorUf(error ? "No se pudo consultar la UF del período." : null);
       });
     return () => { vigente = false; };
-  }, [plantilla, f.datos.periodo, claveUf, ufGuardada]);
+  }, [comportamiento.usaUf, f.datos.periodo, claveUf, ufGuardada]);
 
   function elegirContrato(id: string) {
     f.cambiar("contrato_id", id);
@@ -172,9 +182,9 @@ export function FormularioEstadoPago({
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const { id, ...resto } = f.datos;
-    if (plantilla === "torres") {
+    if (comportamiento.usaUf) {
       if (ufTotal <= 0) {
-        setErrorUf("Ingresa el total en UF o el monto de los conceptos de Torres.");
+        setErrorUf("Ingresa el total en UF o el monto de los conceptos en UF.");
         return;
       }
       if (valorUf === null) {
@@ -189,14 +199,19 @@ export function FormularioEstadoPago({
     // fecha y Postgres la rechazaría.
     const fila = {
       ...resto,
-      monto_neto: plantilla === "torres" ? netoCalculado : resto.monto_neto,
+      monto_neto: comportamiento.usaUf ? netoCalculado : resto.monto_neto,
+      anexo_id: resto.anexo_id || null,
       retenciones,
       fecha_aprobacion: resto.fecha_aprobacion || null,
       // El monto en UF es opcional: cero significa "no se pactó en UF", no cero UF.
-      monto_uf: plantilla === "torres" ? ufTotal : resto.monto_uf > 0 ? resto.monto_uf : null,
-      datos: plantilla === "torres" && valorUf !== null
-        ? { ...datosActivos, plantilla_edp: plantilla, valor_uf_periodo: valorUf }
-        : { ...datosActivos, plantilla_edp: plantilla },
+      monto_uf: comportamiento.usaUf ? ufTotal : resto.monto_uf > 0 ? resto.monto_uf : null,
+      // Se guarda con qué plantilla (y qué campos, si es configurable) se emitió.
+      datos: {
+        ...datosActivos,
+        plantilla_edp: plantilla,
+        ...(plantilla === "configurable" ? { campos_edp: seleccion } : {}),
+        ...(comportamiento.usaUf && valorUf !== null ? { valor_uf_periodo: valorUf } : {}),
+      },
     };
 
     f.enviar(
@@ -242,6 +257,8 @@ export function FormularioEstadoPago({
               valor={f.datos.contrato_id}
               alCambiar={elegirContrato}
             />
+            {f.datos.contrato_id && <SelectorAnexo contratoId={f.datos.contrato_id} valor={f.datos.anexo_id} alCambiar={(v) => f.cambiar("anexo_id", v)}
+              ayuda="Un anexo lleva su propia serie de estados de pago y su propio resultado." />}
 
             {f.datos.contrato_id && <>
             <Ancho>
@@ -281,13 +298,13 @@ export function FormularioEstadoPago({
               {...f.campo("avance_periodo")}
             />}
 
-            {plantilla === "torres" ? <>
+            {comportamiento.usaUf ? <>
               {ufConceptos === 0 && <CampoNumero
                 etiqueta="Total del EDP en UF"
                 requerido
                 min={0}
                 sufijo="UF"
-                ayuda="Úsalo si aún no tienes el desglose por torres, traslados y mantenciones."
+                ayuda="Úsalo si aún no tienes el desglose por equipos, traslados y mantenciones."
                 {...f.campo("monto_uf")}
               />}
               <Ancho><p className="rounded-xl bg-mist/50 px-4 py-3 text-sm text-ink-soft">
@@ -350,9 +367,9 @@ export function FormularioEstadoPago({
               <p className="rounded-xl bg-mist/50 px-4 py-3 text-sm text-ink-soft">
                 A cobrar:{" "}
                 <span className="font-semibold text-ink">
-                  {plantilla === "torres" && netoCalculado === null
+                  {comportamiento.usaUf && netoCalculado === null
                     ? "—"
-                    : formatearPesos((plantilla === "torres" ? netoCalculado ?? 0 : f.datos.monto_neto) - retenciones)}
+                    : formatearPesos((comportamiento.usaUf ? netoCalculado ?? 0 : f.datos.monto_neto) - retenciones)}
                 </span>
                 <span className="ml-2 text-xs">Neto menos la retención de garantía.</span>
               </p>

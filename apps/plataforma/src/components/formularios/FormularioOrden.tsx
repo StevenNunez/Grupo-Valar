@@ -21,7 +21,8 @@ import {
   opcionesCondicionPago,
   type Proveedor,
 } from "@/lib/abastecimiento";
-import { cargarAnexos, nombreTipoAnexo, type Anexo } from "@/lib/anexos";
+import { cargarAnexos, proyectoDeAnexo, type Anexo } from "@/lib/anexos";
+import { SelectorAnexo } from "../ui/SelectorAnexo";
 import { actualizar, crear, eliminar } from "@/lib/crud";
 import { opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
 import { tiposCompra } from "@/lib/egresos";
@@ -52,6 +53,8 @@ type BorradorOrden = {
   contrato_id: string;
   numero: string;
   proyecto: string;
+  /** Contra qué anexo se compra (0059); vacío = contrato base. */
+  anexo_id: string;
   proveedor_id: string;
   proveedor: string;
   rut_proveedor: string;
@@ -103,6 +106,7 @@ function borradorDe(
       contrato_id: contratos[0]?.id ?? "",
       numero: "",
       proyecto: "",
+      anexo_id: "",
       proveedor_id: "",
       proveedor: "",
       rut_proveedor: "",
@@ -132,6 +136,7 @@ function borradorDe(
     contrato_id: orden.contratoId,
     numero: orden.numero,
     proyecto: orden.proyecto ?? "",
+    anexo_id: orden.anexoId ?? "",
     proveedor_id: orden.proveedorId ?? "",
     proveedor: orden.proveedor,
     rut_proveedor: orden.rutProveedor ?? "",
@@ -272,15 +277,6 @@ export function FormularioOrden({
     };
   }, [f.datos.contrato_id]);
 
-  /* Se comparan los contratos y no se limpia la lista al cambiar: mientras la
-     consulta viaja, mostrar los anexos del contrato anterior sería ofrecer
-     comprar contra un adicional que no es de este contrato. */
-  const anexosVigentes =
-    anexos.contratoId === f.datos.contrato_id
-      ? anexos.lista.filter((a) => a.estado === "vigente")
-      : [];
-  const nombreContrato =
-    contratos.find((c) => c.id === f.datos.contrato_id)?.nombre ?? f.datos.contrato_id;
 
   /* El código interno no se teclea: es el contrato y el correlativo del número.
      Escribirlo a mano es la forma más común de terminar con dos órdenes con el
@@ -372,7 +368,12 @@ export function FormularioOrden({
       ...f.datos,
       id: ordenId,
       fecha_requerida: f.datos.fecha_requerida || null,
-      proyecto: f.datos.proyecto.trim() || null,
+      // Lo impreso en «Proyecto» sale del anexo elegido; sin anexo, la base.
+      anexo_id: f.datos.anexo_id || null,
+      proyecto: (() => {
+        const anexo = anexos.lista.find((a) => a.id === f.datos.anexo_id);
+        return anexo ? proyectoDeAnexo(anexo) : null;
+      })(),
       proveedor_id: f.datos.proveedor_id || null,
     };
 
@@ -457,22 +458,12 @@ export function FormularioOrden({
                 aparece cuando el contrato tiene anexos vigentes, porque ahí sí
                 hay algo que decidir: si la compra va contra la base o contra un
                 adicional. */}
-            {anexosVigentes.length > 0 && (
-              <Ancho>
-                <CampoSeleccion
-                  etiqueta="Se compra contra"
-                  ayuda="Es lo que sale impreso en la línea «Proyecto» de la orden."
-                  opciones={[
-                    { id: "", titulo: `Contrato base · ${nombreContrato}` },
-                    ...anexosVigentes.map((a) => ({
-                      id: `${nombreTipoAnexo[a.tipo]} N° ${a.numero} · ${a.descripcion}`,
-                      titulo: `${nombreTipoAnexo[a.tipo]} N° ${a.numero} · ${a.descripcion}`,
-                    })),
-                  ]}
-                  {...f.campo("proyecto")}
-                />
-              </Ancho>
-            )}
+            <SelectorAnexo
+              contratoId={f.datos.contrato_id}
+              valor={f.datos.anexo_id}
+              alCambiar={(v) => f.cambiar("anexo_id", v)}
+              ayuda="Lo comprado contra un anexo sale en su resultado, y se imprime en la línea «Proyecto» de la orden."
+            />
           </Campos>
 
           {/* El proveedor se elige del maestro y sus datos se copian solos.

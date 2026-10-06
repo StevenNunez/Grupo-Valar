@@ -18,14 +18,18 @@ import { actualizar, crear } from "@/lib/crud";
 import { borrarContratoDemo, estadosContrato, type ResumenBorradoContratoDemo } from "@/lib/contratos";
 import { useUsuario } from "@/lib/sesion";
 import { plantillasEdp, type PlantillaEdp } from "@/lib/plantillas-edp";
+import { condicionesDe, condicionesParaGuardar, plantillaSugerida, type Condiciones } from "@/lib/condiciones";
 import {
   formasContrato,
   modalidades,
+  monedas,
   type Contrato,
   type EstadoContrato,
   type FormaContrato,
   type Modalidad,
+  type Moneda,
 } from "@/lib/control-de-gestion";
+import { CondicionesContrato, NetoConIva, SelectorCamposEdp } from "./CondicionesContrato";
 
 type Borrador = {
   id: string;
@@ -39,6 +43,11 @@ type Borrador = {
   tipo: FormaContrato;
   plantilla_edp: PlantillaEdp;
   estado: EstadoContrato;
+  moneda: Moneda;
+  /** Plantilla configurable: los campos que lleva su EDP. */
+  edp_campos: string[];
+  /** Lo propio de la forma de contratación. Opcional; montos netos. */
+  condiciones: Condiciones;
 };
 
 function borradorDe(c: Contrato | null): Borrador {
@@ -52,8 +61,11 @@ function borradorDe(c: Contrato | null): Borrador {
     termino: c?.termino ?? "",
     modalidad: c?.modalidad ?? "largo_plazo",
     tipo: c?.forma ?? "precios_unitarios",
-    plantilla_edp: c?.plantillaEdp ?? "general",
+    plantilla_edp: c?.plantillaEdp ?? plantillaSugerida[c?.forma ?? "precios_unitarios"],
     estado: c?.estado ?? "activo",
+    moneda: c?.moneda ?? "CLP",
+    edp_campos: c?.camposEdp ?? [],
+    condiciones: condicionesDe(c?.condiciones, c?.forma ?? "precios_unitarios"),
   };
 }
 
@@ -68,7 +80,18 @@ export function FormularioContrato({
 }) {
   const f = useFormulario<Borrador>(borradorDe(contrato));
   const editando = contrato !== null;
-  const [presupuestoEditado, setPresupuestoEditado] = useState(false);
+  /* Al elegir la forma se propone la plantilla que calza, mientras nadie la
+     haya elegido a mano. Al editar un contrato no se toca la que ya tiene. */
+  const [plantillaElegida, setPlantillaElegida] = useState(editando);
+
+  function elegirForma(forma: FormaContrato) {
+    f.setDatos((d) => ({
+      ...d,
+      tipo: forma,
+      condiciones: condicionesDe(d.condiciones, forma),
+      plantilla_edp: plantillaElegida ? d.plantilla_edp : plantillaSugerida[forma],
+    }));
+  }
   const usuario = useUsuario();
   const esDemo = usuario.empresa === "demo";
   const [confirmandoDemo, setConfirmandoDemo] = useState(false);
@@ -155,8 +178,11 @@ export function FormularioContrato({
     const fila = {
       ...campos,
       inicio: campos.inicio || null,
-      presupuesto: editando && contrato.presupuesto == null && !presupuestoEditado
-        ? null : campos.presupuesto,
+      // Sin monto total es válido (contratos recurrentes): cero se guarda como "sin monto".
+      presupuesto: campos.presupuesto > 0 ? campos.presupuesto : null,
+      // Solo lo de la forma elegida: si se cambió de forma, lo anterior no queda colgando.
+      condiciones: condicionesParaGuardar(campos.condiciones, campos.tipo),
+      edp_campos: campos.plantilla_edp === "configurable" ? campos.edp_campos : [],
     };
     f.enviar(
       () =>
@@ -181,6 +207,7 @@ export function FormularioContrato({
         }
         abierto
         alCerrar={alCerrar}
+        ancho="max-w-4xl"
       >
         <form onSubmit={onSubmit}>
           <Campos>
@@ -207,14 +234,6 @@ export function FormularioContrato({
 
             <CampoTexto etiqueta="Faena" requerido marcador="Coya Sur" {...f.campo("faena")} />
 
-            <CampoDinero
-              etiqueta="Presupuesto"
-              requerido={!editando || contrato.presupuesto != null}
-              ayuda="Monto neto del contrato. Se puede dejar sin monto total en contratos recurrentes."
-              valor={f.datos.presupuesto}
-              alCambiar={(valor) => { f.cambiar("presupuesto", valor); setPresupuestoEditado(true); }}
-            />
-
             <CampoFecha
               etiqueta="Inicio"
               ayuda="Desde cuándo rige. Con el término, de acá sale el plazo."
@@ -235,17 +254,40 @@ export function FormularioContrato({
               etiqueta="Forma de contratación"
               requerido
               opciones={formasContrato}
-              ayuda={formasContrato.find((t) => t.id === f.datos.tipo)?.ayuda}
-              {...f.campo("tipo")}
+              ayuda={`${formasContrato.find((t) => t.id === f.datos.tipo)?.ayuda ?? ""} Abajo aparece lo propio de esta forma; nada de eso es obligatorio.`}
+              valor={f.datos.tipo}
+              alCambiar={elegirForma}
             />
+
+            <CampoSeleccion
+              etiqueta="Moneda del contrato"
+              requerido
+              opciones={monedas}
+              ayuda={monedas.find((m) => m.id === f.datos.moneda)?.ayuda}
+              {...f.campo("moneda")}
+            />
+
+            <div>
+              <CampoDinero
+                etiqueta="Monto total del contrato (neto)"
+                ayuda="Opcional. Neto, sin IVA: el IVA se calcula solo. Déjalo en cero si el contrato no tiene monto total."
+                {...f.campo("presupuesto")}
+              />
+              <div className="mt-2"><NetoConIva neto={f.datos.presupuesto} moneda="CLP" /></div>
+            </div>
 
             <CampoSeleccion
               etiqueta="Plantilla de Estado de Pago"
               requerido
               opciones={plantillasEdp}
-              ayuda={plantillasEdp.find((p) => p.id === f.datos.plantilla_edp)?.ayuda}
-              {...f.campo("plantilla_edp")}
+              ayuda={`${plantillasEdp.find((p) => p.id === f.datos.plantilla_edp)?.ayuda ?? ""}${!plantillaElegida ? " Propuesta según la forma de contratación." : ""}`}
+              valor={f.datos.plantilla_edp}
+              alCambiar={(v) => { setPlantillaElegida(true); f.cambiar("plantilla_edp", v); }}
             />
+
+            {f.datos.plantilla_edp === "configurable" && (
+              <SelectorCamposEdp seleccion={f.datos.edp_campos} alCambiar={(v) => f.cambiar("edp_campos", v)} />
+            )}
 
             {/* Vigente, por vencer o cerrado salen solos de las fechas. Lo único
                 que el calendario no sabe es si se canceló antes: eso se marca
@@ -287,6 +329,13 @@ export function FormularioContrato({
                 )}
               </p>
             </Ancho>
+
+            <CondicionesContrato
+              forma={f.datos.tipo}
+              moneda={f.datos.moneda}
+              condiciones={f.datos.condiciones}
+              alCambiar={(c) => f.cambiar("condiciones", c)}
+            />
           </Campos>
 
           <Pie

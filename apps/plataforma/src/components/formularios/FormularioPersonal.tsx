@@ -1,5 +1,6 @@
 "use client";
 
+import { SelectorAnexo } from "../ui/SelectorAnexo";
 import { useState } from "react";
 
 import {
@@ -29,6 +30,8 @@ const mesActual = () => new Date().toISOString().slice(0, 8) + "01";
 
 type Borrador = Haberes & {
   contrato_id: string;
+  /** El anexo al que se carga; vacío = contrato base. */
+  anexo_id: string;
   faena: string;
   periodo: string;
   dotacion: number;
@@ -40,6 +43,7 @@ function borradorDe(p: CostoPersonal | null, contratos: ContratoBreve[]): Borrad
     return {
       ...haberesEnCero,
       contrato_id: contratos[0]?.id ?? "",
+      anexo_id: "",
       faena: contratos[0]?.faena ?? "",
       periodo: mesActual(),
       dotacion: 0,
@@ -48,6 +52,7 @@ function borradorDe(p: CostoPersonal | null, contratos: ContratoBreve[]): Borrad
   }
   return {
     contrato_id: p.contratoId,
+    anexo_id: p.anexoId ?? "",
     faena: p.faena,
     periodo: p.periodo,
     dotacion: p.dotacion,
@@ -129,6 +134,7 @@ export function FormularioPersonal({
     const fila = {
       ...f.datos,
       faena: f.datos.faena || faenaDelContrato,
+      anexo_id: f.datos.anexo_id || null,
       // Al editar se respeta la línea que ya tenía; al crear, la de personal del contrato.
       categoria_id: editando ? registro.categoriaId : categoriaDePersonal(categorias, f.datos.contrato_id),
       datos: propios,
@@ -167,6 +173,7 @@ export function FormularioPersonal({
               valor={f.datos.contrato_id}
               alCambiar={elegirContrato}
             />
+            <SelectorAnexo contratoId={f.datos.contrato_id} valor={f.datos.anexo_id} alCambiar={(v) => f.cambiar("anexo_id", v)} />
 
             <CampoMes
               etiqueta="Mes"

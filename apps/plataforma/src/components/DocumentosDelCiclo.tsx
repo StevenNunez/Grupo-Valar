@@ -5,7 +5,7 @@ import { camposDe, mostrarValor, type CampoContrato } from "@/lib/campos";
 import { empresa, emisorOC } from "@/lib/empresa";
 import { formatearFecha, formatearPesos, formatearUf, mesLargo } from "@/lib/formato";
 import type { Ciclo } from "@/lib/ingresos";
-import { camposEdp, clavesEdp } from "@/lib/plantillas-edp";
+import { camposEdp, clavesEdp, comportamientoEdp } from "@/lib/plantillas-edp";
 
 /**
  * Los tres documentos del ciclo, listos para imprimir o guardar en PDF.
@@ -39,8 +39,9 @@ import { camposEdp, clavesEdp } from "@/lib/plantillas-edp";
 
 export function EstadoPagoImprimible({ ciclo, campos }: { ciclo: Ciclo; campos: CampoContrato[] }) {
   const plantilla = ciclo.plantillaEdp;
-  const particulares = camposEdp(plantilla, ciclo.tipoEdp);
-  const clavesParticulares = clavesEdp(plantilla);
+  const particulares = camposEdp(plantilla, ciclo.tipoEdp, ciclo.camposEdp);
+  const clavesParticulares = clavesEdp(plantilla, ciclo.camposEdp);
+  const comportamiento = comportamientoEdp(plantilla, ciclo.camposEdp);
   const propios = camposDe(campos, ciclo.contratoId, "estado_pago")
     .filter((campo) => !clavesParticulares.includes(campo.clave));
   const aCobrar = ciclo.montoNeto - ciclo.retenciones;
@@ -53,12 +54,12 @@ export function EstadoPagoImprimible({ ciclo, campos }: { ciclo: Ciclo; campos: 
     { etiqueta: "Período", valor: mesLargo(ciclo.periodo) },
     { etiqueta: "Tipo", valor: ciclo.tipoEdp === "extraordinario" ? "Extraordinario" : "Ordinario" },
   ];
-  if (plantilla === "carpas" && ciclo.datos.avance_real !== undefined) {
+  if (comportamiento.destacaAvance && ciclo.datos.avance_real !== undefined) {
     destacados.push({
       etiqueta: "Avance real",
       valor: `${Number(ciclo.datos.avance_real).toLocaleString("es-CL")}%`,
     });
-  } else if (plantilla === "torres" && ciclo.montoUf !== null) {
+  } else if (comportamiento.usaUf && ciclo.montoUf !== null) {
     destacados.push({ etiqueta: "Monto del período", valor: `${formatearUf(ciclo.montoUf)} UF` });
   } else if (plantilla === "general") {
     destacados.push({
@@ -104,7 +105,7 @@ export function EstadoPagoImprimible({ ciclo, campos }: { ciclo: Ciclo; campos: 
           </h2>
           <table className="w-full border-collapse text-sm">
             <tbody>
-              {plantilla === "torres" && typeof ciclo.datos.valor_uf_periodo === "number" && (
+              {comportamiento.usaUf && typeof ciclo.datos.valor_uf_periodo === "number" && (
                 <Fila etiqueta="UF aplicada al período" valor={`$${ciclo.datos.valor_uf_periodo.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} />
               )}
               {particulares.filter((campo) => {

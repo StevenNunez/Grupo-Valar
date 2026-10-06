@@ -1,5 +1,6 @@
 "use client";
 
+import { SelectorAnexo } from "../ui/SelectorAnexo";
 import { useState } from "react";
 
 import {
@@ -39,6 +40,8 @@ const estadosPago = [
 const hoy = () => new Date().toISOString().slice(0, 10);
 
 type Borrador = {
+  /** El anexo al que se carga; vacío = contrato base. */
+  anexo_id: string;
   id: string;
   contrato_id: string;
   categoria_id: string;
@@ -62,6 +65,7 @@ function borradorDe(s: Servicio | null, contratos: ContratoBreve[]): Borrador {
     return {
       id: "",
       contrato_id: contratos[0]?.id ?? "",
+      anexo_id: "",
       categoria_id: "",
       contratista: "",
       documento: "",
@@ -81,6 +85,7 @@ function borradorDe(s: Servicio | null, contratos: ContratoBreve[]): Borrador {
   return {
     id: s.id,
     contrato_id: s.contratoId,
+    anexo_id: s.anexoId ?? "",
     categoria_id: s.categoriaId ?? "",
     contratista: s.contratista,
     documento: s.documento ?? "",
@@ -146,6 +151,7 @@ export function FormularioServicio({
       ...campos,
       datos: propios,
       categoria_id: campos.categoria_id || null,
+      anexo_id: campos.anexo_id || null,
       documento: campos.documento.trim() || null,
       desde: campos.desde || null,
       hasta: campos.hasta || null,
@@ -196,6 +202,7 @@ export function FormularioServicio({
               valor={f.datos.contrato_id}
               alCambiar={elegirContrato}
             />
+            <SelectorAnexo contratoId={f.datos.contrato_id} valor={f.datos.anexo_id} alCambiar={(v) => f.cambiar("anexo_id", v)} />
 
             {/* La lista sale de la planilla del contrato: Torres tiene "Torres"
                 y "Camioneta"; Misceláneos tiene "Traslado de Personal". */}

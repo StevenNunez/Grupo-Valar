@@ -280,6 +280,8 @@ export const tiposGasto = [
 ];
 
 export type Solped = {
+  /** El anexo al que se carga (0059); nulo = contrato base. */
+  anexoId: string | null;
   id: string;
   numero: string;
   contratoId: string;
@@ -301,6 +303,7 @@ export type Solped = {
 };
 
 type FilaSolped = {
+  anexo_id?: string | null;
   id: string;
   numero: string;
   contrato_id: string;
@@ -330,6 +333,7 @@ export async function cargarSolped(): Promise<Solped[]> {
   if (error) throw new Error(error.message);
 
   return ((data ?? []) as FilaSolped[]).map((f) => ({
+    anexoId: (f.anexo_id as string | null | undefined) ?? null,
     id: f.id,
     numero: f.numero,
     contratoId: f.contrato_id,
@@ -1119,6 +1123,7 @@ export async function generarOrdenDesdeCotizacion({
   soloItems,
   incluirFlete = true,
   proyecto = null,
+  anexoId,
 }: {
   solped: Solped;
   cotizacion: Cotizacion;
@@ -1148,6 +1153,8 @@ export async function generarOrdenDesdeCotizacion({
    * —una extensión o un adicional—, que es el único caso en que difiere.
    */
   proyecto?: string | null;
+  /** Contra qué anexo se compra (0059). Si no se dice, el de la solicitud. */
+  anexoId?: string | null;
 }) {
   const items = await cargarItemsDeCotizacion(cotizacion.id);
   const elegidos = soloItems && soloItems.length > 0 ? new Set(soloItems) : null;
@@ -1187,6 +1194,7 @@ export async function generarOrdenDesdeCotizacion({
     // El centro de costo es el contrato; solo se dice otra cosa cuando la
     // compra va contra un anexo.
     proyecto: proyecto ?? solped.contrato,
+    anexo_id: anexoId === undefined ? solped.anexoId : anexoId,
     fecha_emision: new Date().toISOString().slice(0, 10),
     fecha_requerida: solped.fechaRequerida,
     condiciones_pago: condicionDeProveedor(proveedor),

@@ -1,5 +1,6 @@
 "use client";
 
+import { SelectorAnexo } from "../ui/SelectorAnexo";
 import { useEffect, useMemo, useState } from "react";
 import {
   Ancho,
@@ -77,6 +78,8 @@ const lineaVacia = (n: number): Linea => ({
 });
 
 type Borrador = {
+  /** El anexo para el que se pide; vacío = contrato base. La OC lo hereda. */
+  anexo_id: string;
   id: string;
   numero: string;
   contrato_id: string;
@@ -119,6 +122,7 @@ export function FormularioSolped({
           id: solped.id,
           numero: solped.numero,
           contrato_id: solped.contratoId,
+          anexo_id: solped.anexoId ?? "",
           solicitante_nombre: solped.solicitanteNombre,
           solicitante_cargo: solped.solicitanteCargo ?? "",
           area: solped.area ?? "",
@@ -132,6 +136,7 @@ export function FormularioSolped({
           id: "",
           numero: siguienteNumeroSolped(todas),
           contrato_id: contratos[0]?.id ?? "",
+          anexo_id: "",
           // Quien la crea es quien la pide: sale de la sesión, no se teclea.
           solicitante_nombre: usuario.nombre,
           solicitante_cargo: usuario.cargo,
@@ -242,6 +247,7 @@ export function FormularioSolped({
       ...campos,
       solicitante_cargo: campos.solicitante_cargo.trim() || null,
       area: campos.area.trim() || null,
+      anexo_id: campos.anexo_id || null,
       fecha_requerida: campos.fecha_requerida || null,
       observaciones: campos.observaciones.trim() || null,
       ...(editando ? {} : { solicitante_id: usuario.id }),
@@ -320,6 +326,7 @@ export function FormularioSolped({
               opciones={opcionesDeContrato(contratos)}
               {...f.campo("contrato_id")}
             />
+            <SelectorAnexo contratoId={f.datos.contrato_id} valor={f.datos.anexo_id} alCambiar={(v) => f.cambiar("anexo_id", v)} />
 
             <CampoTexto
               etiqueta="Solicita"

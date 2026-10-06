@@ -34,7 +34,7 @@ import {
 } from "@/lib/abastecimiento";
 import { Impresion } from "./ui/Impresion";
 import { SolicitudCotizacionImprimible } from "./SolicitudCotizacionImprimible";
-import { cargarAnexos, nombreTipoAnexo, type Anexo } from "@/lib/anexos";
+import { cargarAnexos, etiquetaAnexo, proyectoDeAnexo, type Anexo } from "@/lib/anexos";
 import { enviarSolicitudPorCorreo } from "@/lib/usuarios";
 import {
   emparejar,
@@ -1057,7 +1057,8 @@ function DialogoGenerarOrden({
 
   const [elegidos, setElegidos] = useState<Set<string> | null>(null);
   const [conFlete, setConFlete] = useState(true);
-  const [proyecto, setProyecto] = useState("");
+  // El anexo de la solicitud viene propuesto; se puede cambiar si esta parte va a otro.
+  const [anexoId, setAnexoId] = useState(solped.anexoId ?? "");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1119,7 +1120,11 @@ function DialogoGenerarOrden({
         emisor,
         soloItems: [...marcados],
         incluirFlete: conFlete && cotizacion.flete > 0,
-        proyecto: proyecto || null,
+        anexoId: anexoId || null,
+        proyecto: (() => {
+          const anexo = vigentes.find((a) => a.id === anexoId);
+          return anexo ? proyectoDeAnexo(anexo) : null;
+        })(),
       });
       alCreada(numero || id);
     } catch (e) {
@@ -1155,21 +1160,18 @@ function DialogoGenerarOrden({
           <label className="mt-5 block">
             <Etiqueta>Se compra contra</Etiqueta>
             <select
-              value={proyecto}
-              onChange={(e) => setProyecto(e.target.value)}
+              value={anexoId}
+              onChange={(e) => setAnexoId(e.target.value)}
               className={claseCelda}
             >
               <option value="">Contrato base · {solped.contrato}</option>
               {vigentes.map((a) => (
-                <option
-                  key={a.id}
-                  value={`${nombreTipoAnexo[a.tipo]} N° ${a.numero} · ${a.descripcion}`}
-                >
-                  {nombreTipoAnexo[a.tipo]} N° {a.numero} · {a.descripcion}
+                <option key={a.id} value={a.id}>
+                  {etiquetaAnexo(a)}
                 </option>
               ))}
             </select>
-            <Ayuda>Es lo que sale impreso en la línea «Proyecto» de la orden.</Ayuda>
+            <Ayuda>Lo comprado contra un anexo sale en su resultado, y se imprime en la línea «Proyecto» de la orden.</Ayuda>
           </label>
         )}
 

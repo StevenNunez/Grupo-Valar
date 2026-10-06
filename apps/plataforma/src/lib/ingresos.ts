@@ -2,7 +2,7 @@
 
 import type { Datos } from "./campos";
 import type { PlantillaEdp } from "./plantillas-edp";
-import { resolverPlantillaEdp } from "./plantillas-edp";
+import { resolverPlantillaEdp, resolverSeleccionEdp } from "./plantillas-edp";
 import { supabase } from "./supabase";
 
 /**
@@ -20,6 +20,8 @@ export type EstadoEP = "presentado" | "aprobado" | "facturado" | "pagado" | "rec
 export type TipoEdp = "ordinario" | "extraordinario";
 
 export type EstadoPago = {
+  /** El anexo al que se carga (0059); nulo = contrato base. */
+  anexoId: string | null;
   id: string;
   contratoId: string;
   contrato: string;
@@ -42,6 +44,7 @@ export type EstadoPago = {
 /* Postgres devuelve snake_case; la app trabaja en camelCase. La relación con
    `contratos` viene anidada porque PostgREST resuelve la clave foránea. */
 type FilaEP = {
+  anexo_id?: string | null;
   id: string;
   contrato_id: string;
   numero: number;
@@ -63,7 +66,7 @@ export async function cargarEstadosPago(): Promise<EstadoPago[]> {
   const { data, error } = await supabase
     .from("estados_pago")
     .select(
-      "id, contrato_id, numero, periodo, tipo_edp, avance_periodo, monto_neto, monto_uf, retenciones, monto_cobrado, estado, fecha_presentacion, fecha_aprobacion, datos, contratos(nombre, cliente)",
+      "id, contrato_id, anexo_id, numero, periodo, tipo_edp, avance_periodo, monto_neto, monto_uf, retenciones, monto_cobrado, estado, fecha_presentacion, fecha_aprobacion, datos, contratos(nombre, cliente)",
     )
     .order("periodo", { ascending: false })
     .order("contrato_id");
@@ -73,6 +76,7 @@ export async function cargarEstadosPago(): Promise<EstadoPago[]> {
   return ((data ?? []) as unknown as FilaEP[]).map((f) => ({
     id: f.id,
     contratoId: f.contrato_id,
+    anexoId: (f.anexo_id as string | null | undefined) ?? null,
     contrato: f.contratos?.nombre ?? f.contrato_id,
     cliente: f.contratos?.cliente ?? "",
     numero: f.numero,
@@ -246,6 +250,8 @@ export const etapas: { id: Etapa; titulo: string; falta: string }[] = [
  */
 export type Ciclo = EstadoPago & {
   plantillaEdp: PlantillaEdp;
+  /** Plantilla configurable: los campos con que se emitió (o los del contrato). */
+  camposEdp: string[];
   ordenId: string | null;
   ordenNumero: string | null;
   ordenMandante: string | null;
@@ -311,14 +317,17 @@ export async function cargarCiclo(): Promise<Ciclo[]> {
   const [ciclos, contratos] = await Promise.all([
     supabase.from("ciclo_ingreso").select("*")
       .order("periodo", { ascending: false }).order("numero", { ascending: false }),
-    supabase.from("contratos").select("id, plantilla_edp"),
+    supabase.from("contratos").select("id, plantilla_edp, edp_campos"),
   ]);
 
   const error = ciclos.error ?? contratos.error;
   if (error) throw new Error(error.message);
   const plantillas = new Map((contratos.data ?? []).map((fila) => [fila.id, fila.plantilla_edp as PlantillaEdp]));
+  const selecciones = new Map((contratos.data ?? []).map((fila) => [fila.id, (fila.edp_campos as string[] | null) ?? []]));
 
   return (ciclos.data ?? []).map((f: Record<string, unknown>) => ({
+    anexoId: (f.anexo_id as string | null | undefined) ?? null,
+    camposEdp: resolverSeleccionEdp((f.datos as Datos | null)?.campos_edp, selecciones.get(f.contrato_id as string) ?? []),
     id: f.id as string,
     plantillaEdp: resolverPlantillaEdp(
       (f.datos as Datos | null)?.plantilla_edp,
