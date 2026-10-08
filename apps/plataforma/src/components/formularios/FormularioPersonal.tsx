@@ -68,7 +68,9 @@ function borradorDe(p: CostoPersonal | null, contratos: ContratoBreve[]): Borrad
     total_no_imponible: p.totalNoImponible,
     otros_haberes: p.otrosHaberes,
     otros_haberes_detalle: p.otrosHaberesDetalle,
+    descuento_trabajador: p.descuentoTrabajador,
     leyes_sociales: p.leyesSociales,
+    aporte_patronal: p.aportePatronal,
   };
 }
 
@@ -200,27 +202,29 @@ export function FormularioPersonal({
               />
             )}
 
-            <CampoNumero
-              etiqueta="Dotación"
-              min={0}
-              sufijo="pers."
-              ayuda="Personas en la faena ese mes."
-              {...f.campo("dotacion")}
-            />
-
-            <CampoNumero
-              etiqueta="HH ordinarias"
-              min={0}
-              sufijo="HH"
-              ayuda="Horas de jornada normal. Las extras van más abajo."
-              {...f.campo("horas_hombre")}
-            />
-
             <FichaHaberes
               datos={f.datos}
               campo={f.campo}
               horasHombre={f.datos.horas_hombre}
-              antesDeLeyes={
+              antesDeHhExtra={
+                <>
+                  <CampoNumero
+                    etiqueta="Dotación"
+                    min={0}
+                    sufijo="pers."
+                    ayuda="Personas en la faena ese mes."
+                    {...f.campo("dotacion")}
+                  />
+                  <CampoNumero
+                    etiqueta="HH ordinarias"
+                    min={0}
+                    sufijo="HH"
+                    ayuda="Horas de jornada normal. Las extras van más abajo."
+                    {...f.campo("horas_hombre")}
+                  />
+                </>
+              }
+              camposPropios={
                 <CamposDelContrato
                   campos={campos}
                   contratoId={f.datos.contrato_id}

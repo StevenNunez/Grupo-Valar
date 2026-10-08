@@ -24,7 +24,7 @@ import { Contenido, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
  *
  * Igual que el personal de un contrato (pedido del 05-10-2026): un registro
  * por mes con la misma ficha —dotación, HH, sueldo bruto, HH extra por motivo,
- * no imponible, otros haberes y leyes sociales— y la nómina en PDF adjunta con
+ * no imponible, descuentos, imposiciones, aporte patronal, otros haberes— y la nómina en PDF adjunta con
  * el clip de la fila. Lo único distinto es que no cuelga de un contrato.
  */
 
@@ -87,7 +87,7 @@ function Contenidos({ filas, finiquitos: todosFiniquitos, edicion, alCambiar }: 
   ], [filas, todosFiniquitos]);
   const visibles = mes === "todos" ? filas : filas.filter((f) => f.periodo === mes);
 
-  const suma = (campo: "total_haberes" | "leyes_sociales" | "costo_total" | "horas_hombre") =>
+  const suma = (campo: "total_haberes" | "aporte_patronal" | "costo_total" | "horas_hombre") =>
     visibles.reduce((t, f) => t + f[campo], 0);
   const costo = suma("costo_total");
   const finiquitosVisibles = mes === "todos" ? todosFiniquitos : todosFiniquitos.filter((f) => f.periodo === mes);
@@ -100,10 +100,10 @@ function Contenidos({ filas, finiquitos: todosFiniquitos, edicion, alCambiar }: 
     <>
       <Resumen datos={[
         { etiqueta: "Pago de personal", valor: formatearMonto(costo + finiquitos),
-          nota: `${mes === "todos" ? "Acumulado" : mesLargo(mes)} · haberes ${formatearMonto(suma("total_haberes"))} · leyes sociales ${formatearMonto(suma("leyes_sociales"))}${finiquitos > 0 ? ` · finiquitos ${formatearMonto(finiquitos)}` : ""}` },
+          nota: `${mes === "todos" ? "Acumulado" : mesLargo(mes)} · haberes ${formatearMonto(suma("total_haberes"))} · aporte patronal ${formatearMonto(suma("aporte_patronal"))}${finiquitos > 0 ? ` · finiquitos ${formatearMonto(finiquitos)}` : ""}` },
         { etiqueta: "Dotación actual", valor: formatearNumero(ultimo?.dotacion ?? 0), nota: ultimo ? `Personas en ${mesLargo(ultimo.periodo)}` : "Sin registro" },
         { etiqueta: "Horas hombre", valor: formatearNumero(horas), nota: "En el período seleccionado" },
-        { etiqueta: "Costo por HH", valor: formatearPesos(horas > 0 ? Math.round(costo / horas) : 0), nota: "Haberes y leyes sociales, sin finiquitos" },
+        { etiqueta: "Costo por HH", valor: formatearPesos(horas > 0 ? Math.round(costo / horas) : 0), nota: "Costo total del mes, sin finiquitos" },
       ]} />
 
       <Panel titulo="Detalle por mes" nota={`${visibles.length} de ${filas.length} nóminas`}
@@ -114,7 +114,7 @@ function Contenidos({ filas, finiquitos: todosFiniquitos, edicion, alCambiar }: 
             <Total colSpan={2}>Total</Total>
             <Total derecha>{formatearNumero(horas)}</Total>
             <Total derecha>{formatearMonto(suma("total_haberes"))}</Total>
-            <Total derecha>{formatearMonto(suma("leyes_sociales"))}</Total>
+            <Total derecha>{formatearMonto(suma("aporte_patronal"))}</Total>
             <Total derecha>{formatearMonto(costo)}</Total>
             <Total />
           </> : undefined} />
@@ -144,7 +144,7 @@ const columnas = (edicion: ReturnType<typeof useEdicion<NominaOficina>>): Column
   { clave: "dotacion", titulo: "Dotación", derecha: true, celda: (f) => <span className="text-ink-soft">{formatearNumero(f.dotacion)}</span> },
   { clave: "hh", titulo: "Horas hombre", derecha: true, celda: (f) => <span className="text-ink-soft">{formatearNumero(f.horas_hombre)}</span> },
   { clave: "haberes", titulo: "Total haberes", derecha: true, celda: (f) => <span className="text-ink-soft">{formatearMonto(f.total_haberes)}</span> },
-  { clave: "leyes", titulo: "Leyes sociales", derecha: true, celda: (f) => <span className="text-ink-soft">{formatearMonto(f.leyes_sociales)}</span> },
+  { clave: "aporte", titulo: "Aporte patronal", derecha: true, celda: (f) => <span className="text-ink-soft">{formatearMonto(f.aporte_patronal)}</span> },
   { clave: "costo", titulo: "Costo total", derecha: true, celda: (f) => <span className="font-semibold text-ink">{formatearMonto(f.costo_total)}</span> },
   { clave: "acciones", titulo: "", derecha: true, celda: (f) => (
     <AccionesFila permiso={PERMISO}
@@ -208,10 +208,11 @@ function FormularioNominaOficina({ registro, nominas, alCerrar, alGuardado }: {
         <form onSubmit={guardar}>
           <Campos>
             <CampoMes etiqueta="Mes" requerido ayuda="El mes de la nómina que se está cargando." {...f.campo("periodo")} />
-            <CampoNumero etiqueta="Dotación" min={0} sufijo="pers." ayuda="Personas de Oficina Central ese mes." {...f.campo("dotacion")} />
-            <CampoNumero etiqueta="HH ordinarias" min={0} sufijo="HH" ayuda="Horas de jornada normal. Las extras van más abajo." {...f.campo("horas_hombre")} />
             <div />
-            <FichaHaberes datos={f.datos} campo={f.campo} horasHombre={f.datos.horas_hombre} />
+            <FichaHaberes datos={f.datos} campo={f.campo} horasHombre={f.datos.horas_hombre} antesDeHhExtra={<>
+              <CampoNumero etiqueta="Dotación" min={0} sufijo="pers." ayuda="Personas de Oficina Central ese mes." {...f.campo("dotacion")} />
+              <CampoNumero etiqueta="HH ordinarias" min={0} sufijo="HH" ayuda="Horas de jornada normal. Las extras van más abajo." {...f.campo("horas_hombre")} />
+            </>} />
             <Ancho><CampoTexto etiqueta="Observaciones" {...f.campo("observaciones")} /></Ancho>
           </Campos>
           <Pie error={f.error} guardando={f.guardando} alCancelar={alCerrar}

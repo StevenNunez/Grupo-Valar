@@ -203,7 +203,10 @@ export type CostoPersonal = {
   otrosHaberes: number;
   /** Qué son los otros haberes (0064). */
   otrosHaberesDetalle: OtroHaber[];
+  descuentoTrabajador: number;
+  /** Imposiciones del trabajador; la columna conserva su nombre de antes (0066). */
   leyesSociales: number;
+  aportePatronal: number;
   costoTotal: number;
 };
 
@@ -234,7 +237,9 @@ type FilaPersonal = {
   total_no_imponible: number;
   otros_haberes: number;
   otros_haberes_detalle: unknown;
+  descuento_trabajador?: number;
   leyes_sociales: number;
+  aporte_patronal?: number;
   costo_total: number;
   contratos: { nombre: string } | null;
 };
@@ -247,7 +252,7 @@ export async function cargarPersonal(): Promise<CostoPersonal[]> {
         "sueldo_bruto, horas_extra_monto, hh_reemplazo, hh_parada_planta, " +
         "hh_feriado_compensado, hh_apoyo_oficina, hh_otras, horas_extra_cantidad, " +
         "monto_hh_reemplazo, monto_hh_parada_planta, monto_hh_feriado_compensado, monto_hh_apoyo_oficina, monto_hh_otras, " +
-        "total_no_imponible, otros_haberes, otros_haberes_detalle, leyes_sociales, costo_total, datos, contratos(nombre)",
+        "total_no_imponible, otros_haberes, otros_haberes_detalle, descuento_trabajador, leyes_sociales, aporte_patronal, costo_total, datos, contratos(nombre)",
     )
     .order("periodo", { ascending: false })
     .order("contrato_id");
@@ -278,7 +283,9 @@ export async function cargarPersonal(): Promise<CostoPersonal[]> {
     totalNoImponible: Number(f.total_no_imponible ?? 0),
     otrosHaberes: Number(f.otros_haberes ?? 0),
     otrosHaberesDetalle: detalleDeOtrosHaberes(f.otros_haberes_detalle, Number(f.otros_haberes ?? 0)),
-    leyesSociales: f.leyes_sociales,
+    descuentoTrabajador: Number(f.descuento_trabajador ?? 0),
+    leyesSociales: Number(f.leyes_sociales ?? 0),
+    aportePatronal: Number(f.aporte_patronal ?? 0),
     costoTotal: f.costo_total,
   }));
 }

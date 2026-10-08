@@ -21,7 +21,7 @@ function OtrosHaberes({ lista, alCambiar }: { lista: OtroHaber[]; alCambiar: (v:
     <Ancho>
       <div>
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-soft">Otros haberes</p>
-        <p className="mt-1 text-xs text-ink-soft">Aguinaldos, bonos y asignaciones que no son HH extra ni no imponible. Uno por línea, con qué es.</p>
+        <p className="mt-1 text-xs text-ink-soft">Aguinaldos, bonos y asignaciones que no son HH extra ni no imponible. Se suman al costo. Uno por línea, con qué es.</p>
         <datalist id={sugerencias}>
           {conceptosOtrosHaberes.map((c) => <option key={c} value={c} />)}
         </datalist>
@@ -89,26 +89,33 @@ function OtrosHaberes({ lista, alCambiar }: { lista: OtroHaber[]; alCambiar: (v:
  * Es la misma información —sale de la misma nómina de pagos— y llenarla con
  * dos formularios distintos obligaba a recordar cuál pedía qué. Los nombres de
  * los campos son los de las columnas de la base, iguales en las dos tablas.
+ *
+ * Va en el orden de la liquidación: primero lo del mes sin HH extra (de ahí
+ * salen el líquido y el costo base), después las HH extra y los otros
+ * haberes, que se suman para llegar al costo total.
  */
 
 export function FichaHaberes<T extends Haberes>({
   datos,
   campo,
-  antesDeLeyes,
+  antesDeHhExtra,
+  camposPropios,
   horasHombre = 0,
   nota,
 }: {
   datos: T;
   /** El `campo` de `useFormulario`: valor y cambio de una clave. */
   campo: <K extends keyof T>(clave: K) => { valor: T[K]; alCambiar: (v: T[K]) => void };
-  /** Lo propio de cada uno que va antes de las leyes sociales (la planilla del contrato). */
-  antesDeLeyes?: React.ReactNode;
+  /** Lo que va entre el costo base y las HH extra (dotación y HH ordinarias). */
+  antesDeHhExtra?: React.ReactNode;
+  /** Lo propio de cada uno que va antes del costo total (la planilla del contrato). */
+  camposPropios?: React.ReactNode;
   /** Para mostrar el costo por hora hombre, si se conoce. */
   horasHombre?: number;
   /** Lo que se agrega al pie del costo total (el código del registro, por ejemplo). */
   nota?: React.ReactNode;
 }) {
-  const { horasExtra, costoHhExtra, totalHaberes, costoTotal } = totalesDe(datos);
+  const { horasExtra, costoHhExtra, otros, liquido, costoBase, costoTotal } = totalesDe(datos);
   const valorHoraExtra = horasExtra > 0 ? costoHhExtra / horasExtra : 0;
   const porHora = horasHombre > 0 ? costoTotal / horasHombre : 0;
   /* `campo` está tipado sobre T; acá solo se usan las claves de Haberes, que T
@@ -120,9 +127,44 @@ export function FichaHaberes<T extends Haberes>({
       <CampoDinero
         etiqueta="Sueldo bruto"
         requerido
-        ayuda="Sueldo base + gratificación: la remuneración imponible del mes, como viene en la nómina."
+        ayuda="Sueldo base, gratificación y demás imponibles del mes, sin las HH extra (van más abajo)."
         {...c("sueldo_bruto")}
       />
+      <CampoDinero etiqueta="No imponible" ayuda="Colación, movilización y viáticos." {...c("total_no_imponible")} />
+      <CampoDinero
+        etiqueta="Descuento trabajador"
+        ayuda="Seguros y descuentos legales: pensión de alimentos, deudas retenidas por ley. No las imposiciones ni anticipos."
+        {...c("descuento_trabajador")}
+      />
+      <CampoDinero etiqueta="Imposiciones" ayuda="AFP, salud y cesantía del trabajador: las leyes sociales." {...c("leyes_sociales")} />
+      <CampoDinero
+        etiqueta="Aporte patronal"
+        ayuda="Lo que paga la empresa encima del bruto: SIS, cesantía del empleador, mutual."
+        {...c("aporte_patronal")}
+      />
+
+      <Ancho>
+        <div className="flex flex-col gap-1.5 rounded-xl border border-mist-deep bg-mist/30 px-4 py-3">
+          <p className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 text-sm text-ink-soft">
+            <span>
+              Sueldo líquido{" "}
+              <span className={`font-display text-lg font-semibold tabular-nums ${liquido < 0 ? "text-[#a52f24]" : "text-ink"}`}>
+                {formatearPesos(liquido)}
+              </span>
+            </span>
+            <span>
+              Costo sin HH extra{" "}
+              <span className="font-display text-lg font-semibold tabular-nums text-ink">{formatearPesos(costoBase)}</span>
+            </span>
+          </p>
+          <p className="text-xs leading-relaxed text-ink-soft">
+            Líquido = bruto + no imponible − descuento − imposiciones. Costo = líquido + imposiciones + descuento + aporte patronal: lo que desembolsa la empresa.
+            No se escriben.
+          </p>
+        </div>
+      </Ancho>
+
+      {antesDeHhExtra}
 
       {/* Las HH extra van por motivo, con sus horas y lo que se pagó por
           ellas: "cuánto costó la parada de planta este mes" es lo que se
@@ -131,7 +173,7 @@ export function FichaHaberes<T extends Haberes>({
         <div className="border-t border-mist pt-5">
           <h3 className="font-display text-sm font-semibold text-ink">Horas extraordinarias</h3>
           <p className="mt-1 text-xs leading-relaxed text-ink-soft">
-            Por motivo, como en la planilla: las horas y, al lado, lo que se pagó por ellas. El costo total se suma solo.
+            Por motivo, como en la planilla: las horas y, al lado, lo que se pagó por ellas. Se suman al costo sin HH extra.
           </p>
         </div>
       </Ancho>
@@ -177,50 +219,27 @@ export function FichaHaberes<T extends Haberes>({
         </div>
       </Ancho>
 
-      <Ancho>
-        <div className="border-t border-mist pt-5">
-          <h3 className="font-display text-sm font-semibold text-ink">Resto de los haberes</h3>
-        </div>
-      </Ancho>
-
-      <CampoDinero etiqueta="Total no imponible" ayuda="Colación, movilización y viáticos." {...c("total_no_imponible")} />
       <OtrosHaberes
         lista={datos.otros_haberes_detalle}
         alCambiar={(campo("otros_haberes_detalle" as keyof T) as unknown as { alCambiar: (v: OtroHaber[]) => void }).alCambiar}
       />
 
+      {camposPropios}
+
       <Ancho>
         <div className="flex flex-col gap-1.5 rounded-xl border-2 border-ink bg-white px-4 py-3">
           <p className="flex items-baseline justify-between gap-4">
-            <span className="font-display text-sm font-semibold uppercase tracking-[0.12em] text-ink">Total haberes</span>
-            <span className="font-display text-xl font-semibold tabular-nums text-ink">{formatearPesos(totalHaberes)}</span>
+            <span className="font-display text-sm font-semibold uppercase tracking-[0.12em] text-ink">Costo total</span>
+            <span className="font-display text-xl font-semibold tabular-nums text-ink">{formatearPesos(costoTotal)}</span>
           </p>
           <p className="text-xs leading-relaxed text-ink-soft">
-            Sueldo bruto, HH extra, no imponible y otros haberes. No se escribe: si no calza con tu nómina, la
-            diferencia va en «otras» o en «otros haberes».
+            Costo sin HH extra {formatearPesos(costoBase)} + HH extra {formatearPesos(costoHhExtra)}
+            {otros > 0 && <> + otros haberes {formatearPesos(otros)}</>}
+            {porHora > 0 && <> · {formatearPesos(Math.round(porHora))} por hora hombre</>}. Los finiquitos van aparte, en su
+            propio registro.
           </p>
+          {nota && <p className="text-xs text-ink-soft">{nota}</p>}
         </div>
-      </Ancho>
-
-      {antesDeLeyes}
-
-      <CampoDinero
-        etiqueta="Leyes sociales"
-        ayuda={
-          totalHaberes > 0
-            ? `Suelen rondar el 23% de los haberes: ${formatearPesos(Math.round(totalHaberes * 0.23))}.`
-            : undefined
-        }
-        {...c("leyes_sociales")}
-      />
-
-      <Ancho>
-        <p className="rounded-xl bg-mist/50 px-4 py-3 text-sm text-ink-soft">
-          Costo total: <span className="font-semibold text-ink">{formatearPesos(costoTotal)}</span>
-          {porHora > 0 && <span className="ml-2">· {formatearPesos(Math.round(porHora))} por hora hombre</span>}
-          <span className="ml-2 text-xs">Total haberes más leyes sociales. Los finiquitos van aparte, en su propio registro.</span>
-          {nota && <span className="mt-1.5 block text-xs">{nota}</span>}
-        </p>
       </Ancho>
     </>
   );

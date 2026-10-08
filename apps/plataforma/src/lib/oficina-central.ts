@@ -72,7 +72,7 @@ const NUMERICAS = [
   "dotacion", "horas_hombre",
   "sueldo_bruto", "hh_reemplazo", "hh_parada_planta", "hh_feriado_compensado", "hh_apoyo_oficina", "hh_otras",
   "monto_hh_reemplazo", "monto_hh_parada_planta", "monto_hh_feriado_compensado", "monto_hh_apoyo_oficina", "monto_hh_otras",
-  "horas_extra_monto", "total_no_imponible", "otros_haberes", "leyes_sociales",
+  "horas_extra_monto", "total_no_imponible", "otros_haberes", "descuento_trabajador", "leyes_sociales", "aporte_patronal",
   "horas_extra_cantidad", "total_haberes", "costo_total",
 ] as const;
 

@@ -40,7 +40,12 @@ export type Haberes = {
   otros_haberes: number;
   /** Qué son los otros haberes, uno por línea. */
   otros_haberes_detalle: OtroHaber[];
+  /** Seguros y descuentos legales (pensión de alimentos, deudas retenidas por ley). No imposiciones ni anticipos. */
+  descuento_trabajador: number;
+  /** Imposiciones del trabajador (AFP, salud, cesantía): las "leyes sociales" de antes. Salen del bruto. */
   leyes_sociales: number;
+  /** Lo que paga la empresa encima del bruto. */
+  aporte_patronal: number;
 };
 
 export type HorasHh = "hh_reemplazo" | "hh_parada_planta" | "hh_feriado_compensado" | "hh_apoyo_oficina" | "hh_otras";
@@ -82,7 +87,9 @@ export const haberesEnCero: Haberes = {
   total_no_imponible: 0,
   otros_haberes: 0,
   otros_haberes_detalle: [],
+  descuento_trabajador: 0,
   leyes_sociales: 0,
+  aporte_patronal: 0,
 };
 
 /**
@@ -97,13 +104,21 @@ export function detalleDeOtrosHaberes(guardado: unknown, total: number): OtroHab
   return lista.length === 0 && total > 0 ? [{ concepto: "Sin detalle", monto: total }] : lista;
 }
 
-/** Los totales, igual que los calcula la base. */
+/**
+ * Los totales, igual que los calcula la base (0066). Primero sin HH extra
+ * (líquido y costo base), después se suman las HH extra y los otros haberes.
+ * El costo es lo que la empresa desembolsa: imposiciones y descuento bajan el
+ * líquido, pero la empresa igual los paga (a la AFP, a la pensión de
+ * alimentos, al seguro), así que no bajan el costo.
+ */
 export function totalesDe(h: Haberes) {
   const horasExtra = motivosHhExtra.reduce((t, m) => t + h[m.horas], 0);
   const costoHhExtra = motivosHhExtra.reduce((t, m) => t + h[m.monto], 0);
   const otros = h.otros_haberes_detalle.reduce((t, x) => t + (x.monto || 0), 0);
+  const liquido = h.sueldo_bruto + h.total_no_imponible - h.descuento_trabajador - h.leyes_sociales;
+  const costoBase = liquido + h.leyes_sociales + h.descuento_trabajador + h.aporte_patronal;
   const totalHaberes = h.sueldo_bruto + costoHhExtra + h.total_no_imponible + otros;
-  return { horasExtra, costoHhExtra, otros, totalHaberes, costoTotal: totalHaberes + h.leyes_sociales };
+  return { horasExtra, costoHhExtra, otros, liquido, costoBase, totalHaberes, costoTotal: costoBase + costoHhExtra + otros };
 }
 
 /** Lo que se guarda: los totales van como la suma de su detalle, y las líneas vacías se descartan. */
@@ -128,6 +143,9 @@ export function errorDeHaberes(h: Haberes): string | null {
     .concat(h.otros_haberes_detalle.map((x) => x.monto));
   if (montos.some((v) => !Number.isFinite(v) || v < 0)) {
     return "Los montos y las horas no pueden ser negativos.";
+  }
+  if (totalesDe(h).liquido < 0) {
+    return "El descuento y las imposiciones superan el sueldo bruto más el no imponible. Revisa los montos.";
   }
   if (h.otros_haberes_detalle.some((x) => x.monto > 0 && !x.concepto.trim())) {
     return "En otros haberes, indica qué es cada monto (aguinaldo, bono, etc.).";

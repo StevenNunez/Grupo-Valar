@@ -116,7 +116,7 @@ function Contenidos({
   );
 
   const remuneraciones = visibles.reduce((t, f) => t + f.remuneraciones, 0);
-  const leyes = visibles.reduce((t, f) => t + f.leyesSociales, 0);
+  const aporte = visibles.reduce((t, f) => t + f.aportePatronal, 0);
   const costo = visibles.reduce((t, f) => t + f.costoTotal, 0);
   const finiquitosVisibles = mes === "todos" ? datos.finiquitos : datos.finiquitos.filter((f) => f.periodo === mes);
   const finiquitos = finiquitosVisibles.reduce((t, f) => t + f.total, 0);
@@ -138,7 +138,7 @@ function Contenidos({
           {
             etiqueta: "Pago de personal",
             valor: formatearMonto(costo + finiquitos),
-            nota: `${mes === "todos" ? "Acumulado" : mesLargo(mes)} · haberes ${formatearMonto(remuneraciones)} · leyes sociales ${formatearMonto(leyes)}${finiquitos > 0 ? ` · finiquitos ${formatearMonto(finiquitos)}` : ""}`,
+            nota: `${mes === "todos" ? "Acumulado" : mesLargo(mes)} · haberes ${formatearMonto(remuneraciones)} · aporte patronal ${formatearMonto(aporte)}${finiquitos > 0 ? ` · finiquitos ${formatearMonto(finiquitos)}` : ""}`,
           },
           {
             etiqueta: "Dotación actual",
@@ -153,7 +153,7 @@ function Contenidos({
           {
             etiqueta: "Costo por HH",
             valor: formatearPesos(Math.round(costoPorHora)),
-            nota: "Haberes y leyes sociales, sin finiquitos",
+            nota: "Costo total del mes, sin finiquitos",
           },
         ]}
       />
@@ -173,7 +173,7 @@ function Contenidos({
               <Total colSpan={3}>Total</Total>
               <Total derecha>{formatearNumero(horas)}</Total>
               <Total derecha>{formatearMonto(remuneraciones)}</Total>
-              <Total derecha>{formatearMonto(leyes)}</Total>
+              <Total derecha>{formatearMonto(aporte)}</Total>
               <Total derecha>{formatearMonto(costo)}</Total>
               <Total />
             </>
@@ -277,10 +277,10 @@ const columnas = (
     celda: (f) => <span className="text-ink-soft">{formatearMonto(f.remuneraciones)}</span>,
   },
   {
-    clave: "leyes",
-    titulo: "Leyes sociales",
+    clave: "aporte",
+    titulo: "Aporte patronal",
     derecha: true,
-    celda: (f) => <span className="text-ink-soft">{formatearMonto(f.leyesSociales)}</span>,
+    celda: (f) => <span className="text-ink-soft">{formatearMonto(f.aportePatronal)}</span>,
   },
   {
     clave: "total",
