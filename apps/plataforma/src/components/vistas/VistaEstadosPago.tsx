@@ -13,6 +13,7 @@ import { FormularioOrdenCompra } from "../formularios/FormularioOrdenCompra";
 import { DialogoAdjuntos } from "../ui/Adjuntos";
 import { BotonNuevo } from "../ui/Historial";
 import { Impresion } from "../ui/Impresion";
+import { Chip } from "../ui/Chip";
 import { Contenido, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
 import { cargarCampos, type CampoContrato } from "@/lib/campos";
 import { useConsulta } from "@/lib/consulta";
@@ -21,6 +22,7 @@ import { formatearMonto } from "@/lib/formato";
 import {
   cargarCiclo,
   facturaDelCiclo,
+  nombreEdp,
   ordenDelCiclo,
   type Ciclo,
   type Etapa,
@@ -45,7 +47,8 @@ const opciones: { id: Filtrado; titulo: string }[] = [
   { id: "edp", titulo: "Por aprobar" },
   { id: "orden", titulo: "Sin orden" },
   { id: "factura", titulo: "Sin factura" },
-  { id: "cerrado", titulo: "Cerrados" },
+  { id: "cobro", titulo: "Pendiente de pago" },
+  { id: "cerrado", titulo: "Pagados" },
 ];
 
 type Datos = { ciclos: Ciclo[]; contratos: ContratoBreve[]; campos: CampoContrato[] };
@@ -84,6 +87,7 @@ export function VistaEstadosPago() {
     ciclo: Ciclo;
     cual: Documento;
     campos: CampoContrato[];
+    ciclos: Ciclo[];
   } | null>(null);
 
   return (
@@ -107,12 +111,13 @@ export function VistaEstadosPago() {
               alCambiar={recargar}
               alEditar={(ciclo, que) => setEditando({ ciclo, que })}
               alVerAdjuntos={(tabla, id, titulo) => setAdjuntos({ tabla, id, titulo })}
-              alImprimir={(ciclo, cual) => setDocumento({ ciclo, cual, campos: datos.campos })}
+              alImprimir={(ciclo, cual) => setDocumento({ ciclo, cual, campos: datos.campos, ciclos: datos.ciclos })}
             />
 
             {(editando === "nuevo" || editando?.que === "edp") && (
               <FormularioEstadoPago
                 estadoPago={editando === "nuevo" ? null : editando.ciclo}
+                existentes={datos.ciclos}
                 contratos={datos.contratos}
                 campos={datos.campos}
                 alCerrar={() => setEditando(null)}
@@ -149,8 +154,18 @@ export function VistaEstadosPago() {
           {documento.cual === "edp" && (
             <EstadoPagoImprimible ciclo={documento.ciclo} campos={documento.campos} />
           )}
-          {documento.cual === "orden" && <OrdenDelMandanteImprimible ciclo={documento.ciclo} />}
-          {documento.cual === "factura" && <FacturaImprimible ciclo={documento.ciclo} />}
+          {documento.cual === "orden" && (
+            <OrdenDelMandanteImprimible
+              ciclo={documento.ciclo}
+              cubiertos={documento.ciclos.filter((c) => c.ordenId === documento.ciclo.ordenId)}
+            />
+          )}
+          {documento.cual === "factura" && (
+            <FacturaImprimible
+              ciclo={documento.ciclo}
+              incluidos={documento.ciclos.filter((c) => c.facturaId === documento.ciclo.facturaId)}
+            />
+          )}
         </Impresion>
       )}
 
@@ -172,7 +187,58 @@ export function VistaEstadosPago() {
 function tituloDocumento(ciclo: Ciclo, cual: Documento) {
   if (cual === "orden") return `Orden de compra N° ${ciclo.ordenNumero} · ${ciclo.contrato}`;
   if (cual === "factura") return `Detalle de facturación ${ciclo.facturaId} · ${ciclo.contrato}`;
-  return `Estado de pago N° ${ciclo.numero} · ${ciclo.contrato}`;
+  return `${nombreEdp(ciclo.numero, ciclo.tipoEdp)} · ${ciclo.contrato}`;
+}
+
+/**
+ * Los estados de pago de un contrato, juntos. La cabecera dice lo que importa
+ * del contrato de un vistazo: qué falta y cuánto está por pagarse. Se pliega
+ * para despejar la pantalla; abierta por defecto si tiene algo pendiente.
+ */
+function TarjetaDeContrato({ ciclos, children }: { ciclos: Ciclo[]; children: React.ReactNode }) {
+  const primero = ciclos[0];
+  const pendientes = ciclos.filter((c) => c.etapa !== "cerrado");
+  const [abierta, setAbierta] = useState(pendientes.length > 0);
+  const porCobrar = ciclos.filter((c) => c.etapa === "cobro").reduce((t, c) => t + c.montoNeto, 0);
+  const cuantos = (e: Etapa) => ciclos.filter((c) => c.etapa === e).length;
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-mist-deep bg-mist/20">
+      <button
+        type="button"
+        onClick={() => setAbierta((a) => !a)}
+        aria-expanded={abierta}
+        className="flex w-full flex-col gap-3 px-5 py-4 text-left transition-colors hover:bg-mist/40 sm:flex-row sm:items-center"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block font-display text-base font-semibold text-ink">{primero.contrato}</span>
+          <span className="mt-0.5 block text-xs text-ink-soft">
+            {primero.contratoId}{primero.cliente ? ` · ${primero.cliente}` : ""} · {ciclos.length} {ciclos.length === 1 ? "estado de pago" : "estados de pago"}
+          </span>
+        </span>
+        <span className="flex flex-wrap items-center gap-2">
+          {cuantos("edp") > 0 && <Chip tono="info">{cuantos("edp")} por aprobar</Chip>}
+          {cuantos("orden") > 0 && <Chip tono="aviso">{cuantos("orden")} sin orden</Chip>}
+          {cuantos("factura") > 0 && <Chip tono="aviso">{cuantos("factura")} sin factura</Chip>}
+          {porCobrar > 0 && <Chip tono="aviso">{formatearMonto(porCobrar)} pendiente de pago</Chip>}
+          {pendientes.length === 0 && <Chip tono="bueno">Todo pagado</Chip>}
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            aria-hidden="true"
+            className={`shrink-0 text-ink-soft transition-transform ${abierta ? "rotate-90" : ""}`}
+          >
+            <path d="m9 6 6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+      </button>
+      {abierta && <ul className="flex flex-col gap-3 border-t border-mist-deep px-4 py-4">{children}</ul>}
+    </section>
+  );
 }
 
 function Listado({
@@ -202,11 +268,20 @@ function Listado({
     return ciclos.filter((c) => c.etapa === filtro);
   }, [ciclos, filtro]);
 
+  /* Una tarjeta por contrato: con todos los EDP en una sola lista se
+     mezclaban los números (el EP 30 de un contrato junto al EP 30 de otro). */
+  const porContrato = useMemo(() => {
+    const grupos = new Map<string, Ciclo[]>();
+    for (const c of visibles) grupos.set(c.contratoId, [...(grupos.get(c.contratoId) ?? []), c]);
+    return [...grupos.values()].sort((a, b) => a[0].contrato.localeCompare(b[0].contrato, "es"));
+  }, [visibles]);
+
   /* Los tres números que importan son los cortes de la cadena: dónde se quedó
      detenido el dinero. */
   const porAprobar = ciclos.filter((c) => c.etapa === "edp");
   const sinOrden = ciclos.filter((c) => c.etapa === "orden");
   const sinFactura = ciclos.filter((c) => c.etapa === "factura");
+  const porCobrar = ciclos.filter((c) => c.etapa === "cobro");
   const suma = (ls: Ciclo[]) => ls.reduce((t, c) => t + c.montoNeto, 0);
 
   return (
@@ -214,9 +289,10 @@ function Listado({
       <Resumen
         datos={[
           {
-            etiqueta: "Presentado",
-            valor: formatearMonto(suma(ciclos)),
-            nota: `${ciclos.length} estados de pago`,
+            etiqueta: "Pendiente de pago",
+            valor: formatearMonto(suma(porCobrar)),
+            nota: `${porCobrar.length} facturados, falta que paguen`,
+            acento: porCobrar.length > 0 ? "aviso" : undefined,
           },
           {
             etiqueta: "Esperando aprobación",
@@ -241,7 +317,7 @@ function Listado({
 
       <Panel
         titulo="El ciclo, uno por uno"
-        nota={`${visibles.length} de ${ciclos.length} estados de pago`}
+        nota={`${visibles.length} de ${ciclos.length} estados de pago · ${porContrato.length} ${porContrato.length === 1 ? "contrato" : "contratos"}`}
         filtros={<Filtro etiqueta="Ver" opciones={opciones} valor={filtro} alCambiar={setFiltro} />}
       >
         {visibles.length === 0 ? (
@@ -249,21 +325,26 @@ function Listado({
             Ningún estado de pago en este filtro.
           </p>
         ) : (
-          <ul className="flex flex-col gap-3 px-6 py-6 lg:px-8">
-            {visibles.map((c) => (
-              <FichaDeCiclo
-                key={c.id}
-                ciclo={c}
-                campos={campos}
-                abierta={abierta === c.id}
-                alAbrir={() => alAbrir(c.id)}
-                alCambiar={alCambiar}
-                alEditar={(que) => alEditar(c, que)}
-                alVerAdjuntos={alVerAdjuntos}
-                alImprimir={(cual) => alImprimir(c, cual)}
-              />
+          <div className="flex flex-col gap-5 px-6 py-6 lg:px-8">
+            {porContrato.map((grupo) => (
+              <TarjetaDeContrato key={grupo[0].contratoId} ciclos={grupo}>
+                {grupo.map((c) => (
+                  <FichaDeCiclo
+                    key={c.id}
+                    ciclo={c}
+                    ciclos={ciclos}
+                    campos={campos}
+                    abierta={abierta === c.id}
+                    alAbrir={() => alAbrir(c.id)}
+                    alCambiar={alCambiar}
+                    alEditar={(que) => alEditar(c, que)}
+                    alVerAdjuntos={alVerAdjuntos}
+                    alImprimir={(cual) => alImprimir(c, cual)}
+                  />
+                ))}
+              </TarjetaDeContrato>
             ))}
-          </ul>
+          </div>
         )}
       </Panel>
     </>

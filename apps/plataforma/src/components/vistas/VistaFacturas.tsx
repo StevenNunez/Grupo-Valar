@@ -179,8 +179,8 @@ const columnas = (edicion: ReturnType<typeof useEdicion<Factura>>): Columna<Fact
     celda: (f) => (
       <>
         <span className="block font-semibold text-ink">{f.id}</span>
-        {f.estadoPagoId && (
-          <span className="mt-0.5 block text-xs text-ink-soft">desde {f.estadoPagoId}</span>
+        {f.edps.length > 0 && (
+          <span className="mt-0.5 block text-xs text-ink-soft">{f.edps.join(" · ")}</span>
         )}
       </>
     ),

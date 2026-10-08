@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { eliminar } from "@/lib/crud";
+import { formatearPesos } from "@/lib/formato";
 
 /**
  * Piezas de formulario del módulo.
@@ -139,6 +140,7 @@ export function CampoTexto({
   requerido,
   deshabilitado,
   marcador,
+  sugerencias,
 }: {
   etiqueta: string;
   valor: string;
@@ -147,13 +149,21 @@ export function CampoTexto({
   requerido?: boolean;
   deshabilitado?: boolean;
   marcador?: string;
+  /** Lo que se ofrece al escribir; igual se puede poner cualquier otra cosa. */
+  sugerencias?: string[];
 }) {
   const id = useId();
   return (
     <Envoltura id={id} etiqueta={etiqueta} ayuda={ayuda} requerido={requerido}>
+      {sugerencias && sugerencias.length > 0 && (
+        <datalist id={`${id}-sugerencias`}>
+          {sugerencias.map((s) => <option key={s} value={s} />)}
+        </datalist>
+      )}
       <input
         id={id}
         type="text"
+        list={sugerencias && sugerencias.length > 0 ? `${id}-sugerencias` : undefined}
         value={valor}
         required={requerido}
         disabled={deshabilitado}
@@ -373,6 +383,59 @@ export function Campos({ children }: { children: React.ReactNode }) {
 /** Ocupa el ancho completo de la rejilla de dos columnas. */
 export function Ancho({ children }: { children: React.ReactNode }) {
   return <div className="sm:col-span-2">{children}</div>;
+}
+
+/* ── IVA ──────────────────────────────────────────────────────────────────── */
+
+/** El IVA en Chile. */
+export const TASA_IVA = 0.19;
+
+/** El IVA de un neto: el 19%, redondeado al peso. Exento, cero. */
+export const ivaDe = (neto: number, afecto = true) => (afecto ? Math.round(neto * TASA_IVA) : 0);
+
+/**
+ * El IVA y el total de un neto. No se escribe: basta con el neto. La casilla
+ * es para lo que no lleva IVA (exentos, boletas de honorarios); si no se pasa
+ * `alCambiarAfecto`, el documento siempre es afecto.
+ */
+export function ResumenIva({
+  neto,
+  afecto = true,
+  alCambiarAfecto,
+  nota,
+}: {
+  neto: number;
+  afecto?: boolean;
+  alCambiarAfecto?: (afecto: boolean) => void;
+  /** Por qué es o no afecto, cuando no lo decide la casilla (la categoría, por ejemplo). */
+  nota?: string;
+}) {
+  const iva = ivaDe(neto, afecto);
+  return (
+    <Ancho>
+      <div className="flex flex-col gap-3 rounded-xl bg-mist/50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-sm text-ink-soft">
+          <p>
+            {afecto ? "IVA 19%" : "Sin IVA"}{" "}
+            <strong className="tabular-nums text-ink">{formatearPesos(iva)}</strong>
+            {" · "}Total <strong className="tabular-nums text-ink">{formatearPesos(neto + iva)}</strong>
+          </p>
+          <p className="mt-0.5 text-xs">{nota ?? "Se calcula solo con el neto."}</p>
+        </div>
+        {alCambiarAfecto && (
+          <label className="flex items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
+              checked={!afecto}
+              onChange={(e) => alCambiarAfecto(!e.target.checked)}
+              className="h-4 w-4 shrink-0 rounded border-mist-deep accent-cyan"
+            />
+            Exento o boleta (sin IVA)
+          </label>
+        )}
+      </div>
+    </Ancho>
+  );
 }
 
 export function Pie({

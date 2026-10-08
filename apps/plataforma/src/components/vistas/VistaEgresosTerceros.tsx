@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { FormularioCompra } from "../formularios/FormularioCompra";
 import { FormularioOrden } from "../formularios/FormularioOrden";
+import { FormularioReembolso } from "../formularios/FormularioReembolso";
 import { CicloOrden } from "../CicloOrden";
 import { FormularioServicio } from "../formularios/FormularioServicio";
 import { DialogoAdjuntos } from "../ui/Adjuntos";
@@ -41,12 +42,13 @@ import { diasHastaFecha, formatearFecha, formatearMonto, mesLargo } from "@/lib/
  * apagados según lo que se elija arriba, que es peor que tener dos botones.
  */
 
-type Filtrado = "todos" | "compras" | "servicios" | "recurrentes" | "plazos";
+type Filtrado = "todos" | "compras" | "servicios" | "reembolsos" | "recurrentes" | "plazos";
 
 const opciones: { id: Filtrado; titulo: string }[] = [
   { id: "todos", titulo: "Todos" },
   { id: "compras", titulo: "Compras" },
   { id: "servicios", titulo: "Servicios" },
+  { id: "reembolsos", titulo: "Reembolsos" },
   { id: "recurrentes", titulo: "Recurrentes" },
   { id: "plazos", titulo: "Por vencer" },
 ];
@@ -84,7 +86,10 @@ async function cargar(): Promise<Datos> {
 export function VistaEgresosTerceros() {
   const { estado, recargar } = useConsulta<Datos>(cargar);
   const edicion = useEdicion<EgresoTercero>();
-  const [creando, setCreando] = useState<"compra" | "servicio" | null>(null);
+  const [creando, setCreando] = useState<"compra" | "servicio" | "reembolso" | null>(null);
+  /* Al registrar un reembolso se abre su respaldo: la foto de la rendición y
+     de las boletas queda colgando del mismo registro. */
+  const [adjuntarReembolso, setAdjuntarReembolso] = useState<string | null>(null);
   const puedeCargar = usePuede("gestion.editar");
   /* La OC es de Abastecimiento: registrarla pide su permiso, aunque se haga
      desde acá. Es la misma orden, no una copia. */
@@ -103,6 +108,7 @@ export function VistaEgresosTerceros() {
             <div className="flex flex-wrap gap-2">
               {puedeRegistrarOC && <BotonCrear onClick={() => setRegistrandoOC(true)}>Registrar OC</BotonCrear>}
               {puedeCargar && <BotonCrear onClick={() => setCreando("compra")}>Nueva compra</BotonCrear>}
+              {puedeCargar && <BotonCrear onClick={() => setCreando("reembolso")}>Registrar reembolso</BotonCrear>}
               {puedeCargar && (
               <BotonCrear onClick={() => setCreando("servicio")} destacado>
                 Nuevo servicio
@@ -136,8 +142,9 @@ export function VistaEgresosTerceros() {
               />
             )}
 
-            {/* Cada origen abre su propio formulario, con sus campos. */}
-            {(creando === "compra" || edicion.registro?.origen === "compra") && (
+            {/* Cada origen abre su propio formulario, con sus campos. Un
+                reembolso es una compra, pero se carga por comprobante. */}
+            {(creando === "compra" || (edicion.registro?.origen === "compra" && !edicion.registro.rendidoPor)) && (
               <FormularioCompra
                 compra={
                   edicion.registro
@@ -154,6 +161,27 @@ export function VistaEgresosTerceros() {
                   edicion.cerrar();
                 }}
                 alGuardado={recargar}
+              />
+            )}
+
+            {(creando === "reembolso" || (edicion.registro?.origen === "compra" && edicion.registro.rendidoPor)) && (
+              <FormularioReembolso
+                compra={
+                  edicion.registro
+                    ? (datos.compras.find((c) => c.id === edicion.registro?.id) ?? null)
+                    : null
+                }
+                compras={datos.compras}
+                contratos={datos.contratos}
+                categorias={datos.categorias}
+                alCerrar={() => {
+                  setCreando(null);
+                  edicion.cerrar();
+                }}
+                alGuardado={(id) => {
+                  recargar();
+                  if (id && creando === "reembolso") setAdjuntarReembolso(id);
+                }}
               />
             )}
 
@@ -185,6 +213,16 @@ export function VistaEgresosTerceros() {
           titulo={edicion.historial.titulo}
           abierto
           alCerrar={edicion.cerrarHistorial}
+        />
+      )}
+
+      {adjuntarReembolso && (
+        <DialogoAdjuntos
+          tabla="compras"
+          registroId={adjuntarReembolso}
+          titulo={`Adjunta la rendición ${adjuntarReembolso}: la foto del detalle y de las boletas`}
+          abierto
+          alCerrar={() => setAdjuntarReembolso(null)}
         />
       )}
 
@@ -259,6 +297,7 @@ function Contenidos({
   const visibles = useMemo(() => {
     if (filtro === "compras") return filas.filter((e) => e.origen === "compra");
     if (filtro === "servicios") return filas.filter((e) => e.origen === "servicio");
+    if (filtro === "reembolsos") return filas.filter((e) => e.rendidoPor);
     if (filtro === "recurrentes") return filas.filter((e) => e.recurrente);
     if (filtro === "plazos") return filas.filter((e) => {
       const dias = diasDeServicio(e);
@@ -273,6 +312,7 @@ function Contenidos({
   const compras = filas.filter((e) => e.origen === "compra");
   const servicios = filas.filter((e) => e.origen === "servicio");
   const recurrente = filas.filter((e) => e.recurrente).reduce((t, e) => t + e.neto, 0);
+  const porDevolver = filas.filter((e) => e.rendidoPor && e.estadoPago !== "pagada");
   const avisosPlazo = filas.filter((e) => {
     const dias = diasDeServicio(e);
     return dias !== null && dias <= 30;
@@ -313,7 +353,7 @@ function Contenidos({
 
       <Panel
         titulo="Detalle"
-        nota={`${visibles.length} de ${filas.length} movimientos${avisosPlazo ? ` · ${avisosPlazo} servicios por vencer o vencidos` : ""}`}
+        nota={`${visibles.length} de ${filas.length} movimientos${avisosPlazo ? ` · ${avisosPlazo} servicios por vencer o vencidos` : ""}${porDevolver.length ? ` · ${porDevolver.length} reembolsos por devolver (${formatearMonto(porDevolver.reduce((t, e) => t + e.total, 0))})` : ""}`}
         filtros={<Filtro etiqueta="Ver" opciones={opciones} valor={filtro} alCambiar={setFiltro} />}
       >
         <Tabla
@@ -362,7 +402,18 @@ const columnas = (
     titulo: "Origen",
     celda: (e) => (
       <>
-        <Chip tono={tonoOrigen[e.origen]}>{e.origen === "compra" ? "Compra" : "Servicio"}</Chip>
+        {e.rendidoPor ? (
+          <>
+            <Chip tono="aviso">Reembolso</Chip>
+            <span className="mt-1 block text-xs text-ink-soft">
+              {e.estadoPago === "pagada"
+                ? `Devuelto${e.fechaPago ? ` el ${formatearFecha(e.fechaPago)}` : ""}`
+                : "Por devolver"}
+            </span>
+          </>
+        ) : (
+          <Chip tono={tonoOrigen[e.origen]}>{e.origen === "compra" ? "Compra" : "Servicio"}</Chip>
+        )}
         {e.clase && (
           <span className="mt-1 block text-xs text-ink-soft">
             {tiposServicio.find((t) => t.id === e.clase)?.titulo ?? e.clase}
@@ -376,7 +427,7 @@ const columnas = (
     titulo: "Tercero",
     celda: (e) => (
       <>
-        <span className="block text-ink">{e.tercero}</span>
+        <span className="block text-ink">{e.rendidoPor ? `Rindió ${e.rendidoPor}` : e.tercero}</span>
         <span className="mt-0.5 block text-xs text-ink-soft">
           {e.contratoId} · {e.categoria}
         </span>

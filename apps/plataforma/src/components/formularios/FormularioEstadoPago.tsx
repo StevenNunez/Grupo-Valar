@@ -20,18 +20,13 @@ import { CamposDelContrato } from "../ui/CamposDelContrato";
 import type { CampoContrato, Datos } from "@/lib/campos";
 import { actualizar, crear } from "@/lib/crud";
 import { opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
-import { formatearPesos, formatearUf } from "@/lib/formato";
-import type { EstadoEP, EstadoPago, TipoEdp } from "@/lib/ingresos";
+import { formatearPesos, formatearUf, mesLargo } from "@/lib/formato";
+import { edpRepetido, idEdp, nombreEdp, nombreEstadoEP, siguienteNumeroEdp, type EstadoEP, type EstadoPago, type TipoEdp } from "@/lib/ingresos";
 import { camposEdp, clavesEdp, clavesRetencion, comportamientoEdp, montoUfTorres, resolverPlantillaEdp, resolverSeleccionEdp } from "@/lib/plantillas-edp";
 import { supabase } from "@/lib/supabase";
 
-const estados: { id: EstadoEP; titulo: string }[] = [
-  { id: "presentado", titulo: "Presentado" },
-  { id: "aprobado", titulo: "Aprobado" },
-  { id: "facturado", titulo: "Facturado" },
-  { id: "pagado", titulo: "Pagado" },
-  { id: "rechazado", titulo: "Rechazado" },
-];
+const estados = (["presentado", "aprobado", "facturado", "pagado", "rechazado"] as EstadoEP[])
+  .map((id) => ({ id, titulo: nombreEstadoEP[id] }));
 
 const tipos: { id: TipoEdp; titulo: string }[] = [
   { id: "ordinario", titulo: "Ordinario" },
@@ -45,7 +40,6 @@ const hoy = () => new Date().toISOString().slice(0, 10);
 type Borrador = {
   /** El anexo al que se cobra; vacío = contrato base. Cada uno lleva su serie de EDP. */
   anexo_id: string;
-  id: string;
   contrato_id: string;
   numero: number;
   periodo: string;
@@ -63,10 +57,9 @@ type Borrador = {
 function borradorDe(ep: EstadoPago | null): Borrador {
   if (!ep) {
     return {
-      id: "",
       contrato_id: "",
       anexo_id: "",
-      numero: 1,
+      numero: 0,
       periodo: mesActual(),
       tipo_edp: "ordinario",
       avance_periodo: 0,
@@ -80,7 +73,6 @@ function borradorDe(ep: EstadoPago | null): Borrador {
     };
   }
   return {
-    id: ep.id,
     contrato_id: ep.contratoId,
     anexo_id: ep.anexoId ?? "",
     numero: ep.numero,
@@ -99,12 +91,15 @@ function borradorDe(ep: EstadoPago | null): Borrador {
 
 export function FormularioEstadoPago({
   estadoPago,
+  existentes,
   contratos,
   campos,
   alCerrar,
   alGuardado,
 }: {
   estadoPago: EstadoPago | null;
+  /** Los que ya existen: para proponer el número que sigue y no repetirlo. */
+  existentes: EstadoPago[];
   contratos: ContratoBreve[];
   campos: CampoContrato[];
   alCerrar: () => void;
@@ -166,8 +161,19 @@ export function FormularioEstadoPago({
     return () => { vigente = false; };
   }, [comportamiento.usaUf, f.datos.periodo, claveUf, ufGuardada]);
 
+  /* El número es correlativo por contrato, anexo y tipo: al crear se propone
+     el que sigue cada vez que cambia uno de los tres. Al editar no se toca. */
+  function proponerNumero(cambio: Partial<Pick<Borrador, "contrato_id" | "anexo_id" | "tipo_edp">>) {
+    if (editando) return;
+    const d = { ...f.datos, ...cambio };
+    if (!d.contrato_id) return;
+    f.cambiar("numero", siguienteNumeroEdp(existentes, d.contrato_id, d.anexo_id || null, d.tipo_edp));
+  }
+
   function elegirContrato(id: string) {
     f.cambiar("contrato_id", id);
+    proponerNumero({ contrato_id: id, anexo_id: "" });
+    f.cambiar("anexo_id", "");
     f.cambiar("monto_uf", 0);
     f.cambiar("monto_neto", 0);
     setPropios({});
@@ -181,7 +187,18 @@ export function FormularioEstadoPago({
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const { id, ...resto } = f.datos;
+    const resto = f.datos;
+    const repetido = edpRepetido(existentes, {
+      contratoId: resto.contrato_id, anexoId: resto.anexo_id || null, tipoEdp: resto.tipo_edp, numero: resto.numero,
+    }, estadoPago?.id);
+    if (resto.numero < 1) {
+      f.setError("Indica el N° del estado de pago.");
+      return;
+    }
+    if (repetido) {
+      f.setError(`Ya existe el ${nombreEdp(resto.numero, resto.tipo_edp)} de este contrato (${mesLargo(repetido.periodo)}). El ordinario y el extraordinario se numeran aparte.`);
+      return;
+    }
     if (comportamiento.usaUf) {
       if (ufTotal <= 0) {
         setErrorUf("Ingresa el total en UF o el monto de los conceptos en UF.");
@@ -218,7 +235,7 @@ export function FormularioEstadoPago({
       () =>
         editando
           ? actualizar("estados_pago", estadoPago.id, fila)
-          : crear("estados_pago", { ...fila, id: id.trim() }),
+          : crear("estados_pago", { ...fila, id: idEdp(resto.contrato_id, resto.anexo_id || null, resto.tipo_edp, resto.numero) }),
       () => {
         alGuardado();
         alCerrar();
@@ -240,16 +257,6 @@ export function FormularioEstadoPago({
       >
         <form onSubmit={onSubmit}>
           <Campos>
-            {!editando && (
-              <CampoTexto
-                etiqueta="Código"
-                requerido
-                marcador="EP-C2601-10"
-                ayuda="Identificador único. No se puede cambiar después."
-                {...f.campo("id")}
-              />
-            )}
-
             <CampoSeleccion
               etiqueta="Contrato"
               requerido
@@ -257,7 +264,7 @@ export function FormularioEstadoPago({
               valor={f.datos.contrato_id}
               alCambiar={elegirContrato}
             />
-            {f.datos.contrato_id && <SelectorAnexo contratoId={f.datos.contrato_id} valor={f.datos.anexo_id} alCambiar={(v) => f.cambiar("anexo_id", v)}
+            {f.datos.contrato_id && <SelectorAnexo contratoId={f.datos.contrato_id} valor={f.datos.anexo_id} alCambiar={(v) => { f.cambiar("anexo_id", v); proponerNumero({ anexo_id: v }); }}
               ayuda="Un anexo lleva su propia serie de estados de pago y su propio resultado." />}
 
             {f.datos.contrato_id && <>
@@ -271,7 +278,7 @@ export function FormularioEstadoPago({
               etiqueta="N° de EP"
               requerido
               min={1}
-              ayuda="Correlativo dentro del contrato."
+              ayuda={editando ? "Correlativo del contrato. El ordinario y el extraordinario se numeran aparte." : "El que sigue en este contrato y tipo. El código se arma solo."}
               {...f.campo("numero")}
             />
 
@@ -286,8 +293,9 @@ export function FormularioEstadoPago({
               etiqueta="Tipo"
               requerido
               opciones={tipos}
-              ayuda="Extraordinario es lo que se cobra fuera del contrato base."
-              {...f.campo("tipo_edp")}
+              ayuda="Extraordinario es lo que se cobra fuera del contrato base. Cada tipo lleva su numeración."
+              valor={f.datos.tipo_edp}
+              alCambiar={(v) => { f.cambiar("tipo_edp", v as TipoEdp); proponerNumero({ tipo_edp: v as TipoEdp }); }}
             />
 
             {plantilla === "general" && <CampoNumero
@@ -349,7 +357,9 @@ export function FormularioEstadoPago({
               {...f.campo("monto_cobrado")}
             />
 
-            <CampoSeleccion etiqueta="Estado" requerido opciones={estados} {...f.campo("estado")} />
+            <CampoSeleccion etiqueta="Estado" requerido opciones={estados}
+              ayuda="Pendiente de pago y Pagado los pone la factura al emitirla y al marcarla pagada."
+              {...f.campo("estado")} />
 
             <CampoFecha
               etiqueta="Fecha de presentación"

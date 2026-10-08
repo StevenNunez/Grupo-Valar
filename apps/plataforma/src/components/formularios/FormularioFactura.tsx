@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Ancho,
   CampoDinero,
   CampoFecha,
   CampoSeleccion,
@@ -10,17 +9,18 @@ import {
   Confirmacion,
   Dialogo,
   Pie,
+  ResumenIva,
+  ivaDe,
   useBorrado,
   useFormulario,
 } from "../ui/Formulario";
 import { actualizar, crear } from "@/lib/crud";
 import { opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
-import { formatearPesos } from "@/lib/formato";
 import type { EstadoCobro, Factura } from "@/lib/ingresos";
 
 const estados: { id: EstadoCobro; titulo: string }[] = [
-  { id: "emitida", titulo: "Emitida" },
-  { id: "enviada", titulo: "Enviada al mandante" },
+  { id: "emitida", titulo: "Emitida · pendiente de pago" },
+  { id: "enviada", titulo: "Enviada al mandante · pendiente de pago" },
   { id: "pagada", titulo: "Pagada" },
   { id: "vencida", titulo: "Vencida" },
 ];
@@ -30,7 +30,6 @@ const hoy = () => new Date().toISOString().slice(0, 10);
 type Borrador = {
   id: string;
   contrato_id: string;
-  estado_pago_id: string;
   neto: number;
   iva: number;
   fecha_emision: string;
@@ -43,7 +42,6 @@ function borradorDe(fa: Factura | null, contratos: ContratoBreve[]): Borrador {
     return {
       id: "",
       contrato_id: contratos[0]?.id ?? "",
-      estado_pago_id: "",
       neto: 0,
       iva: 0,
       fecha_emision: hoy(),
@@ -54,7 +52,6 @@ function borradorDe(fa: Factura | null, contratos: ContratoBreve[]): Borrador {
   return {
     id: fa.id,
     contrato_id: fa.contratoId,
-    estado_pago_id: fa.estadoPagoId ?? "",
     neto: fa.neto,
     iva: fa.iva,
     fecha_emision: fa.fechaEmision,
@@ -86,7 +83,8 @@ export function FormularioFactura({
     const { id, ...campos } = f.datos;
     const fila = {
       ...campos,
-      estado_pago_id: campos.estado_pago_id.trim() || null,
+      // El IVA no se escribe: las facturas de Valar son afectas, el 19% del neto.
+      iva: ivaDe(campos.neto),
       vencimiento: campos.vencimiento || null,
     };
 
@@ -108,7 +106,7 @@ export function FormularioFactura({
         titulo={editando ? "Editar factura" : "Nueva factura"}
         descripcion={
           editando
-            ? `${factura.id} · esta factura alimenta la facturación mensual del Dashboard.`
+            ? `${factura.id}${factura.edps.length > 0 ? ` · cobra ${factura.edps.join(", ")}` : ""}. Alimenta la facturación mensual del Dashboard.`
             : "Lo que se emita acá es lo que aparece en el gráfico de facturación del Dashboard."
         }
         abierto
@@ -133,24 +131,7 @@ export function FormularioFactura({
               {...f.campo("contrato_id")}
             />
 
-            <CampoTexto
-              etiqueta="Estado de pago de origen"
-              marcador="EP-C2601-08"
-              ayuda="El código del EP que se está facturando. Opcional."
-              {...f.campo("estado_pago_id")}
-            />
-
             <CampoDinero etiqueta="Neto" requerido {...f.campo("neto")} />
-
-            <CampoDinero
-              etiqueta="IVA"
-              ayuda={
-                f.datos.neto > 0
-                  ? `El 19% del neto son ${formatearPesos(Math.round(f.datos.neto * 0.19))}.`
-                  : "El 19% del neto."
-              }
-              {...f.campo("iva")}
-            />
 
             <CampoFecha etiqueta="Fecha de emisión" requerido {...f.campo("fecha_emision")} />
 
@@ -163,19 +144,12 @@ export function FormularioFactura({
             <CampoSeleccion
               etiqueta="Estado de cobro"
               requerido
+              ayuda="Al marcarla pagada, sus estados de pago pasan a Pagado."
               opciones={estados}
               {...f.campo("estado_cobro")}
             />
 
-            <Ancho>
-              <p className="rounded-xl bg-mist/50 px-4 py-3 text-sm text-ink-soft">
-                Total con IVA:{" "}
-                <span className="font-semibold text-ink">
-                  {formatearPesos(f.datos.neto + f.datos.iva)}
-                </span>
-                <span className="ml-2 text-xs">Se calcula solo, no se escribe.</span>
-              </p>
-            </Ancho>
+            <ResumenIva neto={f.datos.neto} />
           </Campos>
 
           <Pie

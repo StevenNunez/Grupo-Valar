@@ -15,7 +15,7 @@ import {
 } from "@/lib/oficina-central";
 import {
   Ancho, CampoDinero, CampoFecha, CampoSeleccion, CampoTexto,
-  Campos, Confirmacion, Dialogo, Pie, useBorrado, useFormulario,
+  Campos, Confirmacion, Dialogo, Pie, ResumenIva, ivaDe, useBorrado, useFormulario,
 } from "../ui/Formulario";
 import { DialogoHistorial } from "../ui/Historial";
 import { Tabla, Total, type Columna } from "../ui/Tabla";
@@ -146,16 +146,18 @@ function FormularioOficina({ registro, categoriaInicial, alCerrar, alGuardado }:
     iva: registro.iva, estado: registro.estado, observaciones: registro.observaciones,
   } : borradorNuevo(categoriaInicial);
   const formulario = useFormulario(inicial);
+  // El IVA es el 19% del neto. Un egreso guardado con neto y sin IVA se abre como exento.
+  const [exento, setExento] = useState(registro !== null && registro.neto > 0 && registro.iva === 0);
   const borrado = useBorrado("egresos_oficina_central", registro?.id, () => { alGuardado(); alCerrar(); });
 
   function guardar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
     const d = formulario.datos;
-    if (!d.fecha || !d.proveedor.trim() || !d.descripcion.trim() || !Number.isFinite(d.neto) || d.neto <= 0 || !Number.isFinite(d.iva) || d.iva < 0) {
+    if (!d.fecha || !d.proveedor.trim() || !d.descripcion.trim() || !Number.isFinite(d.neto) || d.neto <= 0) {
       formulario.setError("Completa fecha, proveedor, detalle y un monto neto mayor que cero.");
       return;
     }
-    const datos = { ...d, proveedor: d.proveedor.trim(), descripcion: d.descripcion.trim(), documento: d.documento?.trim() || null, observaciones: d.observaciones?.trim() || null };
+    const datos = { ...d, iva: ivaDe(d.neto, !exento), proveedor: d.proveedor.trim(), descripcion: d.descripcion.trim(), documento: d.documento?.trim() || null, observaciones: d.observaciones?.trim() || null };
     void formulario.enviar(
       () => registro ? actualizar("egresos_oficina_central", registro.id, datos) : crear("egresos_oficina_central", datos),
       () => { alGuardado(); alCerrar(); },
@@ -164,7 +166,7 @@ function FormularioOficina({ registro, categoriaInicial, alCerrar, alGuardado }:
 
   return <>
     <Dialogo titulo={registro ? "Editar egreso de Oficina Central" : "Nuevo egreso de Oficina Central"} abierto alCerrar={alCerrar}
-      descripcion="Ingresa el monto neto y el IVA por separado. El total con IVA se calcula automáticamente.">
+      descripcion="Basta con el monto neto: el IVA (19%) y el total se calculan solos.">
       <form onSubmit={guardar}>
         <Campos>
           <CampoSeleccion etiqueta="Categoría" opciones={[...categoriasOficina]} requerido {...formulario.campo("categoria")} />
@@ -173,9 +175,8 @@ function FormularioOficina({ registro, categoriaInicial, alCerrar, alGuardado }:
           <CampoTexto etiqueta="Nº de documento" valor={formulario.datos.documento ?? ""} alCambiar={(v) => formulario.cambiar("documento", v)} ayuda="Factura, boleta o comprobante, si existe." />
           <Ancho><CampoTexto etiqueta="Detalle" requerido {...formulario.campo("descripcion")} /></Ancho>
           <CampoDinero etiqueta="Neto" requerido {...formulario.campo("neto")} />
-          <CampoDinero etiqueta="IVA" {...formulario.campo("iva")} />
           <CampoSeleccion etiqueta="Estado de pago" opciones={[{ id: "pendiente", titulo: "Pendiente" }, { id: "pagado", titulo: "Pagado" }]} {...formulario.campo("estado")} />
-          <div className="rounded-xl bg-mist/50 p-4"><span className="block text-xs font-semibold uppercase tracking-wide text-ink-soft">Total con IVA</span><span className="mt-2 block font-display text-xl font-semibold text-ink">{formatearPesos(formulario.datos.neto + formulario.datos.iva)}</span></div>
+          <ResumenIva neto={formulario.datos.neto} afecto={!exento} alCambiarAfecto={(v) => setExento(!v)} />
           <Ancho><CampoTexto etiqueta="Observaciones" valor={formulario.datos.observaciones ?? ""} alCambiar={(v) => formulario.cambiar("observaciones", v)} /></Ancho>
         </Campos>
         <Pie error={formulario.error} guardando={formulario.guardando} alCancelar={alCerrar} alEliminar={registro ? borrado.abrir : undefined} />

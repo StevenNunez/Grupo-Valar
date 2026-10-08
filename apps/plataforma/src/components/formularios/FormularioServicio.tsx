@@ -13,6 +13,8 @@ import {
   Confirmacion,
   Dialogo,
   Pie,
+  ResumenIva,
+  ivaDe,
   useBorrado,
   useFormulario,
 } from "../ui/Formulario";
@@ -30,7 +32,6 @@ import {
   type TipoCompra,
   type TipoServicio,
 } from "@/lib/egresos";
-import { formatearPesos } from "@/lib/formato";
 
 const estadosPago = [
   { id: "pendiente" as const, titulo: "Pendiente de pago" },
@@ -130,6 +131,14 @@ export function FormularioServicio({
 
   const propias = categoriasDe(categorias, f.datos.contrato_id, "servicios");
 
+  /* El IVA no se escribe: es el 19% del neto. No lleva si la categoría no es
+     afecta (como en Compras) o si se marca exento (boleta de honorarios, por
+     ejemplo). Un servicio guardado con neto y sin IVA se abre como exento. */
+  const categoria = propias.find((c) => c.id === f.datos.categoria_id);
+  const categoriaAfecta = categoria?.afectaIva ?? true;
+  const [exento, setExento] = useState(servicio !== null && servicio.neto > 0 && servicio.iva === 0);
+  const afecto = categoriaAfecta && !exento;
+
   /* Cambiar de contrato deja seleccionada una categoría que el nuevo no tiene.
      Se limpia. */
   function elegirContrato(id: string) {
@@ -149,6 +158,7 @@ export function FormularioServicio({
     const { id, ...campos } = f.datos;
     const fila = {
       ...campos,
+      iva: ivaDe(campos.neto, afecto),
       datos: propios,
       categoria_id: campos.categoria_id || null,
       anexo_id: campos.anexo_id || null,
@@ -263,16 +273,6 @@ export function FormularioServicio({
 
             <CampoDinero etiqueta="Neto" requerido {...f.campo("neto")} />
 
-            <CampoDinero
-              etiqueta="IVA"
-              ayuda={
-                f.datos.neto > 0
-                  ? `El 19% del neto son ${formatearPesos(Math.round(f.datos.neto * 0.19))}.`
-                  : "El 19% del neto."
-              }
-              {...f.campo("iva")}
-            />
-
             <CampoFecha etiqueta="Fecha del documento" requerido {...f.campo("fecha")} />
 
             <CampoSeleccion
@@ -289,15 +289,12 @@ export function FormularioServicio({
 
             <CampoFecha etiqueta="Servicio hasta" {...f.campo("hasta")} />
 
-            <Ancho>
-              <p className="rounded-xl bg-mist/50 px-4 py-3 text-sm text-ink-soft">
-                Total con IVA:{" "}
-                <span className="font-semibold text-ink">
-                  {formatearPesos(f.datos.neto + f.datos.iva)}
-                </span>
-                <span className="ml-2 text-xs">Se calcula solo, no se escribe.</span>
-              </p>
-            </Ancho>
+            <ResumenIva
+              neto={f.datos.neto}
+              afecto={afecto}
+              alCambiarAfecto={categoriaAfecta ? (v) => setExento(!v) : undefined}
+              nota={categoriaAfecta ? undefined : `La categoría ${categoria?.nombre ?? ""} no lleva IVA.`}
+            />
             <Ancho>
               <label className="flex items-start gap-3 rounded-xl border border-mist-deep bg-mist/30 px-4 py-3">
                 <input

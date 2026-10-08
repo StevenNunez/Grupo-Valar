@@ -14,7 +14,13 @@ import {
 } from "../ui/Formulario";
 import { actualizar, crear } from "@/lib/crud";
 import { opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
-import type { EstadoOC, OrdenCompra } from "@/lib/ingresos";
+import { formasPago, type EstadoOC, type FormaPago, type OrdenCompra } from "@/lib/ingresos";
+
+/**
+ * La orden de compra del mandante. Es para COBRARLE, no para comprar: lo que
+ * importa es cuánto autoriza, si paga al contado o a crédito y cuándo se le
+ * cobra. Se carga desde Estado de Pago; acá se corrige.
+ */
 
 const estados: { id: EstadoOC; titulo: string }[] = [
   { id: "vigente", titulo: "Vigente" },
@@ -25,37 +31,34 @@ const estados: { id: EstadoOC; titulo: string }[] = [
 const hoy = () => new Date().toISOString().slice(0, 10);
 
 type Borrador = {
-  id: string;
   contrato_id: string;
   numero: string;
   mandante: string;
   monto_autorizado: number;
-  fecha_emision: string;
-  vigencia: string;
+  forma_pago: FormaPago;
+  fecha_cobro: string;
   estado: EstadoOC;
 };
 
 function borradorDe(oc: OrdenCompra | null, contratos: ContratoBreve[]): Borrador {
   if (!oc) {
     return {
-      id: "",
       contrato_id: contratos[0]?.id ?? "",
       numero: "",
       mandante: contratos[0]?.cliente ?? "",
       monto_autorizado: 0,
-      fecha_emision: hoy(),
-      vigencia: "",
+      forma_pago: "credito",
+      fecha_cobro: "",
       estado: "vigente",
     };
   }
   return {
-    id: oc.id,
     contrato_id: oc.contratoId,
     numero: oc.numero,
     mandante: oc.mandante,
     monto_autorizado: oc.montoAutorizado,
-    fecha_emision: oc.fechaEmision,
-    vigencia: oc.vigencia ?? "",
+    forma_pago: oc.formaPago ?? "credito",
+    fecha_cobro: oc.fechaCobro ?? "",
     estado: oc.estado,
   };
 }
@@ -80,14 +83,18 @@ export function FormularioOrdenCompra({
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const { id, ...campos } = f.datos;
-    const fila = { ...campos, vigencia: campos.vigencia || null };
+    const fila = { ...f.datos, numero: f.datos.numero.trim(), fecha_cobro: f.datos.fecha_cobro || null };
 
     f.enviar(
       () =>
         editando
           ? actualizar("ordenes_compra", orden.id, fila)
-          : crear("ordenes_compra", { ...fila, id: id.trim() }),
+          // El código se arma con el contrato y el N°: una OC es una por contrato y número.
+          : crear("ordenes_compra", {
+              ...fila,
+              id: `OC-${fila.contrato_id.replace(/^C-/, "")}-${fila.numero.replace(/\s+/g, "")}`,
+              fecha_emision: hoy(),
+            }),
       () => {
         alGuardado();
         alCerrar();
@@ -101,24 +108,14 @@ export function FormularioOrdenCompra({
         titulo={editando ? "Editar orden de compra" : "Nueva orden de compra"}
         descripcion={
           editando
-            ? `${orden.id} · el consumo no se edita: es la suma de los estados de pago del contrato.`
-            : "La OC es el techo de lo que se puede cobrar en ese contrato."
+            ? `N° ${orden.numero}${orden.edps.length > 0 ? ` · cubre ${orden.edps.join(", ")}` : ""}. El consumo no se edita: es la suma de esos estados de pago.`
+            : "La OC del mandante: lo que autoriza cobrar y cuándo se le cobra."
         }
         abierto
         alCerrar={alCerrar}
       >
         <form onSubmit={onSubmit}>
           <Campos>
-            {!editando && (
-              <CampoTexto
-                etiqueta="Código"
-                requerido
-                marcador="OC-C2601-02"
-                ayuda="Identificador único. No se puede cambiar después."
-                {...f.campo("id")}
-              />
-            )}
-
             <CampoSeleccion
               etiqueta="Contrato"
               requerido
@@ -129,23 +126,27 @@ export function FormularioOrdenCompra({
             <CampoTexto
               etiqueta="N° de OC"
               requerido
-              marcador="4537"
+              marcador="9000114150"
               ayuda="El folio que emite el mandante."
               {...f.campo("numero")}
             />
 
-            <CampoTexto etiqueta="Mandante" requerido marcador="SQM" {...f.campo("mandante")} />
+            <CampoTexto etiqueta="Mandante" requerido marcador="Novandino Litio" {...f.campo("mandante")} />
 
             <CampoDinero
               etiqueta="Monto autorizado"
               requerido
-              ayuda="Lo máximo que se puede presentar contra esta OC."
+              ayuda="Lo máximo que se puede cobrar contra esta OC."
               {...f.campo("monto_autorizado")}
             />
 
-            <CampoFecha etiqueta="Fecha de emisión" requerido {...f.campo("fecha_emision")} />
+            <CampoSeleccion etiqueta="Forma de pago" requerido opciones={formasPago} {...f.campo("forma_pago")} />
 
-            <CampoFecha etiqueta="Vigencia" {...f.campo("vigencia")} />
+            <CampoFecha
+              etiqueta="Fecha de cobro"
+              ayuda="Cuándo se le cobra al mandante. Es el vencimiento que se propone al facturar."
+              {...f.campo("fecha_cobro")}
+            />
 
             <CampoSeleccion etiqueta="Estado" requerido opciones={estados} {...f.campo("estado")} />
           </Campos>
@@ -163,7 +164,7 @@ export function FormularioOrdenCompra({
       <Confirmacion
         abierto={borrado.confirmando}
         titulo="Eliminar orden de compra"
-        detalle={`Se va a eliminar ${orden?.id ?? ""} — N° ${orden?.numero ?? ""} de ${orden?.mandante ?? ""}.`}
+        detalle={`Se va a eliminar la OC N° ${orden?.numero ?? ""} de ${orden?.mandante ?? ""}. Los estados de pago que cubre quedan sin orden.`}
         error={borrado.error}
         procesando={borrado.borrando}
         alCancelar={borrado.cerrar}

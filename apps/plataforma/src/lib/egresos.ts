@@ -52,7 +52,15 @@ export type Compra = {
   estadoPago: EstadoPagoCompra;
   /** La OC de la que es factura. Esas se editan desde el ciclo de la orden. */
   ordenId: string | null;
+  /** "reembolso": lo pagó alguien de su bolsillo y se le devuelve (0068). */
+  origen: OrigenCompra;
+  /** En un reembolso, quién rindió: a quién se le devuelve. */
+  rendidoPor: string | null;
+  /** Cuándo se pagó; en un reembolso, cuándo se devolvió. */
+  fechaPago: string | null;
 };
+
+export type OrigenCompra = "proveedor" | "reembolso";
 
 type FilaCompra = {
   anexo_id?: string | null;
@@ -72,6 +80,9 @@ type FilaCompra = {
   periodo_control: string | null;
   estado_pago: EstadoPagoCompra;
   orden_id: string | null;
+  origen?: OrigenCompra;
+  rendido_por?: string | null;
+  fecha_pago?: string | null;
   contratos: { nombre: string } | null;
 };
 
@@ -79,7 +90,7 @@ export async function cargarCompras(): Promise<Compra[]> {
   const { data, error } = await supabase
     .from("compras")
     .select(
-      "id, contrato_id, proveedor, proveedor_id, categoria_id, documento, detalle, tipo, neto, iva, total, fecha, periodo_control, estado_pago, orden_id, anexo_id, datos, contratos(nombre)",
+      "id, contrato_id, proveedor, proveedor_id, categoria_id, documento, detalle, tipo, neto, iva, total, fecha, periodo_control, estado_pago, orden_id, anexo_id, datos, origen, rendido_por, fecha_pago, contratos(nombre)",
     )
     .order("fecha", { ascending: false });
 
@@ -104,6 +115,9 @@ export async function cargarCompras(): Promise<Compra[]> {
     periodoControl: f.periodo_control ?? `${f.fecha.slice(0, 7)}-01`,
     estadoPago: f.estado_pago,
     ordenId: f.orden_id ?? null,
+    origen: f.origen ?? "proveedor",
+    rendidoPor: f.rendido_por ?? null,
+    fechaPago: f.fecha_pago ?? null,
   }));
 }
 
@@ -114,11 +128,17 @@ export async function cargarCompras(): Promise<Compra[]> {
 export async function cargarLineasDeCompra(compraId: string) {
   const { data, error } = await supabase
     .from("factura_items")
-    .select("item_id, items_compra(descripcion, unidad, cantidad, precio_unitario, categoria_id, tipo)")
+    .select("item_id, items_compra(descripcion, unidad, cantidad, precio_unitario, iva, categoria_id, tipo, tipo_documento, documento, comercio, fecha_documento)")
     .eq("compra_id", compraId)
     .order("item_id");
   if (error) throw new Error(error.message);
-  type Fila = { item_id: string; items_compra: { descripcion: string; unidad: string; cantidad: number; precio_unitario: number; categoria_id: string | null; tipo: TipoCompra } | null };
+  type Fila = {
+    item_id: string;
+    items_compra: {
+      descripcion: string; unidad: string; cantidad: number; precio_unitario: number; iva: number; categoria_id: string | null; tipo: TipoCompra;
+      tipo_documento: TipoDocumentoRendicion | null; documento: string | null; comercio: string | null; fecha_documento: string | null;
+    } | null;
+  };
   return ((data ?? []) as unknown as Fila[])
     .filter((f) => f.items_compra)
     .map((f) => ({
@@ -128,7 +148,43 @@ export async function cargarLineasDeCompra(compraId: string) {
       precio_unitario: Number(f.items_compra!.precio_unitario),
       categoria_id: f.items_compra!.categoria_id ?? "",
       tipo: f.items_compra!.tipo,
+      iva: Number(f.items_compra!.iva ?? 0),
+      tipo_documento: f.items_compra!.tipo_documento,
+      documento: f.items_compra!.documento ?? "",
+      comercio: f.items_compra!.comercio ?? "",
+      fecha_documento: f.items_compra!.fecha_documento ?? "",
     }));
+}
+
+/* ── Reembolsos (rendiciones) ─────────────────────────────────────────────── */
+
+/** El comprobante de cada gasto de una rendición. */
+export type TipoDocumentoRendicion = "boleta" | "factura" | "otro";
+
+export const tiposDocumentoRendicion: { id: TipoDocumentoRendicion; titulo: string }[] = [
+  { id: "boleta", titulo: "Boleta" },
+  { id: "factura", titulo: "Factura" },
+  { id: "otro", titulo: "Sin documento / otro" },
+];
+
+/**
+ * Cuánto cuesta un gasto rendido, según su comprobante. Con FACTURA el IVA se
+ * recupera: el costo es el neto (lo pagado / 1,19). Con BOLETA u otro
+ * comprobante no se recupera: el costo es todo lo pagado.
+ */
+export function costoRendido(pagado: number, tipo: TipoDocumentoRendicion) {
+  const neto = tipo === "factura" ? Math.round(pagado / 1.19) : pagado;
+  return { neto, iva: pagado - neto };
+}
+
+/** El código de una rendición: "RE-9500013862-2026-10", con correlativo si el mes ya tiene una. */
+export function siguienteIdReembolso(existentes: Compra[], contratoId: string, periodo: string) {
+  const base = `RE-${contratoId.replace(/^C-/, "")}-${periodo.slice(0, 7)}`;
+  const usados = new Set(existentes.map((c) => c.id));
+  if (!usados.has(base)) return base;
+  let n = 2;
+  while (usados.has(`${base}-${n}`)) n += 1;
+  return `${base}-${n}`;
 }
 
 /** Guarda la compra con sus líneas, entera o nada (función de la base, 0053). */
@@ -144,7 +200,17 @@ export async function guardarCompraDirecta(datos: {
   anexoId?: string | null;
   iva: number;
   datos: Datos;
-  lineas: { descripcion: string; unidad: string; cantidad: number; precio_unitario: number; categoria_id: string; tipo: TipoCompra }[];
+  lineas: {
+    descripcion: string; unidad: string; cantidad: number; precio_unitario: number; categoria_id: string; tipo: TipoCompra;
+    /** Solo en rendiciones (0068): false = sin IVA aunque la categoría lo lleve (una boleta). */
+    afecto?: boolean;
+    tipo_documento?: TipoDocumentoRendicion;
+    documento?: string;
+    comercio?: string;
+    fecha_documento?: string | null;
+  }[];
+  /** Una rendición: quién pagó, y si ya se le devolvió. */
+  reembolso?: { rendidoPor: string; devuelto: boolean; fechaDevolucion: string };
 }) {
   const { error } = await supabase.rpc("guardar_compra_directa", {
     p_id: datos.id,
@@ -157,6 +223,14 @@ export async function guardarCompraDirecta(datos: {
     p_iva: datos.iva,
     p_datos: datos.datos,
     p_lineas: datos.lineas,
+    ...(datos.reembolso
+      ? {
+          p_origen: "reembolso",
+          p_rendido_por: datos.reembolso.rendidoPor,
+          p_estado_pago: datos.reembolso.devuelto ? "pagada" : "pendiente",
+          p_fecha_pago: datos.reembolso.devuelto ? datos.reembolso.fechaDevolucion || null : null,
+        }
+      : {}),
   });
   if (error) {
     throw new Error(/row-level security|permission denied/i.test(error.message)
@@ -427,6 +501,9 @@ export type EgresoTercero = {
   iva: number;
   total: number;
   estadoPago: EstadoPagoCompra;
+  /** Si es un reembolso, quién lo rindió (0068). */
+  rendidoPor: string | null;
+  fechaPago: string | null;
 };
 
 export async function cargarEgresosTerceros(): Promise<EgresoTercero[]> {
@@ -458,6 +535,8 @@ export async function cargarEgresosTerceros(): Promise<EgresoTercero[]> {
     iva: Number(f.iva),
     total: Number(f.total),
     estadoPago: f.estado_pago as EstadoPagoCompra,
+    rendidoPor: (f.rendido_por as string | null) ?? null,
+    fechaPago: (f.fecha_pago as string | null) ?? null,
   }));
 }
 

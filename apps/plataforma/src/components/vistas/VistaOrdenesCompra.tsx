@@ -32,7 +32,7 @@ export function VistaOrdenesCompra() {
     <>
       <Encabezado
         titulo="Órdenes de Compra"
-        descripcion="Lo que cada mandante autorizó. Acá se consultan y se corrigen; las órdenes se cargan desde Estado de Pago, que es de donde nacen. El consumo es la suma de los estados de pago presentados contra ese contrato: cuando se acerca al monto autorizado, hay que pedir ampliación antes de seguir facturando."
+        descripcion="Lo que cada mandante autorizó y cuándo se le cobra. Acá se consultan y se corrigen; las órdenes se cargan desde Estado de Pago, que es de donde nacen. Una orden puede cubrir varios estados de pago (el ordinario y el extraordinario del mes): el consumo es la suma de los que cubre."
       />
 
       <Contenido consulta={estado}>
@@ -154,6 +154,7 @@ const columnas = (edicion: ReturnType<typeof useEdicion<OrdenCompra>>): Columna<
       <>
         <span className="block font-semibold text-ink">N° {f.numero}</span>
         <span className="mt-0.5 block text-xs text-ink-soft">{f.mandante}</span>
+        {f.edps.length > 0 && <span className="mt-0.5 block text-xs text-ink-soft">{f.edps.join(" · ")}</span>}
       </>
     ),
   },
@@ -221,10 +222,13 @@ const columnas = (edicion: ReturnType<typeof useEdicion<OrdenCompra>>): Columna<
     celda: (f) => <Chip tono={estados[f.estado].tono}>{estados[f.estado].titulo}</Chip>,
   },
   {
-    clave: "vigencia",
-    titulo: "Vigencia",
+    clave: "cobro",
+    titulo: "Cobro",
     celda: (f) => (
-      <span className="whitespace-nowrap text-ink-soft">{formatearFecha(f.vigencia)}</span>
+      <>
+        <span className="block whitespace-nowrap text-ink-soft">{formatearFecha(f.fechaCobro)}</span>
+        {f.formaPago && <span className="mt-0.5 block text-xs text-ink-soft">{f.formaPago === "contado" ? "Al contado" : "A crédito"}</span>}
+      </>
     ),
   },
   {

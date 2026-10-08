@@ -5,7 +5,16 @@ import { Chip, type Tono } from "./ui/Chip";
 import { camposDe, mostrarValor, type CampoContrato } from "@/lib/campos";
 import { actualizar } from "@/lib/crud";
 import { formatearFecha, formatearPesos, mesLargo } from "@/lib/formato";
-import { crearFacturaDesdeOrden, crearOrdenDesdeEdp, type Ciclo, type Etapa } from "@/lib/ingresos";
+import {
+  cargarOrdenEnEdps,
+  facturarEdps,
+  formasPago,
+  marcarFacturaPagada,
+  nombreEdp,
+  type Ciclo,
+  type Etapa,
+  type FormaPago,
+} from "@/lib/ingresos";
 import { usePuede } from "@/lib/sesion";
 
 /**
@@ -19,6 +28,11 @@ import { usePuede } from "@/lib/sesion";
  * La orden y la factura se proponen con lo que el estado de pago ya dice. Es la
  * misma información: volver a teclearla es la forma más común de que la orden
  * autorice un monto distinto del que se presentó.
+ *
+ * El mandante emite una sola orden para el ordinario y el extraordinario del
+ * mes, y se cobran con una sola factura (0067). Por eso al cargar la orden o la
+ * factura de un EDP se pueden sumar los otros del contrato, y si el N° de OC o
+ * el folio ya están cargados se reusan en vez de pedirlos de nuevo.
  *
  * En Órdenes de Compra y en Facturas queda el listado, para consultar. Emitir se
  * emite desde acá, que es donde se ve de dónde viene cada cosa.
@@ -36,9 +50,11 @@ const nombreEtapa: Record<Etapa, string> = {
   edp: "Por aprobar",
   orden: "Falta la orden",
   factura: "Falta facturar",
-  cobro: "Por cobrar",
-  cerrado: "Cerrado",
+  cobro: "Pendiente de pago",
+  cerrado: "Pagado",
 };
+
+const nombreForma: Record<FormaPago, string> = { contado: "al contado", credito: "a crédito" };
 
 /** Adónde se cuelgan los respaldos: la tabla y el registro de cada etapa. */
 type AbrirAdjuntos = (tabla: string, id: string, titulo: string) => void;
@@ -53,6 +69,7 @@ type AbrirEdicion = (que: Editable) => void;
 
 export function FichaDeCiclo({
   ciclo,
+  ciclos,
   campos,
   abierta,
   alAbrir,
@@ -62,6 +79,8 @@ export function FichaDeCiclo({
   alImprimir,
 }: {
   ciclo: Ciclo;
+  /** Todos: para ver qué otros EDP comparten la orden o la factura. */
+  ciclos: Ciclo[];
   campos: CampoContrato[];
   abierta: boolean;
   alAbrir: () => void;
@@ -97,8 +116,7 @@ export function FichaDeCiclo({
             EP N° {ciclo.numero} · {mesLargo(ciclo.periodo)}
           </span>
           <span className="mt-0.5 block truncate text-xs text-ink-soft">
-            {ciclo.contrato} · {ciclo.contratoId}
-            {ciclo.tipoEdp === "extraordinario" ? " · extraordinario" : ""}
+            {ciclo.contrato} · {ciclo.contratoId} · {ciclo.tipoEdp}
           </span>
         </span>
 
@@ -127,6 +145,7 @@ export function FichaDeCiclo({
             />
             <PasoOrden
               ciclo={ciclo}
+              ciclos={ciclos}
               alCambiar={alCambiar}
               alEditar={() => alEditar("orden")}
               alVerAdjuntos={alVerAdjuntos}
@@ -134,6 +153,7 @@ export function FichaDeCiclo({
             />
             <PasoFactura
               ciclo={ciclo}
+              ciclos={ciclos}
               alCambiar={alCambiar}
               alEditar={() => alEditar("factura")}
               alVerAdjuntos={alVerAdjuntos}
@@ -194,6 +214,12 @@ function Paso({
       </div>
     </li>
   );
+}
+
+/** "EP N° 25 ordinario y EP N° 26 extraordinario". */
+function listaEdps(cs: Ciclo[]) {
+  const nombres = cs.map((c) => nombreEdp(c.numero, c.tipoEdp));
+  return nombres.length <= 1 ? nombres.join("") : `${nombres.slice(0, -1).join(", ")} y ${nombres.at(-1)}`;
 }
 
 /* ── 1. El estado de pago ─────────────────────────────────────────────────── */
@@ -270,7 +296,7 @@ function PasoEdp({
         </BotonChico>
         <BotonChico escribe onClick={alEditar}>Editar el estado de pago</BotonChico>
         <BotonChico
-          onClick={() => alVerAdjuntos("estados_pago", ciclo.id, `${ciclo.id} · ${ciclo.contrato}`)}
+          onClick={() => alVerAdjuntos("estados_pago", ciclo.id, `${nombreEdp(ciclo.numero, ciclo.tipoEdp)} · ${ciclo.contrato}`)}
         >
           Adjuntar respaldo
         </BotonChico>
@@ -288,34 +314,46 @@ function PasoEdp({
 
 function PasoOrden({
   ciclo,
+  ciclos,
   alCambiar,
   alEditar,
   alVerAdjuntos,
   alImprimir,
 }: {
   ciclo: Ciclo;
+  ciclos: Ciclo[];
   alCambiar: () => void;
   alEditar: () => void;
   alVerAdjuntos: AbrirAdjuntos;
   alImprimir: AbrirDocumento;
 }) {
   const [abriendo, setAbriendo] = useState(false);
-  const habilitado = ciclo.estado === "aprobado" || ciclo.ordenId !== null;
+  const habilitado = ciclo.estado === "aprobado" || ciclo.estado === "facturado";
   const ordenId = ciclo.ordenId;
 
   if (ordenId) {
+    // Lo que se presentó contra esta orden, contando los otros EDP que cubre.
+    const cubiertos = ciclos.filter((c) => c.ordenId === ordenId);
+    const presentado = cubiertos.reduce((t, c) => t + c.montoNeto, 0);
     const corta =
-      ciclo.montoAutorizado !== null && ciclo.montoAutorizado < ciclo.montoNeto
-        ? ciclo.montoNeto - ciclo.montoAutorizado
+      ciclo.montoAutorizado !== null && ciclo.montoAutorizado < presentado
+        ? presentado - ciclo.montoAutorizado
         : 0;
+    const cobro = [
+      ciclo.ordenFormaPago ? nombreForma[ciclo.ordenFormaPago] : null,
+      ciclo.ordenFechaCobro ? `cobro el ${formatearFecha(ciclo.ordenFechaCobro)}` : null,
+    ].filter(Boolean).join(", ");
 
     return (
       <Paso
         n={2}
         titulo="Orden de compra"
         estado="hecho"
-        resumen={`N° ${ciclo.ordenNumero} · ${formatearPesos(ciclo.montoAutorizado ?? 0)} autorizados · ${formatearFecha(ciclo.ordenFecha)}`}
+        resumen={`N° ${ciclo.ordenNumero} · ${formatearPesos(ciclo.montoAutorizado ?? 0)} autorizados${cobro ? ` · ${cobro}` : ""}`}
       >
+        {cubiertos.length > 1 && (
+          <p className="mt-2 text-xs text-ink-soft">Cubre {listaEdps(cubiertos)}.</p>
+        )}
         {corta > 0 && (
           <Aviso tono="ojo">
             La orden autoriza {formatearPesos(corta)} menos de lo presentado. No se puede facturar
@@ -329,7 +367,7 @@ function PasoOrden({
           <BotonChico escribe onClick={alEditar}>Editar la orden</BotonChico>
           <BotonChico
             onClick={() =>
-              alVerAdjuntos("ordenes_compra", ordenId, `${ordenId} · N° ${ciclo.ordenNumero}`)
+              alVerAdjuntos("ordenes_compra", ordenId, `Orden de compra N° ${ciclo.ordenNumero}`)
             }
           >
             Adjuntar la orden original
@@ -337,6 +375,11 @@ function PasoOrden({
         </div>
       </Paso>
     );
+  }
+
+  // Pagado antes de la plataforma: no hay orden que pedir.
+  if (ciclo.etapa === "cerrado") {
+    return <Paso n={2} titulo="Orden de compra" estado="hecho" resumen="Sin orden registrada: el estado de pago ya está pagado." />;
   }
 
   return (
@@ -361,6 +404,7 @@ function PasoOrden({
       {abriendo && (
         <FormularioOrdenMandante
           ciclo={ciclo}
+          ciclos={ciclos}
           alCerrar={() => setAbriendo(false)}
           alGuardado={alCambiar}
         />
@@ -369,36 +413,55 @@ function PasoOrden({
   );
 }
 
+const enDias = (dias: number) => new Date(Date.now() + dias * 86_400_000).toISOString().slice(0, 10);
+
+/** Al contado se cobra al tiro; a crédito, a 30 días. Es lo que se propone, se puede cambiar. */
+const cobroSegun = (forma: FormaPago) => (forma === "contado" ? enDias(0) : enDias(30));
+
 function FormularioOrdenMandante({
   ciclo,
+  ciclos,
   alCerrar,
   alGuardado,
 }: {
   ciclo: Ciclo;
+  ciclos: Ciclo[];
   alCerrar: () => void;
   alGuardado: () => void;
 }) {
-  const hoy = new Date().toISOString().slice(0, 10);
+  // Los otros EDP del contrato que todavía no tienen orden: el del mismo mes
+  // (el ordinario con su extraordinario) se propone marcado.
+  const otros = ciclos.filter(
+    (c) => c.id !== ciclo.id && c.contratoId === ciclo.contratoId && c.anexoId === ciclo.anexoId &&
+      c.ordenId === null && c.etapa !== "cerrado" && c.estado !== "rechazado",
+  );
+  const [incluidos, setIncluidos] = useState<string[]>(otros.filter((c) => c.periodo === ciclo.periodo).map((c) => c.id));
+  const elegidos = [ciclo, ...otros.filter((c) => incluidos.includes(c.id))];
+  const sumaElegidos = elegidos.reduce((t, c) => t + c.montoNeto, 0);
+
+  // Las órdenes que ya están cargadas en el contrato: si el N° es una de
+  // ellas, no se vuelve a pedir nada.
+  const yaCargadas = [...new Map(
+    ciclos.filter((c) => c.contratoId === ciclo.contratoId && c.ordenId && c.ordenNumero)
+      .map((c) => [c.ordenNumero!.trim(), c]),
+  ).values()];
+
   const [numero, setNumero] = useState("");
-  const [mandante, setMandante] = useState(ciclo.cliente);
-  // Se propone el monto del estado de pago: es lo que se presentó a cobro.
-  const [monto, setMonto] = useState(ciclo.montoNeto);
-  const [fecha, setFecha] = useState(hoy);
-  const [vigencia, setVigencia] = useState("");
+  const [monto, setMonto] = useState<number | null>(null);
+  const [forma, setForma] = useState<FormaPago>("credito");
+  const [fechaCobro, setFechaCobro] = useState(cobroSegun("credito"));
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
+
+  const existente = yaCargadas.find((c) => c.ordenNumero!.trim() === numero.trim()) ?? null;
+  // Mientras no se toque, el monto es lo que suman los EDP marcados.
+  const montoAutorizado = monto ?? sumaElegidos;
 
   async function guardar() {
     setError(null);
     setGuardando(true);
     try {
-      await crearOrdenDesdeEdp(ciclo, {
-        numero,
-        mandante,
-        montoAutorizado: monto,
-        fechaEmision: fecha,
-        vigencia,
-      });
+      await cargarOrdenEnEdps(elegidos, { numero, montoAutorizado, formaPago: forma, fechaCobro });
       alGuardado();
       alCerrar();
     } catch (e) {
@@ -411,55 +474,77 @@ function FormularioOrdenMandante({
   return (
     <div className="mt-3 rounded-xl border border-mist-deep bg-mist/30 p-4">
       <div className="grid gap-3 sm:grid-cols-2">
-        <Campo etiqueta="N° de la orden" requerido>
+        <Campo etiqueta="N° de la orden" requerido ayuda={yaCargadas.length > 0 ? "Si es una que ya está cargada, se elige de la lista." : undefined}>
           <input
             value={numero}
             onChange={(e) => setNumero(e.target.value)}
-            placeholder="4500123456"
+            placeholder="9000114150"
+            list={`ocs-${ciclo.id}`}
             className={claseCampo}
           />
+          <datalist id={`ocs-${ciclo.id}`}>
+            {yaCargadas.map((c) => <option key={c.ordenId} value={c.ordenNumero!} />)}
+          </datalist>
         </Campo>
-        <Campo etiqueta="Mandante">
-          <input
-            value={mandante}
-            onChange={(e) => setMandante(e.target.value)}
-            className={claseCampo}
-          />
-        </Campo>
-        <Campo
-          etiqueta="Monto autorizado"
-          ayuda="Viene del estado de pago. Cámbialo si la orden dice otra cifra."
-        >
-          <input
-            inputMode="numeric"
-            value={monto === 0 ? "" : monto.toLocaleString("es-CL")}
-            onChange={(e) => setMonto(Number(e.target.value.replace(/\D/g, "")) || 0)}
-            className={`${claseCampo} text-right tabular-nums`}
-          />
-        </Campo>
-        <Campo etiqueta="Fecha de emisión">
-          <input
-            type="date"
-            value={fecha}
-            onChange={(e) => setFecha(e.target.value)}
-            className={claseCampo}
-          />
-        </Campo>
-        <Campo etiqueta="Vigencia" ayuda="Hasta cuándo se puede facturar contra ella.">
-          <input
-            type="date"
-            value={vigencia}
-            onChange={(e) => setVigencia(e.target.value)}
-            className={claseCampo}
-          />
-        </Campo>
+
+        {existente ? (
+          <p className="self-end rounded-lg bg-white px-3 py-2 text-xs leading-relaxed text-ink-soft">
+            Ya está cargada: {formatearPesos(existente.montoAutorizado ?? 0)} autorizados
+            {existente.ordenFormaPago ? `, ${nombreForma[existente.ordenFormaPago]}` : ""}
+            {existente.ordenFechaCobro ? `, cobro el ${formatearFecha(existente.ordenFechaCobro)}` : ""}.
+            Se usa esa.
+          </p>
+        ) : <>
+          <Campo
+            etiqueta="Monto autorizado"
+            ayuda={monto === null ? "La suma de los estados de pago que cubre. Cámbialo si la orden dice otra cifra." : undefined}
+          >
+            <input
+              inputMode="numeric"
+              value={montoAutorizado === 0 ? "" : montoAutorizado.toLocaleString("es-CL")}
+              onChange={(e) => setMonto(Number(e.target.value.replace(/\D/g, "")) || 0)}
+              className={`${claseCampo} text-right tabular-nums`}
+            />
+          </Campo>
+          <Campo etiqueta="Forma de pago" requerido>
+            <select
+              value={forma}
+              onChange={(e) => {
+                const nueva = e.target.value as FormaPago;
+                // La fecha propuesta sigue a la forma de pago, salvo que ya se haya escrito otra.
+                if (fechaCobro === cobroSegun(forma)) setFechaCobro(cobroSegun(nueva));
+                setForma(nueva);
+              }}
+              className={claseCampo}
+            >
+              {formasPago.map((f) => <option key={f.id} value={f.id}>{f.titulo}</option>)}
+            </select>
+          </Campo>
+          <Campo etiqueta="Fecha de cobro" ayuda="Cuándo se le cobra al mandante. Pasa a ser el vencimiento de la factura.">
+            <input
+              type="date"
+              value={fechaCobro}
+              onChange={(e) => setFechaCobro(e.target.value)}
+              className={claseCampo}
+            />
+          </Campo>
+        </>}
       </div>
+
+      {otros.length > 0 && (
+        <fieldset className="mt-3">
+          <legend className="text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
+            Esta orden también cubre
+          </legend>
+          <ListaEdps ciclos={otros} marcados={incluidos} alCambiar={setIncluidos} />
+        </fieldset>
+      )}
 
       {error && <Aviso tono="malo">{error}</Aviso>}
 
       <div className="mt-3 flex gap-2">
         <BotonChico onClick={() => void guardar()} destacado disabled={guardando || !numero.trim()}>
-          {guardando ? "Guardando…" : "Guardar la orden"}
+          {guardando ? "Guardando…" : elegidos.length > 1 ? `Guardar la orden de ${elegidos.length} estados de pago` : "Guardar la orden"}
         </BotonChico>
         <BotonChico onClick={alCerrar}>Cancelar</BotonChico>
       </div>
@@ -467,37 +552,82 @@ function FormularioOrdenMandante({
   );
 }
 
+/** Casillas de EDP para sumarlos a la orden o a la factura. */
+function ListaEdps({ ciclos, marcados, alCambiar }: { ciclos: Ciclo[]; marcados: string[]; alCambiar: (ids: string[]) => void }) {
+  return (
+    <ul className="mt-1.5 flex flex-col gap-1">
+      {ciclos.map((c) => (
+        <li key={c.id}>
+          <label className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm text-ink">
+            <input
+              type="checkbox"
+              checked={marcados.includes(c.id)}
+              onChange={(e) => alCambiar(e.target.checked ? [...marcados, c.id] : marcados.filter((id) => id !== c.id))}
+            />
+            <span className="flex-1">{nombreEdp(c.numero, c.tipoEdp)} · {mesLargo(c.periodo)}</span>
+            <span className="tabular-nums text-ink-soft">{formatearPesos(c.montoNeto)}</span>
+          </label>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /* ── 3. La factura ────────────────────────────────────────────────────────── */
 
 function PasoFactura({
   ciclo,
+  ciclos,
   alCambiar,
   alEditar,
   alVerAdjuntos,
   alImprimir,
 }: {
   ciclo: Ciclo;
+  ciclos: Ciclo[];
   alCambiar: () => void;
   alEditar: () => void;
   alVerAdjuntos: AbrirAdjuntos;
   alImprimir: AbrirDocumento;
 }) {
   const [abriendo, setAbriendo] = useState(false);
+  const [pagando, setPagando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const habilitado = ciclo.ordenId !== null;
   const facturaId = ciclo.facturaId;
 
   if (facturaId) {
+    const pagada = ciclo.estadoCobro === "pagada";
+    const incluidos = ciclos.filter((c) => c.facturaId === facturaId);
+
+    const pagar = async () => {
+      setError(null);
+      setPagando(true);
+      try {
+        await marcarFacturaPagada(facturaId!);
+        alCambiar();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setPagando(false);
+      }
+    };
+
     return (
       <Paso
         n={3}
         titulo="Factura"
-        estado={ciclo.estadoCobro === "pagada" ? "hecho" : "activo"}
-        resumen={`${facturaId} · ${formatearPesos(ciclo.facturaTotal ?? 0)} con IVA · ${
-          ciclo.estadoCobro === "pagada"
+        estado={pagada ? "hecho" : "activo"}
+        resumen={`Folio ${facturaId} · ${formatearPesos(ciclo.facturaTotal ?? 0)} con IVA · ${
+          pagada
             ? "pagada"
-            : `vence el ${formatearFecha(ciclo.facturaVencimiento)}`
+            : `pendiente de pago${ciclo.facturaVencimiento ? `, vence el ${formatearFecha(ciclo.facturaVencimiento)}` : ""}`
         }`}
       >
+        {incluidos.length > 1 && (
+          <p className="mt-2 text-xs text-ink-soft">Incluye {listaEdps(incluidos)}.</p>
+        )}
+        {error && <Aviso tono="malo">{error}</Aviso>}
         <div className="mt-3 flex flex-wrap gap-2">
           <BotonChico onClick={() => alImprimir("factura")} icono="hoja">
             Ver y descargar
@@ -506,9 +636,18 @@ function PasoFactura({
           <BotonChico onClick={() => alVerAdjuntos("facturas", facturaId, `Factura ${facturaId}`)}>
             Adjuntar la factura del SII
           </BotonChico>
+          {!pagada && (
+            <BotonChico escribe destacado onClick={() => void pagar()} disabled={pagando}>
+              {pagando ? "Guardando…" : incluidos.length > 1 ? `Marcar como pagada (${incluidos.length} EDP)` : "Marcar como pagada"}
+            </BotonChico>
+          )}
         </div>
       </Paso>
     );
+  }
+
+  if (ciclo.etapa === "cerrado") {
+    return <Paso n={3} titulo="Factura" estado="hecho" resumen="Sin factura registrada: el estado de pago ya está pagado." />;
   }
 
   return (
@@ -533,6 +672,7 @@ function PasoFactura({
       {abriendo && (
         <FormularioFacturaDesdeOrden
           ciclo={ciclo}
+          ciclos={ciclos}
           alCerrar={() => setAbriendo(false)}
           alGuardado={alCambiar}
         />
@@ -543,35 +683,54 @@ function PasoFactura({
 
 function FormularioFacturaDesdeOrden({
   ciclo,
+  ciclos,
   alCerrar,
   alGuardado,
 }: {
   ciclo: Ciclo;
+  ciclos: Ciclo[];
   alCerrar: () => void;
   alGuardado: () => void;
 }) {
   const hoy = new Date().toISOString().slice(0, 10);
-  const [folio, setFolio] = useState("");
-  /* Se propone el menor entre lo presentado y lo autorizado: la orden es el
-     techo de lo que se puede cobrar, y facturar por sobre ella es una nota de
-     crédito esperando a pasar. */
-  const [neto, setNeto] = useState(
-    Math.min(ciclo.montoNeto, ciclo.montoAutorizado ?? ciclo.montoNeto),
+  // Los otros EDP del contrato con orden y sin factura. Los de la misma orden
+  // se proponen marcados: lo normal es facturarlos juntos.
+  const otros = ciclos.filter(
+    (c) => c.id !== ciclo.id && c.contratoId === ciclo.contratoId && c.ordenId !== null && c.facturaId === null && c.etapa !== "cerrado",
   );
+  const [incluidos, setIncluidos] = useState<string[]>(otros.filter((c) => c.ordenId === ciclo.ordenId).map((c) => c.id));
+  const elegidos = [ciclo, ...otros.filter((c) => incluidos.includes(c.id))];
+  const sumaElegidos = elegidos.reduce((t, c) => t + c.montoNeto, 0);
+
+  // Facturas del contrato todavía por pagar: si el folio es una de ellas, se le suman estos EDP.
+  const yaEmitidas = [...new Map(
+    ciclos.filter((c) => c.contratoId === ciclo.contratoId && c.facturaId && c.estadoCobro !== "pagada")
+      .map((c) => [c.facturaId!, c]),
+  ).values()];
+
+  const [folio, setFolio] = useState("");
+  const [netoEscrito, setNetoEscrito] = useState<number | null>(null);
   const [fecha, setFecha] = useState(hoy);
-  const [vencimiento, setVencimiento] = useState("");
+  // El vencimiento es la fecha de cobro de la orden: ya se dijo al cargarla.
+  const [vencimiento, setVencimiento] = useState(ciclo.ordenFechaCobro ?? "");
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
 
+  const existente = yaEmitidas.find((c) => c.facturaId === folio.trim()) ?? null;
+  /* Se propone la suma de lo presentado, sin pasar lo que autorizan las
+     órdenes: la orden es el techo de lo que se puede cobrar, y facturar por
+     sobre ella es una nota de crédito esperando a pasar. */
+  const ordenes = [...new Map(elegidos.map((c) => [c.ordenId, c.montoAutorizado ?? 0])).values()];
+  const tope = ordenes.reduce((t, m) => t + m, 0);
+  const neto = netoEscrito ?? Math.min(sumaElegidos, tope || sumaElegidos);
   const iva = Math.round(neto * 0.19);
-  const tope = ciclo.montoAutorizado;
-  const exceso = tope !== null && neto > tope ? neto - tope : 0;
+  const exceso = tope > 0 && neto > tope ? neto - tope : 0;
 
   async function guardar() {
     setError(null);
     setGuardando(true);
     try {
-      await crearFacturaDesdeOrden(ciclo, { folio, neto, fechaEmision: fecha, vencimiento });
+      await facturarEdps(elegidos, { folio, neto, fechaEmision: fecha, vencimiento });
       alGuardado();
       alCerrar();
     } catch (e) {
@@ -588,40 +747,60 @@ function FormularioFacturaDesdeOrden({
           <input
             value={folio}
             onChange={(e) => setFolio(e.target.value)}
-            placeholder="F-4821"
+            placeholder="678"
+            list={`facturas-${ciclo.id}`}
             className={claseCampo}
           />
+          <datalist id={`facturas-${ciclo.id}`}>
+            {yaEmitidas.map((c) => <option key={c.facturaId} value={c.facturaId!} />)}
+          </datalist>
         </Campo>
-        <Campo
-          etiqueta="Neto"
-          ayuda={`IVA ${formatearPesos(iva)} · total ${formatearPesos(neto + iva)}`}
-        >
-          <input
-            inputMode="numeric"
-            value={neto === 0 ? "" : neto.toLocaleString("es-CL")}
-            onChange={(e) => setNeto(Number(e.target.value.replace(/\D/g, "")) || 0)}
-            className={`${claseCampo} text-right tabular-nums`}
-          />
-        </Campo>
-        <Campo etiqueta="Fecha de emisión">
-          <input
-            type="date"
-            value={fecha}
-            onChange={(e) => setFecha(e.target.value)}
-            className={claseCampo}
-          />
-        </Campo>
-        <Campo etiqueta="Vencimiento" ayuda="La fecha en que se hace exigible el cobro.">
-          <input
-            type="date"
-            value={vencimiento}
-            onChange={(e) => setVencimiento(e.target.value)}
-            className={claseCampo}
-          />
-        </Campo>
+
+        {existente ? (
+          <p className="self-end rounded-lg bg-white px-3 py-2 text-xs leading-relaxed text-ink-soft">
+            Ya está emitida: {formatearPesos(existente.facturaTotal ?? 0)} con IVA. Se le suma este estado de pago.
+          </p>
+        ) : <>
+          <Campo
+            etiqueta="Neto"
+            ayuda={`IVA ${formatearPesos(iva)} · total ${formatearPesos(neto + iva)}`}
+          >
+            <input
+              inputMode="numeric"
+              value={neto === 0 ? "" : neto.toLocaleString("es-CL")}
+              onChange={(e) => setNetoEscrito(Number(e.target.value.replace(/\D/g, "")) || 0)}
+              className={`${claseCampo} text-right tabular-nums`}
+            />
+          </Campo>
+          <Campo etiqueta="Fecha de emisión">
+            <input
+              type="date"
+              value={fecha}
+              onChange={(e) => setFecha(e.target.value)}
+              className={claseCampo}
+            />
+          </Campo>
+          <Campo etiqueta="Vencimiento" ayuda={ciclo.ordenFechaCobro ? "La fecha de cobro de la orden." : "La fecha en que se hace exigible el cobro."}>
+            <input
+              type="date"
+              value={vencimiento}
+              onChange={(e) => setVencimiento(e.target.value)}
+              className={claseCampo}
+            />
+          </Campo>
+        </>}
       </div>
 
-      {exceso > 0 && (
+      {otros.length > 0 && (
+        <fieldset className="mt-3">
+          <legend className="text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
+            Esta factura también incluye
+          </legend>
+          <ListaEdps ciclos={otros} marcados={incluidos} alCambiar={setIncluidos} />
+        </fieldset>
+      )}
+
+      {!existente && exceso > 0 && (
         <Aviso tono="ojo">
           Estás facturando {formatearPesos(exceso)} por sobre lo que autoriza la orden. Eso vuelve
           como nota de crédito.
@@ -632,7 +811,7 @@ function FormularioFacturaDesdeOrden({
 
       <div className="mt-3 flex gap-2">
         <BotonChico onClick={() => void guardar()} destacado disabled={guardando || !folio.trim()}>
-          {guardando ? "Emitiendo…" : "Emitir la factura"}
+          {guardando ? "Emitiendo…" : elegidos.length > 1 ? `Emitir la factura de ${elegidos.length} estados de pago` : "Emitir la factura"}
         </BotonChico>
         <BotonChico onClick={alCerrar}>Cancelar</BotonChico>
       </div>

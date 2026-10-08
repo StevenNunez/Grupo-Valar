@@ -19,6 +19,45 @@ export type EstadoEP = "presentado" | "aprobado" | "facturado" | "pagado" | "rec
 
 export type TipoEdp = "ordinario" | "extraordinario";
 
+/** Cómo se muestra cada estado. "Facturado" se lee "Pendiente de pago": lo que importa es que falta el pago. */
+export const nombreEstadoEP: Record<EstadoEP, string> = {
+  presentado: "Presentado",
+  aprobado: "Aprobado",
+  facturado: "Pendiente de pago",
+  pagado: "Pagado",
+  rechazado: "Rechazado",
+};
+
+/** "EP N° 26 extraordinario": el número solo no basta, el ordinario y el extraordinario se numeran aparte. */
+export function nombreEdp(numero: number, tipo: TipoEdp) {
+  return `EP N° ${numero} ${tipo}`;
+}
+
+type EdpBreve = { contratoId: string; anexoId: string | null; tipoEdp: TipoEdp; numero: number };
+
+/**
+ * El número que sigue. Es correlativo por contrato, anexo y tipo: el EP 23
+ * ordinario y el EP 23 extraordinario del mismo contrato conviven (0067), y el
+ * EP 30 de un contrato no choca con el EP 30 de otro.
+ */
+export function siguienteNumeroEdp(existentes: EdpBreve[], contratoId: string, anexoId: string | null, tipo: TipoEdp) {
+  return existentes
+    .filter((e) => e.contratoId === contratoId && (e.anexoId ?? null) === (anexoId || null) && e.tipoEdp === tipo)
+    .reduce((max, e) => Math.max(max, e.numero), 0) + 1;
+}
+
+/** Si ese número ya está tomado en el contrato, anexo y tipo. */
+export function edpRepetido<T extends EdpBreve & { id: string }>(existentes: T[], b: EdpBreve, propioId?: string): T | null {
+  return existentes.find((e) => e.id !== propioId && e.contratoId === b.contratoId &&
+    (e.anexoId ?? null) === (b.anexoId || null) && e.tipoEdp === b.tipoEdp && e.numero === b.numero) ?? null;
+}
+
+/** El código del EDP: no se teclea, sale del contrato, el anexo, el tipo y el número. "EP-9500013862-E26". */
+export function idEdp(contratoId: string, anexoId: string | null, tipo: TipoEdp, numero: number) {
+  const anexo = anexoId ? `-${anexoId.replace(/^AD-/, "")}` : `-${contratoId.replace(/^C-/, "")}`;
+  return `EP${anexo}-${tipo === "extraordinario" ? "E" : "O"}${numero}`;
+}
+
 export type EstadoPago = {
   /** El anexo al que se carga (0059); nulo = contrato base. */
   anexoId: string | null;
@@ -98,6 +137,14 @@ export async function cargarEstadosPago(): Promise<EstadoPago[]> {
 
 export type EstadoOC = "vigente" | "consumida" | "vencida";
 
+/** La OC del mandante es para cobrarle, no para comprar: dice si paga al contado o a crédito, y cuándo. */
+export type FormaPago = "contado" | "credito";
+
+export const formasPago: { id: FormaPago; titulo: string }[] = [
+  { id: "credito", titulo: "A crédito" },
+  { id: "contado", titulo: "Al contado" },
+];
+
 export type OrdenCompra = {
   id: string;
   contratoId: string;
@@ -105,10 +152,13 @@ export type OrdenCompra = {
   numero: string;
   mandante: string;
   montoAutorizado: number;
-  /** Cuánto se lleva presentado en estados de pago contra esta OC. */
+  /** Lo presentado en los estados de pago que cubre esta OC. */
   consumido: number;
+  /** Los EDP que cubre: una OC puede autorizar el ordinario y el extraordinario del mes. */
+  edps: string[];
   fechaEmision: string;
-  vigencia: string | null;
+  formaPago: FormaPago | null;
+  fechaCobro: string | null;
   estado: EstadoOC;
 };
 
@@ -119,45 +169,36 @@ type FilaOC = {
   mandante: string;
   monto_autorizado: number;
   fecha_emision: string;
-  vigencia: string | null;
+  forma_pago: FormaPago | null;
+  fecha_cobro: string | null;
   estado: EstadoOC;
   contratos: { nombre: string } | null;
+  estados_pago: { numero: number; tipo_edp: TipoEdp; monto_neto: number }[] | null;
 };
 
 export async function cargarOrdenesCompra(): Promise<OrdenCompra[]> {
-  // El consumo sale de los EP del mismo contrato: la OC autoriza y los estados
-  // de pago van descontando de ese techo.
-  const [ocs, eps] = await Promise.all([
-    supabase
-      .from("ordenes_compra")
-      .select(
-        "id, contrato_id, numero, mandante, monto_autorizado, fecha_emision, vigencia, estado, contratos(nombre)",
-      )
-      .order("fecha_emision", { ascending: false }),
-    supabase.from("estados_pago").select("contrato_id, monto_neto"),
-  ]);
+  // El consumo sale de los EDP que cubre cada OC (0067): antes se sumaba todo
+  // el contrato, y una OC nueva aparecía consumida por los EDP de otros meses.
+  const { data, error } = await supabase
+    .from("ordenes_compra")
+    .select(
+      "id, contrato_id, numero, mandante, monto_autorizado, fecha_emision, forma_pago, fecha_cobro, estado, contratos(nombre), estados_pago(numero, tipo_edp, monto_neto)",
+    )
+    .order("fecha_emision", { ascending: false });
+  if (error) throw new Error(error.message);
 
-  const fallo = ocs.error ?? eps.error;
-  if (fallo) throw new Error(fallo.message);
-
-  const consumoPorContrato = new Map<string, number>();
-  for (const ep of (eps.data ?? []) as { contrato_id: string; monto_neto: number }[]) {
-    consumoPorContrato.set(
-      ep.contrato_id,
-      (consumoPorContrato.get(ep.contrato_id) ?? 0) + ep.monto_neto,
-    );
-  }
-
-  return ((ocs.data ?? []) as unknown as FilaOC[]).map((f) => ({
+  return ((data ?? []) as unknown as FilaOC[]).map((f) => ({
     id: f.id,
     contratoId: f.contrato_id,
     contrato: f.contratos?.nombre ?? f.contrato_id,
     numero: f.numero,
     mandante: f.mandante,
     montoAutorizado: f.monto_autorizado,
-    consumido: consumoPorContrato.get(f.contrato_id) ?? 0,
+    consumido: (f.estados_pago ?? []).reduce((t, e) => t + Number(e.monto_neto), 0),
+    edps: (f.estados_pago ?? []).map((e) => nombreEdp(e.numero, e.tipo_edp)),
     fechaEmision: f.fecha_emision,
-    vigencia: f.vigencia,
+    formaPago: f.forma_pago,
+    fechaCobro: f.fecha_cobro,
     estado: f.estado,
   }));
 }
@@ -171,7 +212,8 @@ export type Factura = {
   contratoId: string;
   contrato: string;
   cliente: string;
-  estadoPagoId: string | null;
+  /** Los EDP que cobra: una factura puede incluir varios. */
+  edps: string[];
   neto: number;
   iva: number;
   total: number;
@@ -183,7 +225,6 @@ export type Factura = {
 type FilaFactura = {
   id: string;
   contrato_id: string;
-  estado_pago_id: string | null;
   neto: number;
   iva: number;
   total: number;
@@ -191,13 +232,14 @@ type FilaFactura = {
   vencimiento: string | null;
   estado_cobro: EstadoCobro;
   contratos: { nombre: string; cliente: string } | null;
+  estados_pago: { numero: number; tipo_edp: TipoEdp }[] | null;
 };
 
 export async function cargarFacturas(): Promise<Factura[]> {
   const { data, error } = await supabase
     .from("facturas")
     .select(
-      "id, contrato_id, estado_pago_id, neto, iva, total, fecha_emision, vencimiento, estado_cobro, contratos(nombre, cliente)",
+      "id, contrato_id, neto, iva, total, fecha_emision, vencimiento, estado_cobro, contratos(nombre, cliente), estados_pago(numero, tipo_edp)",
     )
     .order("fecha_emision", { ascending: false });
 
@@ -208,7 +250,7 @@ export async function cargarFacturas(): Promise<Factura[]> {
     contratoId: f.contrato_id,
     contrato: f.contratos?.nombre ?? f.contrato_id,
     cliente: f.contratos?.cliente ?? "",
-    estadoPagoId: f.estado_pago_id,
+    edps: (f.estados_pago ?? []).map((e) => nombreEdp(e.numero, e.tipo_edp)),
     neto: f.neto,
     iva: f.iva,
     total: f.total,
@@ -237,7 +279,7 @@ export const etapas: { id: Etapa; titulo: string; falta: string }[] = [
     falta: "Aprobado: ya se puede cargar la orden del mandante.",
   },
   { id: "factura", titulo: "Factura", falta: "Hay orden: ya se puede emitir la factura." },
-  { id: "cobro", titulo: "Cobro", falta: "Facturado: falta que paguen." },
+  { id: "cobro", titulo: "Pendiente de pago", falta: "Facturado: falta que paguen." },
   { id: "cerrado", titulo: "Cerrado", falta: "Cobrado y cerrado." },
 ];
 
@@ -257,7 +299,8 @@ export type Ciclo = EstadoPago & {
   ordenMandante: string | null;
   montoAutorizado: number | null;
   ordenFecha: string | null;
-  ordenVigencia: string | null;
+  ordenFormaPago: FormaPago | null;
+  ordenFechaCobro: string | null;
   ordenEstado: EstadoOC | null;
 
   facturaId: string | null;
@@ -289,8 +332,10 @@ export function ordenDelCiclo(c: Ciclo): OrdenCompra | null {
     montoAutorizado: c.montoAutorizado ?? 0,
     // El consumo se calcula en el listado; acá no se muestra.
     consumido: 0,
+    edps: [],
     fechaEmision: c.ordenFecha ?? "",
-    vigencia: c.ordenVigencia,
+    formaPago: c.ordenFormaPago,
+    fechaCobro: c.ordenFechaCobro,
     estado: c.ordenEstado ?? "vigente",
   };
 }
@@ -303,7 +348,7 @@ export function facturaDelCiclo(c: Ciclo): Factura | null {
     contratoId: c.contratoId,
     contrato: c.contrato,
     cliente: c.cliente,
-    estadoPagoId: c.id,
+    edps: [],
     neto,
     iva: c.facturaIva ?? (c.facturaTotal ?? neto) - neto,
     total: c.facturaTotal ?? neto,
@@ -354,7 +399,8 @@ export async function cargarCiclo(): Promise<Ciclo[]> {
     ordenMandante: (f.orden_mandante as string | null) ?? null,
     montoAutorizado: f.monto_autorizado === null ? null : Number(f.monto_autorizado),
     ordenFecha: (f.orden_fecha as string | null) ?? null,
-    ordenVigencia: (f.orden_vigencia as string | null) ?? null,
+    ordenFormaPago: (f.orden_forma_pago as FormaPago | null) ?? null,
+    ordenFechaCobro: (f.orden_fecha_cobro as string | null) ?? null,
     ordenEstado: (f.orden_estado as EstadoOC | null) ?? null,
 
     facturaId: (f.factura_id as string | null) ?? null,
@@ -371,62 +417,97 @@ export async function cargarCiclo(): Promise<Ciclo[]> {
 }
 
 /**
- * La orden de compra del mandante, nacida del estado de pago.
+ * La orden de compra del mandante para uno o más estados de pago.
  *
- * Se prellena con lo que el EDP ya dice —contrato, monto, período— porque es
- * la misma información: volver a teclearla es la forma más común de que la
- * orden autorice un monto distinto del que se presentó.
+ * El mandante emite UNA orden para el ordinario y el extraordinario del mes
+ * (0067), así que la OC es un documento por contrato y número: si ese número
+ * ya está cargado en el contrato, se usa esa y no se vuelve a pedir nada. El
+ * mandante sale del contrato y la fecha de emisión es la de hoy; lo que se
+ * pide es lo que sirve para cobrar: monto, forma de pago y fecha de cobro.
+ *
+ * Tener la orden es prueba de que el mandante aprobó: los EDP que siguen
+ * "presentado" pasan a "aprobado".
  */
-export async function crearOrdenDesdeEdp(
-  ciclo: Ciclo,
-  datos: {
-    numero: string;
-    mandante: string;
-    montoAutorizado: number;
-    fechaEmision: string;
-    vigencia: string;
-  },
+export async function cargarOrdenEnEdps(
+  edps: Pick<Ciclo, "id" | "contratoId" | "cliente" | "estado">[],
+  datos: { numero: string; montoAutorizado: number; formaPago: FormaPago; fechaCobro: string },
 ) {
-  const id = `OC-${ciclo.contratoId.replace(/^C-/, "")}-${ciclo.periodo.slice(0, 7)}-${ciclo.numero}`;
+  const contratoId = edps[0].contratoId;
+  const numero = datos.numero.trim();
+  const hoy = new Date().toISOString().slice(0, 10);
 
-  const { error } = await supabase.from("ordenes_compra").insert({
-    id,
-    contrato_id: ciclo.contratoId,
-    estado_pago_id: ciclo.id,
-    numero: datos.numero.trim(),
-    mandante: datos.mandante.trim(),
-    monto_autorizado: datos.montoAutorizado,
-    fecha_emision: datos.fechaEmision,
-    vigencia: datos.vigencia || null,
-    estado: "vigente",
-  });
+  const { data: existente, error: fallo } = await supabase
+    .from("ordenes_compra").select("id").eq("contrato_id", contratoId).eq("numero", numero).maybeSingle();
+  if (fallo) throw new Error(fallo.message);
 
-  if (error) throw new Error(error.message);
+  let id = existente?.id as string | undefined;
+  if (!id) {
+    id = `OC-${contratoId.replace(/^C-/, "")}-${numero.replace(/\s+/g, "")}`;
+    const { error } = await supabase.from("ordenes_compra").insert({
+      id,
+      contrato_id: contratoId,
+      numero,
+      mandante: edps[0].cliente,
+      monto_autorizado: datos.montoAutorizado,
+      fecha_emision: hoy,
+      forma_pago: datos.formaPago,
+      fecha_cobro: datos.fechaCobro || null,
+      estado: "vigente",
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  for (const edp of edps) {
+    const { error } = await supabase.from("estados_pago").update(
+      edp.estado === "presentado"
+        ? { orden_compra_id: id, estado: "aprobado", fecha_aprobacion: hoy }
+        : { orden_compra_id: id },
+    ).eq("id", edp.id);
+    if (error) throw new Error(error.message);
+  }
   return id;
 }
 
-/** La factura, nacida de la orden. El IVA se calcula; el total lo hace la base. */
-export async function crearFacturaDesdeOrden(
-  ciclo: Ciclo,
+/**
+ * La factura de uno o más estados de pago: una factura del SII puede cobrar
+ * el ordinario y el extraordinario juntos. Si el folio ya está emitido en el
+ * contrato, solo se le suman estos EDP. El estado de cada EDP lo mueve la base
+ * (0067): queda "Pendiente de pago" hasta que la factura se marque pagada.
+ */
+export async function facturarEdps(
+  edps: Pick<Ciclo, "id" | "contratoId">[],
   datos: { folio: string; neto: number; fechaEmision: string; vencimiento: string },
 ) {
-  const { error } = await supabase.from("facturas").insert({
-    id: datos.folio.trim(),
-    contrato_id: ciclo.contratoId,
-    estado_pago_id: ciclo.id,
-    orden_compra_id: ciclo.ordenId,
-    neto: datos.neto,
-    iva: Math.round(datos.neto * 0.19),
-    fecha_emision: datos.fechaEmision,
-    vencimiento: datos.vencimiento || null,
-    estado_cobro: "emitida",
-  });
+  const contratoId = edps[0].contratoId;
+  const folio = datos.folio.trim();
 
-  if (error) {
-    if (/duplicate|already exists/i.test(error.message)) {
-      throw new Error("Ya existe una factura con ese folio.");
-    }
-    throw new Error(error.message);
+  const { data: existente, error: fallo } = await supabase
+    .from("facturas").select("id, contrato_id").eq("id", folio).maybeSingle();
+  if (fallo) throw new Error(fallo.message);
+  if (existente && existente.contrato_id !== contratoId) {
+    throw new Error(`La factura ${folio} ya está emitida en otro contrato (${existente.contrato_id}).`);
   }
-  return datos.folio.trim();
+
+  if (!existente) {
+    const { error } = await supabase.from("facturas").insert({
+      id: folio,
+      contrato_id: contratoId,
+      neto: datos.neto,
+      iva: Math.round(datos.neto * 0.19),
+      fecha_emision: datos.fechaEmision,
+      vencimiento: datos.vencimiento || null,
+      estado_cobro: "emitida",
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  const { error } = await supabase.from("estados_pago").update({ factura_id: folio }).in("id", edps.map((e) => e.id));
+  if (error) throw new Error(error.message);
+  return folio;
+}
+
+/** El mandante pagó: la factura queda pagada y sus EDP pasan a "pagado" (lo hace la base). */
+export async function marcarFacturaPagada(folio: string) {
+  const { error } = await supabase.from("facturas").update({ estado_cobro: "pagada" }).eq("id", folio);
+  if (error) throw new Error(error.message);
 }

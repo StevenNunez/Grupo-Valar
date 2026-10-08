@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Chip } from "./ui/Chip";
 import { DialogoAdjuntos } from "./ui/Adjuntos";
-import { Ancho, CampoDinero, CampoFecha, CampoTexto, Campos, Confirmacion, Dialogo, Pie, useFormulario } from "./ui/Formulario";
+import { Ancho, CampoDinero, CampoFecha, CampoTexto, Campos, Confirmacion, Dialogo, Pie, ResumenIva, ivaDe, useFormulario } from "./ui/Formulario";
 import { anularRecepcionConPagnol, informarRecepcionAPagnol, listarPanolesDePagnol } from "@/lib/pagnol/navegador";
 import type { PanolPagnol } from "@/lib/pagnol/tipos";
 import {
@@ -520,6 +520,8 @@ function FormFactura({ orden, ciclo, alVolver, alHecho }: { orden: Orden; ciclo:
   const sugerido = netoDe(ciclo.lineas, cantidades);
   const f = useFormulario({ documento: "", fechaFactura: hoy(), vencimiento: sumarDias(hoy(), plazo), neto: sugerido, iva: Math.round(sugerido * 0.19) });
   const [netoTocado, setNetoTocado] = useState(false);
+  // El IVA no se escribe: el 19% del neto, o nada si la factura es exenta.
+  const [exento, setExento] = useState(false);
   const netoLineas = netoDe(ciclo.lineas, cantidades);
   const noLlegado = ciclo.lineas.reduce((t, l) => t + Math.max(0, (cantidades[l.id] ?? 0) - l.recibidaSinFacturar) * l.precioUnitario, 0);
 
@@ -540,7 +542,7 @@ function FormFactura({ orden, ciclo, alVolver, alHecho }: { orden: Orden; ciclo:
       f.enviar(() => registrarFacturaOC({
         ordenId: orden.id, contratoId: orden.contratoId, documento: f.datos.documento,
         fechaFactura: f.datos.fechaFactura, vencimiento: f.datos.vencimiento || null,
-        neto: f.datos.neto, iva: f.datos.iva, lineas: r.filas!,
+        neto: f.datos.neto, iva: ivaDe(f.datos.neto, !exento), lineas: r.filas!,
       }).then(() => undefined), alHecho);
     }}>
       <Campos>
@@ -561,7 +563,7 @@ function FormFactura({ orden, ciclo, alVolver, alHecho }: { orden: Orden; ciclo:
         <CampoDinero etiqueta="Neto de la factura" requerido
           ayuda={f.datos.neto !== netoLineas ? `Según la orden serían ${formatearPesos(netoLineas)}. Se guarda lo que dice la factura.` : "Como dice la factura."}
           valor={f.datos.neto} alCambiar={(v) => { setNetoTocado(true); f.setDatos((d) => ({ ...d, neto: v, iva: Math.round(v * 0.19) })); }} />
-        <CampoDinero etiqueta="IVA" {...f.campo("iva")} />
+        <ResumenIva neto={f.datos.neto} afecto={!exento} alCambiarAfecto={(v) => setExento(!v)} />
       </Campos>
       <Pie error={f.error} guardando={f.guardando} alCancelar={alVolver} textoGuardar="Registrar factura" />
     </form>

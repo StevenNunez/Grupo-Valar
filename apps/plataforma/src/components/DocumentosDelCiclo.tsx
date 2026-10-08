@@ -4,7 +4,7 @@ import { LogoMark } from "./Logo";
 import { camposDe, mostrarValor, type CampoContrato } from "@/lib/campos";
 import { empresa, emisorOC } from "@/lib/empresa";
 import { formatearFecha, formatearPesos, formatearUf, mesLargo } from "@/lib/formato";
-import type { Ciclo } from "@/lib/ingresos";
+import { nombreEdp, nombreEstadoEP, type Ciclo } from "@/lib/ingresos";
 import { camposEdp, clavesEdp, comportamientoEdp } from "@/lib/plantillas-edp";
 
 /**
@@ -177,10 +177,16 @@ export function EstadoPagoImprimible({ ciclo, campos }: { ciclo: Ciclo; campos: 
 
 /* ── La orden de compra del mandante ──────────────────────────────────────── */
 
-export function OrdenDelMandanteImprimible({ ciclo }: { ciclo: Ciclo }) {
+/**
+ * La orden puede cubrir varios estados de pago (el ordinario y el
+ * extraordinario del mes): la hoja los lista todos. `cubiertos` son los EDP que
+ * apuntan a esta orden; si no se pasan, solo el de la ficha.
+ */
+export function OrdenDelMandanteImprimible({ ciclo, cubiertos = [ciclo] }: { ciclo: Ciclo; cubiertos?: Ciclo[] }) {
+  const presentado = cubiertos.reduce((t, c) => t + c.montoNeto, 0);
   const corta =
-    ciclo.montoAutorizado !== null && ciclo.montoAutorizado < ciclo.montoNeto
-      ? ciclo.montoNeto - ciclo.montoAutorizado
+    ciclo.montoAutorizado !== null && ciclo.montoAutorizado < presentado
+      ? presentado - ciclo.montoAutorizado
       : 0;
 
   return (
@@ -206,31 +212,36 @@ export function OrdenDelMandanteImprimible({ ciclo }: { ciclo: Ciclo }) {
       </div>
 
       <div className="mt-6 grid grid-cols-2 gap-4 border-y border-mist-deep py-4 sm:grid-cols-4">
-        <Dato etiqueta="Fecha de emisión" valor={formatearFecha(ciclo.ordenFecha)} destacado />
-        <Dato etiqueta="Estado" valor={(ciclo.ordenEstado ?? "").toUpperCase()} destacado />
+        <Dato etiqueta="Forma de pago" valor={ciclo.ordenFormaPago === "contado" ? "AL CONTADO" : ciclo.ordenFormaPago === "credito" ? "A CRÉDITO" : "—"} destacado />
+        <Dato etiqueta="Fecha de cobro" valor={formatearFecha(ciclo.ordenFechaCobro)} destacado />
         <Dato etiqueta="Período" valor={mesLargo(ciclo.periodo)} destacado />
-        <Dato etiqueta="Código interno" valor={ciclo.ordenId} destacado />
+        <Dato etiqueta="Recibida el" valor={formatearFecha(ciclo.ordenFecha)} destacado />
       </div>
 
       <section className="mt-6">
         <h2 className="mb-2 border-b-2 border-ink pb-1 text-[11px] font-semibold uppercase tracking-[0.12em]">
-          De qué estado de pago sale
+          {cubiertos.length > 1 ? "Qué estados de pago cubre" : "De qué estado de pago sale"}
         </h2>
         <table className="w-full border-collapse text-sm">
           <tbody>
-            <Fila
-              etiqueta={`Estado de pago N° ${ciclo.numero} · ${ciclo.id}`}
-              valor={formatearPesos(ciclo.montoNeto)}
-            />
-            <Fila etiqueta="Presentado el" valor={formatearFecha(ciclo.fechaPresentacion)} />
-            <Fila etiqueta="Aprobado el" valor={formatearFecha(ciclo.fechaAprobacion)} />
+            {cubiertos.map((c) => (
+              <Fila
+                key={c.id}
+                etiqueta={`${nombreEdp(c.numero, c.tipoEdp)} · ${mesLargo(c.periodo)}`}
+                valor={formatearPesos(c.montoNeto)}
+              />
+            ))}
+            {cubiertos.length === 1 && <>
+              <Fila etiqueta="Presentado el" valor={formatearFecha(ciclo.fechaPresentacion)} />
+              <Fila etiqueta="Aprobado el" valor={formatearFecha(ciclo.fechaAprobacion)} />
+            </>}
           </tbody>
         </table>
       </section>
 
       <div className="mt-6 flex justify-end">
         <dl className="w-full max-w-xs text-sm">
-          <Linea etiqueta="Presentado en el EDP" valor={formatearPesos(ciclo.montoNeto)} />
+          <Linea etiqueta={cubiertos.length > 1 ? "Presentado en los EDP" : "Presentado en el EDP"} valor={formatearPesos(presentado)} />
           <div className="mt-2 flex justify-between border-t-2 border-ink pt-2">
             <dt className="font-display font-semibold">AUTORIZADO</dt>
             <dd className="font-display text-lg font-semibold tabular-nums">
@@ -250,7 +261,7 @@ export function OrdenDelMandanteImprimible({ ciclo }: { ciclo: Ciclo }) {
       <Firmas
         firmas={[
           ["Recibe", empresa.representante],
-          ["Vigencia", ciclo.ordenFecha ? "Ver documento adjunto" : "—"],
+          ["Cobro", ciclo.ordenFechaCobro ? formatearFecha(ciclo.ordenFechaCobro) : "—"],
         ]}
       />
     </Hoja>
@@ -259,7 +270,8 @@ export function OrdenDelMandanteImprimible({ ciclo }: { ciclo: Ciclo }) {
 
 /* ── El detalle de facturación ────────────────────────────────────────────── */
 
-export function FacturaImprimible({ ciclo }: { ciclo: Ciclo }) {
+/** Una factura puede cobrar varios EDP: `incluidos` son todos los que apuntan a este folio. */
+export function FacturaImprimible({ ciclo, incluidos = [ciclo] }: { ciclo: Ciclo; incluidos?: Ciclo[] }) {
   const neto = ciclo.facturaNeto ?? 0;
   const total = ciclo.facturaTotal ?? 0;
   const iva = total - neto;
@@ -292,7 +304,7 @@ export function FacturaImprimible({ ciclo }: { ciclo: Ciclo }) {
         <Dato etiqueta="Vencimiento" valor={formatearFecha(ciclo.facturaVencimiento)} destacado />
         <Dato
           etiqueta="Estado de cobro"
-          valor={(ciclo.estadoCobro ?? "").toUpperCase()}
+          valor={ciclo.estadoCobro === "pagada" ? "PAGADA" : ciclo.estadoCobro ? nombreEstadoEP.facturado.toUpperCase() : ""}
           destacado
         />
         <Dato etiqueta="Período" valor={mesLargo(ciclo.periodo)} destacado />
@@ -304,14 +316,20 @@ export function FacturaImprimible({ ciclo }: { ciclo: Ciclo }) {
         </h2>
         <table className="w-full border-collapse text-sm">
           <tbody>
-            <Fila
-              etiqueta={`Estado de pago N° ${ciclo.numero} · ${ciclo.id}`}
-              valor={formatearPesos(ciclo.montoNeto)}
-            />
-            <Fila
-              etiqueta={`Orden de compra N° ${ciclo.ordenNumero ?? "—"}`}
-              valor={ciclo.montoAutorizado === null ? "—" : formatearPesos(ciclo.montoAutorizado)}
-            />
+            {incluidos.map((c) => (
+              <Fila
+                key={c.id}
+                etiqueta={`${nombreEdp(c.numero, c.tipoEdp)} · ${mesLargo(c.periodo)}`}
+                valor={formatearPesos(c.montoNeto)}
+              />
+            ))}
+            {[...new Map(incluidos.filter((c) => c.ordenId).map((c) => [c.ordenId, c])).values()].map((c) => (
+              <Fila
+                key={c.ordenId}
+                etiqueta={`Orden de compra N° ${c.ordenNumero ?? "—"}`}
+                valor={c.montoAutorizado === null ? "—" : formatearPesos(c.montoAutorizado)}
+              />
+            ))}
           </tbody>
         </table>
       </section>
