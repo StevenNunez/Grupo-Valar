@@ -401,6 +401,9 @@ function DialogoPersona({
   alGuardado: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
+  /* Sin esto, guardar no mostraba nada y parecía que no había pasado: el
+     cambio quedaba en la base, pero nadie se enteraba. */
+  const [guardado, setGuardado] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const soyYo = persona.id === yo.id;
   const general = yo.general !== null;
@@ -414,11 +417,13 @@ function DialogoPersona({
     ),
   );
 
-  async function hacer(accion: () => Promise<void>) {
+  async function hacer(accion: () => Promise<void>, aviso = "Guardado.") {
     setError(null);
+    setGuardado(null);
     setOcupado(true);
     try {
       await accion();
+      setGuardado(aviso);
       alGuardado();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -442,8 +447,10 @@ function DialogoPersona({
         permisos: b.permisos,
         contratos: b.contratos,
       });
-    });
+    }, `${moduloTitulo(modulo)} guardado. ${persona.nombre} lo ve apenas vuelva a la pestaña o recargue la página.`);
   }
+
+  const moduloTitulo = (id: string) => misModulos.find((m) => m.id === id)?.titulo ?? id;
 
   const opcionesGeneral: { id: "ninguno" | "administrador" | "soporte"; titulo: string }[] = [
     { id: "ninguno", titulo: "Por módulo" },
@@ -461,6 +468,11 @@ function DialogoPersona({
     >
       <div className="max-h-[66vh] overflow-y-auto px-6 py-6">
         <Aviso texto={error} />
+        {guardado && (
+          <p role="status" className="mb-4 rounded-xl bg-[#e6f4ee] px-4 py-3 text-sm font-medium text-[#0e7a4f]">
+            {guardado}
+          </p>
+        )}
 
         {soyYo && (
           <p className="mb-5 rounded-xl bg-[#fdf4e6] px-4 py-3 text-sm text-[#8a5a09]">

@@ -149,6 +149,11 @@ export async function empresaActual(): Promise<string | null> {
   return (data as string | null) ?? null;
 }
 
+/** Lo que decide qué ve: si no cambió, no hay por qué volver a pintar. */
+function huella(u: Usuario) {
+  return JSON.stringify([u.nombre, u.cargo, u.rol, u.general, u.empresa, u.accesos, [...u.permisos].sort()]);
+}
+
 /**
  * Estado de sesión, sincronizado con Supabase.
  *
@@ -161,9 +166,11 @@ export function useSesion(): EstadoSesion {
 
   useEffect(() => {
     let vigente = true;
+    let actual: { id: string; correo: string; huella: string } | null = null;
 
     const { data } = supabase.auth.onAuthStateChange((_evento, sesion) => {
       if (!sesion?.user) {
+        actual = null;
         // Lo que vio esta sesión no puede abrirle la pantalla a la siguiente.
         olvidarConsultas();
         if (vigente) setEstado({ estado: "sin-sesion" });
@@ -172,13 +179,34 @@ export function useSesion(): EstadoSesion {
 
       const { id, email } = sesion.user;
       cargarUsuario(id, email ?? "").then((usuario) => {
-        if (vigente) setEstado({ estado: "con-sesion", usuario });
+        if (!vigente) return;
+        actual = { id, correo: email ?? "", huella: huella(usuario) };
+        setEstado({ estado: "con-sesion", usuario });
       });
     });
+
+    /* Los accesos se leían una sola vez, al entrar: si un administrador le
+       daba un permiso a alguien que ya estaba adentro, no lo veía hasta
+       recargar, y parecía que el cambio no se había guardado. Ahora se releen
+       cada vez que vuelve a la pestaña, y solo se cambia el estado si algo
+       cambió de verdad, para no hacer que toda la pantalla se vuelva a pintar. */
+    function alVolver() {
+      if (document.visibilityState !== "visible" || !actual) return;
+      const { id, correo, huella: antes } = actual;
+      cargarUsuario(id, correo).then((usuario) => {
+        if (!vigente || actual?.id !== id) return;
+        const ahora = huella(usuario);
+        if (ahora === antes) return;
+        actual = { id, correo, huella: ahora };
+        setEstado({ estado: "con-sesion", usuario });
+      });
+    }
+    document.addEventListener("visibilitychange", alVolver);
 
     return () => {
       vigente = false;
       data.subscription.unsubscribe();
+      document.removeEventListener("visibilitychange", alVolver);
     };
   }, []);
 
