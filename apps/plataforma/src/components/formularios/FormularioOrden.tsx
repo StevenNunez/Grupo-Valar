@@ -95,6 +95,36 @@ type Linea = {
   nuevo: boolean;
 };
 
+/* ── Lo que se estaba armando ─────────────────────────────────────────────────
+   Una OC nueva se guarda en el navegador mientras se escribe. Si el diálogo se
+   cierra sin guardar —un clic de más, la pestaña que se cae—, al volver a abrir
+   "Nueva orden" se ofrece recuperarla. Se borra al crear la orden. */
+
+type Guardado = { datos: BorradorOrden; lineas: Linea[]; cuando: string };
+
+function leerGuardado(clave: string | null): Guardado | null {
+  if (!clave) return null;
+  try {
+    const texto = localStorage.getItem(clave);
+    return texto ? (JSON.parse(texto) as Guardado) : null;
+  } catch {
+    return null;
+  }
+}
+
+function olvidarGuardado(clave: string | null) {
+  if (!clave) return;
+  try {
+    localStorage.removeItem(clave);
+  } catch {
+    // Sin almacenamiento no hay nada que borrar.
+  }
+}
+
+/** Vale la pena guardarla si ya tiene proveedor o algún ítem escrito. */
+const tieneAlgo = (d: BorradorOrden, lineas: Linea[]) =>
+  !!d.proveedor_id || lineas.some((l) => l.descripcion.trim() || l.precio_unitario > 0);
+
 function borradorDe(
   orden: Orden | null,
   contratos: ContratoBreve[],
@@ -219,6 +249,43 @@ export function FormularioOrden({
   // efecto provoca un render en cascada.
   const [lineas, setLineas] = useState<Linea[]>(orden ? [] : [lineaVacia(0)]);
   const [eliminadas, setEliminadas] = useState<string[]>([]);
+
+  const claveGuardado = editando ? null : `oc-borrador:${usuario.id}:${registrar ? "registrar" : "nueva"}`;
+  /* La que quedó de antes, mientras no se decida qué hacer con ella. Hasta
+     entonces no se pisa: lo nuevo se guarda recién cuando se recupera o se
+     descarta, para no perderla por abrir el formulario sin querer. */
+  const [pendiente, setPendiente] = useState<Guardado | null>(() => leerGuardado(claveGuardado));
+
+  useEffect(() => {
+    if (!claveGuardado || pendiente) return;
+    const t = setTimeout(() => {
+      try {
+        if (tieneAlgo(f.datos, lineas)) {
+          localStorage.setItem(
+            claveGuardado,
+            JSON.stringify({ datos: f.datos, lineas, cuando: new Date().toISOString() } satisfies Guardado),
+          );
+        }
+      } catch {
+        // Sin espacio o sin almacenamiento: se sigue sin red de seguridad.
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [claveGuardado, pendiente, f.datos, lineas]);
+
+  function recuperar() {
+    if (!pendiente) return;
+    // El número propuesto se recalcula: el que tenía puede ya estar usado. El
+    // de una OC registrada desde Drive sí se conserva, porque se tecleó.
+    f.setDatos((d) => ({ ...pendiente.datos, numero: registrar ? pendiente.datos.numero : d.numero }));
+    setLineas(pendiente.lineas);
+    setPendiente(null);
+  }
+
+  function descartarPendiente() {
+    olvidarGuardado(claveGuardado);
+    setPendiente(null);
+  }
   const borrado = useBorrado("ordenes_compra_proveedor", orden?.id, () => {
     alGuardado();
     alCerrar();
@@ -419,6 +486,7 @@ export function FormularioOrden({
         }
       }
     }, () => {
+      olvidarGuardado(claveGuardado);
       alGuardado(ordenId);
       alCerrar();
     });
@@ -440,6 +508,32 @@ export function FormularioOrden({
         ancho="max-w-5xl"
       >
         <form onSubmit={onSubmit}>
+          {pendiente && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-mist bg-cyan/5 px-6 py-3">
+              <p className="text-sm text-ink">
+                Tienes una orden sin terminar
+                {pendiente.datos.proveedor ? <> para <strong>{pendiente.datos.proveedor}</strong></> : null}
+                {" "}({pendiente.lineas.filter((l) => l.descripcion.trim()).length} ítems), del{" "}
+                {new Date(pendiente.cuando).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" })}.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={recuperar}
+                  className="rounded-full bg-cyan px-4 py-1.5 text-xs font-semibold text-white hover:bg-cyan-deep"
+                >
+                  Recuperarla
+                </button>
+                <button
+                  type="button"
+                  onClick={descartarPendiente}
+                  className="rounded-full border border-mist-deep px-4 py-1.5 text-xs font-semibold text-ink-soft hover:border-ink hover:text-ink"
+                >
+                  Empezar de cero
+                </button>
+              </div>
+            </div>
+          )}
           <Campos>
             <CampoTexto
               etiqueta="N° de orden"

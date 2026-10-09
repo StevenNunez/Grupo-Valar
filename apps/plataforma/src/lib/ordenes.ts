@@ -385,3 +385,113 @@ export async function cargarLineasDeOrden(ordenId: string) {
     pagnolMaterialId: (f.pagnol_material_id as string | null) ?? null,
   }));
 }
+
+/* ── Envío al proveedor (0069) ────────────────────────────────────────────── */
+
+/**
+ * Cada vez que la OC se le mandó al proveedor, y qué hizo él con el enlace.
+ * La escribe el servidor al enviar y la página del proveedor al confirmar.
+ */
+export type EnvioOrden = {
+  id: string;
+  ordenId: string;
+  enviadaEn: string;
+  enviadaPor: string | null;
+  para: string;
+  cc: string[];
+  vistaEn: string | null;
+  vistas: number;
+  confirmadaEn: string | null;
+  confirmadaPor: string | null;
+  fechaEntrega: string | null;
+  comentario: string | null;
+};
+
+/** Todos, del más nuevo al más viejo. Sin la 0069 aplicada, ninguno. */
+export async function cargarEnvios(): Promise<EnvioOrden[]> {
+  const { data, error } = await supabase
+    .from("ordenes_envios")
+    .select("id, orden_id, enviada_en, enviada_por_nombre, para, cc, vista_en, vistas, confirmada_en, confirmada_por, fecha_entrega, comentario")
+    .order("enviada_en", { ascending: false });
+  if (error) {
+    console.warn("No se pudieron leer los envíos de OC:", error.message);
+    return [];
+  }
+  return (data ?? []).map((e) => ({
+    id: e.id,
+    ordenId: e.orden_id,
+    enviadaEn: e.enviada_en,
+    enviadaPor: e.enviada_por_nombre,
+    para: e.para,
+    cc: e.cc ?? [],
+    vistaEn: e.vista_en,
+    vistas: e.vistas ?? 0,
+    confirmadaEn: e.confirmada_en,
+    confirmadaPor: e.confirmada_por,
+    fechaEntrega: e.fecha_entrega,
+    comentario: e.comentario,
+  }));
+}
+
+/* Las llamadas al servidor llevan el token de la sesión: las rutas de /api/
+   son públicas y es lo que les dice quién pide. Nunca lanzan: devuelven el
+   error escrito para la pantalla. */
+
+async function token() {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
+type Respuesta<T> = { ok: true; datos: T } | { ok: false; error: string };
+
+export type Destinatario = { nombre: string; correo: string; cargo: string };
+
+export async function cargarDestinatarios(): Promise<Respuesta<Destinatario[]>> {
+  const t = await token();
+  if (!t) return { ok: false, error: "La sesión expiró. Vuelve a ingresar." };
+  try {
+    const r = await fetch("/api/ordenes/destinatarios/", { headers: { Authorization: `Bearer ${t}` } });
+    return (await r.json()) as Respuesta<Destinatario[]>;
+  } catch {
+    return { ok: false, error: "No se pudo cargar la lista de personas de Valar." };
+  }
+}
+
+export async function enviarOrdenAlProveedor(
+  ordenId: string,
+  datos: { para: string; cc: string[]; asunto: string; mensaje: string },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const t = await token();
+  if (!t) return { ok: false, error: "La sesión expiró. Vuelve a ingresar." };
+  try {
+    const r = await fetch(`/api/ordenes/${encodeURIComponent(ordenId)}/enviar/`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" },
+      body: JSON.stringify(datos),
+    });
+    return (await r.json()) as { ok: true } | { ok: false; error: string };
+  } catch {
+    return { ok: false, error: "No se pudo conectar con el servidor. Revisa la conexión." };
+  }
+}
+
+/** El PDF que va adjunto, para revisarlo antes de enviar. Se abre en otra pestaña. */
+export async function abrirPdfDeOrden(ordenId: string): Promise<string | null> {
+  const t = await token();
+  if (!t) return "La sesión expiró. Vuelve a ingresar.";
+  // La pestaña se abre ANTES del fetch: después, el navegador la bloquea por no venir de un clic.
+  const ventana = window.open("", "_blank");
+  try {
+    const r = await fetch(`/api/ordenes/${encodeURIComponent(ordenId)}/pdf/`, {
+      headers: { Authorization: `Bearer ${t}` },
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const url = URL.createObjectURL(await r.blob());
+    if (ventana) ventana.location.href = url;
+    else window.location.href = url;
+    return null;
+  } catch (e) {
+    ventana?.close();
+    return e instanceof Error ? e.message : "No se pudo generar el PDF.";
+  }
+}

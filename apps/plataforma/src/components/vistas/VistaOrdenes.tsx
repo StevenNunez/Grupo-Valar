@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { FormularioOrden } from "../formularios/FormularioOrden";
 import { CicloOrden } from "../CicloOrden";
+import { EnvioOrden, EstadoEnvio } from "../EnvioOrden";
 import { OrdenImprimible } from "../OrdenImprimible";
 import { BotonAdjuntos, DialogoAdjuntos } from "../ui/Adjuntos";
 import { Chip, Etiqueta, type Tono } from "../ui/Chip";
@@ -15,8 +16,10 @@ import { useConsulta } from "@/lib/consulta";
 import { cargarContratosBreve, type ContratoBreve } from "@/lib/contratos";
 import { formatearFecha, formatearMonto } from "@/lib/formato";
 import {
+  cargarEnvios,
   cargarItemsDeOrden,
   cargarOrdenes,
+  type EnvioOrden as Envio,
   type EstadoOrden,
   type Item,
   type Orden,
@@ -40,15 +43,20 @@ type Datos = {
   contratos: ContratoBreve[];
   categorias: Categoria[];
   proveedores: Proveedor[];
+  /** Por orden, del más nuevo al más viejo. */
+  envios: Map<string, Envio[]>;
 };
 
 async function cargar(): Promise<Datos> {
-  const [ordenes, contratos, categorias, proveedores] = await Promise.all([
+  const [ordenes, contratos, categorias, proveedores, envios] = await Promise.all([
     cargarOrdenes(),
     cargarContratosBreve(),
     supabase.from("categorias_costo").select("id, nombre, contrato_id").order("orden"),
     cargarProveedores(),
+    cargarEnvios(),
   ]);
+  const porOrden = new Map<string, Envio[]>();
+  for (const e of envios) porOrden.set(e.ordenId, [...(porOrden.get(e.ordenId) ?? []), e]);
 
   if (categorias.error) throw new Error(categorias.error.message);
 
@@ -56,6 +64,7 @@ async function cargar(): Promise<Datos> {
     ordenes,
     contratos,
     proveedores,
+    envios: porOrden,
     categorias: ((categorias.data ?? []) as { id: string; nombre: string; contrato_id: string }[])
       .map((c) => ({ id: c.id, nombre: c.nombre, contratoId: c.contrato_id })),
   };
@@ -76,6 +85,7 @@ export function VistaOrdenes() {
   const usuario = useUsuario();
   const [imprimiendo, setImprimiendo] = useState<Orden | null>(null);
   const [recepcion, setRecepcion] = useState<Orden | null>(null);
+  const [enviando, setEnviando] = useState<Orden | null>(null);
 
   return (
     <>
@@ -93,7 +103,19 @@ export function VistaOrdenes() {
               edicion={edicion}
               alImprimir={setImprimiendo}
               alRecepcionar={setRecepcion}
+              alEnviar={setEnviando}
+              envios={datos.envios}
             />
+
+            {enviando && (
+              <EnvioOrden
+                orden={enviando}
+                correoProveedor={datos.proveedores.find((p) => p.id === enviando.proveedorId)?.correo ?? null}
+                envios={datos.envios.get(enviando.id) ?? []}
+                alCerrar={() => setEnviando(null)}
+                alEnviada={recargar}
+              />
+            )}
 
             {edicion.editando && (
               <FormularioOrden
@@ -153,11 +175,15 @@ function Contenidos({
   edicion,
   alImprimir,
   alRecepcionar,
+  alEnviar,
+  envios,
 }: {
   filas: Orden[];
   edicion: ReturnType<typeof useEdicion<Orden>>;
   alImprimir: (o: Orden) => void;
   alRecepcionar: (o: Orden) => void;
+  alEnviar: (o: Orden) => void;
+  envios: Map<string, Envio[]>;
 }) {
   const [filtro, setFiltro] = useState<Filtrado>("todas");
   const puedeEmitir = usePuede("ordenes.emitir");
@@ -210,7 +236,7 @@ function Contenidos({
         filtros={<Filtro etiqueta="Estado" opciones={opciones} valor={filtro} alCambiar={setFiltro} />}
       >
         <Tabla
-          columnas={columnas(edicion, alImprimir, alRecepcionar, puedeEmitir)}
+          columnas={columnas(edicion, alImprimir, alRecepcionar, puedeEmitir, alEnviar, envios)}
           filas={visibles}
           claveDe={(o) => o.id}
           vacio="Ninguna orden con este filtro."
@@ -233,6 +259,8 @@ const columnas = (
   alImprimir: (o: Orden) => void,
   alRecepcionar: (o: Orden) => void,
   puedeEmitir: boolean,
+  alEnviar: (o: Orden) => void,
+  envios: Map<string, Envio[]>,
 ): Columna<Orden>[] => [
   {
     clave: "numero",
@@ -286,6 +314,8 @@ const columnas = (
     celda: (o) => (
       <div className="flex flex-col items-start gap-1">
         <Chip tono={estados[o.estado].tono}>{estados[o.estado].titulo}</Chip>
+        {/* Lo último que pasó con el envío al proveedor. */}
+        {envios.get(o.id)?.[0] && <EstadoEnvio envio={envios.get(o.id)![0]} />}
         {o.reembolsable > 0 && <Etiqueta destacada>Con reembolsables</Etiqueta>}
       </div>
     ),
@@ -308,6 +338,11 @@ const columnas = (
     derecha: true,
     celda: (o) => (
       <div className="flex items-center justify-end gap-1">
+        {puedeEmitir && (
+          <BotonIcono titulo="Enviar al proveedor" onClick={() => alEnviar(o)}>
+            <path d="M21 3 10 14M21 3l-7 18-4-7-7-4 18-7Z" strokeLinecap="round" strokeLinejoin="round" />
+          </BotonIcono>
+        )}
         <BotonIcono titulo="Imprimir" onClick={() => alImprimir(o)}>
           <path d="M7 8V3h10v5M7 18H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 15h10v6H7Z" strokeLinejoin="round" />
         </BotonIcono>

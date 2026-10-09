@@ -29,13 +29,45 @@ export function Dialogo({
   ancho?: string;
 }) {
   const caja = useRef<HTMLDivElement>(null);
+  /* Si ya se escribió algo, un clic fuera, Escape o la X no cierran de golpe:
+     preguntan. Antes un clic de más en el fondo borraba una OC entera. El
+     botón "Cancelar" del pie sí cierra directo: ese es a propósito. */
+  const tocado = useRef(false);
+  const [confirmando, setConfirmando] = useState(false);
+  const intentarCerrar = useRef(() => {});
+  useEffect(() => {
+    intentarCerrar.current = () => {
+      if (tocado.current) setConfirmando(true);
+      else alCerrar();
+    };
+  });
+
+  // Cualquier cosa que se escriba o elija adentro cuenta como cambio.
+  useEffect(() => {
+    const nodo = caja.current;
+    if (!abierto || !nodo) return;
+    tocado.current = false;
+    const marcar = () => {
+      tocado.current = true;
+    };
+    nodo.addEventListener("input", marcar);
+    nodo.addEventListener("change", marcar);
+    return () => {
+      nodo.removeEventListener("input", marcar);
+      nodo.removeEventListener("change", marcar);
+    };
+  }, [abierto]);
 
   // Escape cierra, y el fondo no se desplaza mientras el diálogo está abierto.
   useEffect(() => {
     if (!abierto) return;
 
     const alTeclear = (e: KeyboardEvent) => {
-      if (e.key === "Escape") alCerrar();
+      if (e.key !== "Escape") return;
+      // Con un diálogo encima (una confirmación), Escape es de ese.
+      const dialogos = document.querySelectorAll('[role="dialog"]');
+      if (dialogos[dialogos.length - 1] !== caja.current) return;
+      intentarCerrar.current();
     };
     document.addEventListener("keydown", alTeclear);
     document.body.style.overflow = "hidden";
@@ -47,7 +79,7 @@ export function Dialogo({
       document.removeEventListener("keydown", alTeclear);
       document.body.style.overflow = "";
     };
-  }, [abierto, alCerrar]);
+  }, [abierto]);
 
   if (!abierto) return null;
 
@@ -56,7 +88,7 @@ export function Dialogo({
       <button
         type="button"
         aria-label="Cerrar"
-        onClick={alCerrar}
+        onClick={() => intentarCerrar.current()}
         className="fixed inset-0 bg-ink/50 backdrop-blur-sm"
       />
 
@@ -76,7 +108,7 @@ export function Dialogo({
           </div>
           <button
             type="button"
-            onClick={alCerrar}
+            onClick={() => intentarCerrar.current()}
             aria-label="Cerrar"
             className="-mr-2 -mt-1 p-2 text-ink-soft transition-colors hover:text-ink"
           >
@@ -92,6 +124,38 @@ export function Dialogo({
             </svg>
           </button>
         </div>
+
+        {confirmando && (
+          <div
+            role="alertdialog"
+            aria-label="Descartar cambios"
+            className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-[#f1d9a8] bg-[#fdf4e6] px-6 py-3"
+          >
+            <p className="text-sm font-medium text-[#8a5a09]">
+              Tienes cambios sin guardar. ¿Cerrar y perderlos?
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                autoFocus
+                onClick={() => setConfirmando(false)}
+                className="rounded-full bg-ink px-4 py-1.5 text-xs font-semibold text-white"
+              >
+                Seguir editando
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmando(false);
+                  alCerrar();
+                }}
+                className="rounded-full border border-[#a52f24]/40 px-4 py-1.5 text-xs font-semibold text-[#a52f24] hover:bg-[#fdeeec]"
+              >
+                Descartar
+              </button>
+            </div>
+          </div>
+        )}
 
         {children}
       </div>
