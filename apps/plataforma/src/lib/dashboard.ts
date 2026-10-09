@@ -2,6 +2,7 @@
 
 import { mesCorto } from "./formato";
 import { supabase } from "./supabase";
+import { anexoRaiz, cargarAnexos, etiquetaAnexo, montoConSigno } from "./anexos";
 import { cargarEgresosOficina, cargarNominasOficina, type EgresoOficina } from "./oficina-central";
 
 /**
@@ -46,8 +47,25 @@ export type FilaCategoria = {
   realOrdinario: number;
 };
 
+/** Venta, costo y margen de la base o de un anexo en un mes (0059). */
+export type FilaAnexo = {
+  contratoId: string;
+  /** Nulo = contrato base. Lo de una adenda ya viene sumado a su anexo principal. */
+  anexoId: string | null;
+  nombre: string;
+  periodo: string;
+  venta: number;
+  costo: number;
+  reembolsable: number;
+};
+
 export type DatosDashboard = {
   meses: FilaMes[];
+  /** Solo de los contratos que tienen anexos: sin ellos, todo es "base". */
+  anexos: FilaAnexo[];
+  /** Los anexos vigentes con lo pactado, adendas incluidas. Salen aunque
+      todavía no tengan nada cargado: es justo lo que hay que ver. */
+  anexosVigentes: { contratoId: string; anexoId: string; nombre: string; monto: number }[];
   categorias: FilaCategoria[];
   oficina: EgresoOficina[];
   /** Costo de la nómina de Oficina Central por mes. Vacío para quien no ve sueldos. */
@@ -83,20 +101,64 @@ type FilaCategoriaSQL = {
 };
 
 export async function cargarDashboard(): Promise<DatosDashboard> {
-  const [resumen, categorias, oficina, nominas] = await Promise.all([
+  const [resumen, categorias, oficina, nominas, porAnexo, anexos] = await Promise.all([
     supabase.from("resumen_mensual").select("*").order("periodo"),
     supabase.from("costos_por_categoria").select("*"),
     cargarEgresosOficina(),
     /* Si la 0048 todavía no está aplicada, el Dashboard sigue sin la nómina.
        Quien no ve sueldos recibe la lista vacía (RLS), no un error. */
     cargarNominasOficina().catch(() => []),
+    /* El desglose por anexo es un extra: si falla, el Dashboard sale igual. */
+    supabase.from("resultado_por_anexo").select("contrato_id, anexo_id, periodo, venta, costo, reembolsable"),
+    cargarAnexos().catch(() => []),
   ]);
 
   const fallo = resumen.error ?? categorias.error;
   if (fallo) throw new Error(fallo.message);
 
+  /* Lo cargado a una adenda suma a su anexo principal: "¿cuánto se ganó en
+     Carpas?" incluye sus adendas. Es la misma regla que la ficha del contrato. */
+  const conAnexos = new Set(anexos.filter((a) => a.estado === "vigente").map((a) => a.contratoId));
+  const filasAnexo: FilaAnexo[] = [];
+  for (const r of (porAnexo.error ? [] : porAnexo.data ?? []) as {
+    contrato_id: string;
+    anexo_id: string | null;
+    periodo: string;
+    venta: number;
+    costo: number;
+    reembolsable: number;
+  }[]) {
+    if (!conAnexos.has(r.contrato_id) && !r.anexo_id) continue;
+    const delContrato = anexos.filter((a) => a.contratoId === r.contrato_id);
+    const raiz = r.anexo_id ? anexoRaiz(delContrato, r.anexo_id) : null;
+    const anexo = delContrato.find((a) => a.id === raiz);
+    filasAnexo.push({
+      contratoId: r.contrato_id,
+      anexoId: raiz,
+      nombre: raiz === null ? "Contrato base" : anexo ? etiquetaAnexo(anexo) : raiz,
+      periodo: r.periodo,
+      venta: Number(r.venta),
+      costo: Number(r.costo),
+      reembolsable: Number(r.reembolsable),
+    });
+  }
+
+  const vigentes = anexos.filter((a) => a.estado === "vigente");
+  const anexosVigentes = vigentes
+    .filter((a) => !a.padreId)
+    .map((a) => ({
+      contratoId: a.contratoId,
+      anexoId: a.id,
+      nombre: etiquetaAnexo(a),
+      monto: vigentes
+        .filter((x) => x.contratoId === a.contratoId && anexoRaiz(vigentes, x.id) === a.id)
+        .reduce((t, x) => t + montoConSigno(x.tipo, x.monto), 0),
+    }));
+
   return {
     oficina,
+    anexos: filasAnexo,
+    anexosVigentes,
     personalOficina: nominas.map((n) => ({ periodo: n.periodo, costo: n.costo_total })),
     meses: ((resumen.data ?? []) as FilaResumenSQL[]).map((r) => ({
       contratoId: r.contrato_id,

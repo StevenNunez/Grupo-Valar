@@ -77,12 +77,11 @@ export function proyectoDeAnexo(a: Anexo) {
   return `${nombreTipoAnexo[a.tipo]} N° ${a.numero} · ${a.nombre?.trim() || a.descripcion}`;
 }
 
-export async function cargarAnexos(contratoId: string): Promise<Anexo[]> {
-  const { data, error } = await supabase
-    .from("anexos")
-    .select("*")
-    .eq("contrato_id", contratoId)
-    .order("numero");
+/** Los de un contrato; sin contrato, los de todos (el Dashboard). */
+export async function cargarAnexos(contratoId?: string): Promise<Anexo[]> {
+  let consulta = supabase.from("anexos").select("*");
+  if (contratoId) consulta = consulta.eq("contrato_id", contratoId);
+  const { data, error } = await consulta.order("numero");
 
   if (error) throw new Error(error.message);
 

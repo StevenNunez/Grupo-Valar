@@ -6,6 +6,7 @@ import {
   useEffect,
   useState,
 } from "react";
+import { olvidarConsultas } from "./consulta";
 import { supabase } from "./supabase";
 
 /**
@@ -163,6 +164,8 @@ export function useSesion(): EstadoSesion {
 
     const { data } = supabase.auth.onAuthStateChange((_evento, sesion) => {
       if (!sesion?.user) {
+        // Lo que vio esta sesión no puede abrirle la pantalla a la siguiente.
+        olvidarConsultas();
         if (vigente) setEstado({ estado: "sin-sesion" });
         return;
       }

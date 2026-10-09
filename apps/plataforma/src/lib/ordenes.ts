@@ -230,6 +230,24 @@ export async function siguienteNumero(): Promise<string> {
   return prefijo + String(mayor + 1).padStart(digitos, "0");
 }
 
+/**
+ * El teléfono con que esta persona firmó su última orden. El perfil no guarda
+ * teléfono, y teclearlo en cada OC es la forma de terminar con uno distinto en
+ * cada una; se propone el último y se corrige si cambió.
+ */
+export async function ultimoTelefonoDeEmisor(correo: string): Promise<string> {
+  const { data, error } = await supabase
+    .from("ordenes_compra_proveedor")
+    .select("emisor_telefono")
+    .eq("emisor_correo", correo)
+    .not("emisor_telefono", "is", null)
+    .neq("emisor_telefono", "")
+    .order("fecha_emision", { ascending: false })
+    .limit(1);
+  if (error) return "";
+  return ((data ?? [])[0] as { emisor_telefono: string } | undefined)?.emisor_telefono ?? "";
+}
+
 /* ── Ítems ────────────────────────────────────────────────────────────────── */
 
 export type Etapa = "pendiente" | "parcial" | "recibido" | "facturado" | "pagado";

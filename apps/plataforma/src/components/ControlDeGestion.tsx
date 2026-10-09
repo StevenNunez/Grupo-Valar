@@ -261,6 +261,13 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
         </section>
       )}
 
+      {/* ── Por anexo ──────────────────────────────────────────────────────── */}
+      <ResultadoPorAnexo
+        datos={datos}
+        contratos={contratos}
+        periodos={periodosVisibles}
+      />
+
       {/* ── Análisis gráfico ───────────────────────────────────────────────── */}
       <AnalisisGrafico
         contratos={contratos}
@@ -427,6 +434,140 @@ function TarjetaContrato({ contrato }: { contrato: Contrato }) {
         {contrato.aporteVenta.toFixed(0)}% de las ventas.
       </p>
     </article>
+  );
+}
+
+/* ── Resultado por anexo ──────────────────────────────────────────────────── */
+
+type FilaPorAnexo = {
+  clave: string;
+  contrato: string;
+  nombre: string;
+  esBase: boolean;
+  /** Lo pactado en el anexo y sus adendas. La base no lo muestra acá. */
+  pactado: number | null;
+  venta: number;
+  costo: number;
+  meta: number;
+};
+
+/**
+ * Un anexo puede ser otro negocio dentro del contrato (Carpas dentro de
+ * Misceláneos), y la pregunta "¿cuánto se ganó en Carpas?" no la contesta la
+ * tarjeta del contrato. Sale solo para los contratos en pantalla que tienen
+ * anexos vigentes, con los mismos filtros de contrato y período que el resto.
+ * Un anexo sin nada cargado aparece igual, en cero: es la forma de notar que
+ * sus EDP y compras se están cargando a la base.
+ */
+function ResultadoPorAnexo({
+  datos,
+  contratos,
+  periodos,
+}: {
+  datos: DatosDashboard;
+  contratos: Contrato[];
+  periodos: string[];
+}) {
+  const filas = useMemo(() => {
+    const enPantalla = new Map(contratos.map((c) => [c.id, c]));
+    const visibles = new Set(periodos);
+    const salida = new Map<string, FilaPorAnexo>();
+    const fila = (contratoId: string, anexoId: string | null, nombre: string) => {
+      const clave = `${contratoId}|${anexoId ?? ""}`;
+      let f = salida.get(clave);
+      if (!f) {
+        const c = enPantalla.get(contratoId)!;
+        f = { clave, contrato: c.nombre, nombre, esBase: anexoId === null, pactado: null, venta: 0, costo: 0, meta: c.meta };
+        salida.set(clave, f);
+      }
+      return f;
+    };
+
+    for (const a of datos.anexosVigentes) {
+      if (!enPantalla.has(a.contratoId)) continue;
+      fila(a.contratoId, null, "Contrato base");
+      fila(a.contratoId, a.anexoId, a.nombre).pactado = a.monto;
+    }
+    for (const m of datos.anexos) {
+      if (!enPantalla.has(m.contratoId) || !visibles.has(m.periodo)) continue;
+      const f = fila(m.contratoId, m.anexoId, m.nombre);
+      f.venta += m.venta;
+      f.costo += m.costo;
+    }
+    // Por contrato en el orden de las tarjetas; dentro, la base primero.
+    const orden = contratos.map((c) => c.nombre);
+    return [...salida.values()].sort(
+      (a, b) =>
+        orden.indexOf(a.contrato) - orden.indexOf(b.contrato) ||
+        Number(b.esBase) - Number(a.esBase) ||
+        a.nombre.localeCompare(b.nombre),
+    );
+  }, [datos.anexos, datos.anexosVigentes, contratos, periodos]);
+
+  if (filas.length === 0) return null;
+  const variosContratos = new Set(filas.map((f) => f.contrato)).size > 1;
+
+  const columnas: Columna<FilaPorAnexo>[] = [
+    {
+      clave: "nombre",
+      titulo: "Se carga contra",
+      encabezado: true,
+      celda: (f) => (
+        <>
+          <span className={`block ${f.esBase ? "text-ink-soft" : "font-semibold text-ink"}`}>{f.nombre}</span>
+          {variosContratos && <span className="mt-0.5 block text-xs text-ink-soft">{f.contrato}</span>}
+        </>
+      ),
+    },
+    {
+      clave: "pactado",
+      titulo: "Pactado",
+      derecha: true,
+      celda: (f) => <span className="text-ink-soft">{f.pactado === null ? "—" : formatearMonto(f.pactado)}</span>,
+    },
+    {
+      clave: "venta",
+      titulo: "Ventas",
+      derecha: true,
+      celda: (f) => <span className="text-ink-soft">{formatearMonto(f.venta)}</span>,
+    },
+    {
+      clave: "costo",
+      titulo: "Costos",
+      derecha: true,
+      celda: (f) => <span className="text-ink-soft">{formatearMonto(f.costo)}</span>,
+    },
+    {
+      clave: "margen",
+      titulo: "Resultado",
+      derecha: true,
+      celda: (f) => (
+        <span className={`font-semibold ${f.venta - f.costo < 0 ? "text-[#a52f24]" : "text-ink"}`}>
+          {formatearMonto(f.venta - f.costo)}
+        </span>
+      ),
+    },
+    {
+      clave: "pct",
+      titulo: "Rentabilidad",
+      derecha: true,
+      celda: (f) => {
+        if (f.venta <= 0) return <span className="text-ink-soft">—</span>;
+        const pct = ((f.venta - f.costo) / f.venta) * 100;
+        return <Chip tono={semaforo(pct, f.meta)}>{pct.toFixed(1)}%</Chip>;
+      },
+    },
+  ];
+
+  return (
+    <div className="mb-6">
+      <Panel
+        titulo="Resultado por anexo"
+        nota="Lo cargado a cada anexo (sus adendas incluidas) y al contrato base, en el período elegido. Neto de IVA."
+      >
+        <Tabla columnas={columnas} filas={filas} claveDe={(f) => f.clave} vacio="Sin anexos vigentes." />
+      </Panel>
+    </div>
   );
 }
 

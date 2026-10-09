@@ -32,6 +32,7 @@ import {
   cargarLineasDeOrden,
   estadosOrden,
   siguienteNumero,
+  ultimoTelefonoDeEmisor,
   type EstadoOrden,
   type Orden,
 } from "@/lib/ordenes";
@@ -116,7 +117,8 @@ function borradorDe(
       contacto: "",
       correo_contacto: "",
       telefono_contacto: "",
-      // Quien emite es quien tiene la sesión abierta. Se puede cambiar.
+      // Quien emite es quien tiene la sesión abierta: crear una OC ya exige el
+      // permiso, así que no hay nada que elegir. Solo el teléfono se escribe.
       emisor_nombre: usuario.nombre,
       emisor_correo: usuario.correo,
       emisor_telefono: "",
@@ -146,8 +148,10 @@ function borradorDe(
     contacto: orden.contacto ?? "",
     correo_contacto: orden.correoContacto ?? "",
     telefono_contacto: orden.telefonoContacto ?? "",
-    emisor_nombre: orden.emisorNombre ?? "",
-    emisor_correo: orden.emisorCorreo ?? "",
+    // Una orden ya emitida conserva a quien la emitió. Las anteriores a este
+    // campo, que lo tienen vacío, lo toman de quien la está corrigiendo.
+    emisor_nombre: orden.emisorNombre || usuario.nombre,
+    emisor_correo: orden.emisorNombre ? orden.emisorCorreo ?? "" : usuario.correo,
     emisor_telefono: orden.emisorTelefono ?? "",
     fecha_emision: orden.fechaEmision,
     fecha_requerida: orden.fechaRequerida ?? "",
@@ -246,6 +250,9 @@ export function FormularioOrden({
     } else {
       siguienteNumero().then((n) => {
         if (vigente && n) f.setDatos((d) => (d.numero ? d : { ...d, numero: n }));
+      });
+      ultimoTelefonoDeEmisor(usuario.correo).then((t) => {
+        if (vigente && t) f.setDatos((d) => (d.emisor_telefono ? d : { ...d, emisor_telefono: t }));
       });
     }
 
@@ -514,15 +521,23 @@ export function FormularioOrden({
             )}
           </Seccion>
 
+          {/* Quien emite no se elige: es quien tiene la sesión, y solo llega
+              hasta acá quien tiene permiso para crear órdenes. Se muestra para
+              que se vea qué va a decir el PDF; el teléfono, que el perfil no
+              guarda, se propone con el de su última orden. */}
           <Seccion titulo="Emite">
-            <CampoTexto
-              etiqueta="Nombre"
-              requerido
-              ayuda="Quien emite esta orden. El proveedor le responde a esta persona."
-              {...f.campo("emisor_nombre")}
-            />
-            <CampoTexto etiqueta="Correo" {...f.campo("emisor_correo")} />
-            <CampoTexto etiqueta="Teléfono" {...f.campo("emisor_telefono")} />
+            <Ancho>
+              <dl className="grid gap-x-6 gap-y-2 rounded-xl border border-mist-deep bg-mist/30 p-4 text-sm sm:grid-cols-2">
+                <DatoCopiado etiqueta="Nombre">{f.datos.emisor_nombre || "—"}</DatoCopiado>
+                <DatoCopiado etiqueta="Correo">{f.datos.emisor_correo || "—"}</DatoCopiado>
+              </dl>
+              <p className="mt-1.5 text-xs text-ink-soft">
+                {editando
+                  ? "Quien emitió la orden. No cambia al corregirla."
+                  : "Se completa con tu sesión. El proveedor le responde a esta persona."}
+              </p>
+            </Ancho>
+            <CampoTexto etiqueta="Teléfono" marcador="+56 9 1234 5678" {...f.campo("emisor_telefono")} />
           </Seccion>
 
           <Seccion titulo="Condiciones">
@@ -541,12 +556,28 @@ export function FormularioOrden({
             <CampoTexto etiqueta="Lugar de entrega" marcador="Faena Coya Sur" {...f.campo("lugar_entrega")} />
             <CampoTexto etiqueta="Solicitado por" {...f.campo("solicitado_por")} />
             <CampoTexto etiqueta="Retira" {...f.campo("retira")} />
-            <CampoSeleccion
-              etiqueta="Estado"
-              opciones={estadosOrden}
-              ayuda="Desde 'emitida' en adelante lo maneja la recepción de los ítems."
-              {...f.campo("estado")}
-            />
+            {/* Recepción parcial, Recibida y Cerrada no se eligen: las calcula la
+                base con lo recibido y facturado en cada línea, y al guardar las
+                vuelve a calcular. Ofrecerlas acá era guardar un estado que el
+                trigger deshacía en el mismo instante. */}
+            {estadoManual(f.datos.estado) ? (
+              <CampoSeleccion
+                etiqueta="Estado"
+                opciones={estadosOrden.filter((e) => estadoManual(e.id))}
+                ayuda="Para pasarla a Recibida, registra la recepción desde el ciclo de la orden."
+                {...f.campo("estado")}
+              />
+            ) : (
+              <div>
+                <p className="text-sm font-semibold text-ink">Estado</p>
+                <p className="mt-2">
+                  <Etiqueta destacada>{estadosOrden.find((e) => e.id === f.datos.estado)?.titulo}</Etiqueta>
+                </p>
+                <p className="mt-1.5 text-xs text-ink-soft">
+                  Lo calcula la recepción y la facturación de sus ítems.
+                </p>
+              </div>
+            )}
             <Ancho>
               <CampoTexto etiqueta="Observaciones" {...f.campo("observaciones")} />
             </Ancho>
@@ -816,6 +847,9 @@ export function FormularioOrden({
     </>
   );
 }
+
+/** Los estados que se ponen a mano. El resto lo dicen las líneas. */
+const estadoManual = (e: EstadoOrden) => e === "borrador" || e === "emitida" || e === "anulada";
 
 const claseCelda =
   "w-full rounded-lg border border-mist-deep bg-white px-2.5 py-2 text-sm text-ink outline-none transition-colors placeholder:text-ink-soft/45 focus:border-cyan focus:ring-2 focus:ring-cyan/20";

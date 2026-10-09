@@ -10,7 +10,7 @@ import { DialogoAdjuntos } from "../ui/Adjuntos";
 import { Chip, type Tono } from "../ui/Chip";
 import { AccionesFila, DialogoHistorial, useEdicion } from "../ui/Historial";
 import { Tabla, Total, type Columna } from "../ui/Tabla";
-import { Contenido, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
+import { Contenido, Desplegable, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
 import { cargarProveedores, type Proveedor } from "@/lib/abastecimiento";
 import { cargarCampos, type CampoContrato } from "@/lib/campos";
 import { cargarCategorias, type Categoria } from "@/lib/categorias";
@@ -57,34 +57,66 @@ function diasDeServicio(e: EgresoTercero) {
   return e.origen === "servicio" && e.hasta ? diasHastaFecha(e.hasta) : null;
 }
 
-type Datos = {
+/* La carga va en dos partes. Lo que se MIRA —la lista y las órdenes— abre la
+   pantalla, y abre con lo último que se vio mientras se actualiza por detrás.
+   Lo que solo usan los formularios (las compras completas, proveedores,
+   categorías, campos) se pide en paralelo sin bloquear nada: antes la lista
+   esperaba ocho consultas para mostrar dos. */
+
+type Lista = {
   egresos: EgresoTercero[];
+  ordenes: Orden[];
+};
+
+type Apoyo = {
   compras: Compra[];
   servicios: Servicio[];
   contratos: ContratoBreve[];
   campos: CampoContrato[];
   proveedores: Proveedor[];
   categorias: Categoria[];
-  ordenes: Orden[];
 };
 
-async function cargar(): Promise<Datos> {
-  const [egresos, compras, servicios, contratos, campos, proveedores, categorias, ordenes] =
-    await Promise.all([
-      cargarEgresosTerceros(),
-      cargarCompras(),
-      cargarServicios(),
-      cargarContratosBreve(),
-      cargarCampos(),
-      cargarProveedores(),
-      cargarCategorias(),
-      cargarOrdenes(),
-    ]);
-  return { egresos, compras, servicios, contratos, campos, proveedores, categorias, ordenes };
+async function cargarLista(): Promise<Lista> {
+  const [egresos, ordenes] = await Promise.all([cargarEgresosTerceros(), cargarOrdenes()]);
+  return { egresos, ordenes };
+}
+
+async function cargarApoyo(): Promise<Apoyo> {
+  const [compras, servicios, contratos, campos, proveedores, categorias] = await Promise.all([
+    cargarCompras(),
+    cargarServicios(),
+    cargarContratosBreve(),
+    cargarCampos(),
+    cargarProveedores(),
+    cargarCategorias(),
+  ]);
+  return { compras, servicios, contratos, campos, proveedores, categorias };
+}
+
+/** "todos" o un mes como "2026-08-01". */
+type Mes = string;
+
+const primeroDelMes = (fecha: string) => `${fecha.slice(0, 7)}-01`;
+
+/** El mes que se abre: el más reciente con movimientos que no sea futuro. */
+function mesInicial(egresos: EgresoTercero[]): Mes {
+  const actual = primeroDelMes(new Date().toISOString());
+  const meses = [...new Set(egresos.map((e) => primeroDelMes(e.periodo)))].sort().reverse();
+  return meses.find((m) => m <= actual) ?? meses[0] ?? "todos";
 }
 
 export function VistaEgresosTerceros() {
-  const { estado, recargar } = useConsulta<Datos>(cargar);
+  const usuario = useUsuario();
+  const lista = useConsulta<Lista>(cargarLista, `${usuario.id}:${usuario.empresa}:egresos-terceros`);
+  const apoyo = useConsulta<Apoyo>(cargarApoyo);
+  const recargar = () => {
+    lista.recargar();
+    apoyo.recargar();
+  };
+  /* Nulo = todavía no se eligió: se abre en el último mes con movimientos.
+     Mostrar todo de una vez eran cientos de filas para mirar un mes. */
+  const [mesElegido, setMes] = useState<Mes | null>(null);
   const edicion = useEdicion<EgresoTercero>();
   const [creando, setCreando] = useState<"compra" | "servicio" | "reembolso" | null>(null);
   /* Al registrar un reembolso se abre su respaldo: la foto de la rendición y
@@ -94,7 +126,6 @@ export function VistaEgresosTerceros() {
   /* La OC es de Abastecimiento: registrarla pide su permiso, aunque se haga
      desde acá. Es la misma orden, no una copia. */
   const puedeRegistrarOC = usePuede("ordenes.emitir");
-  const usuario = useUsuario();
   const [registrandoOC, setRegistrandoOC] = useState(false);
   const [adjuntarOC, setAdjuntarOC] = useState<string | null>(null);
 
@@ -119,12 +150,30 @@ export function VistaEgresosTerceros() {
         }
       />
 
-      <Contenido consulta={estado}>
-        {(datos) => (
-          <>
-            <Contenidos filas={datos.egresos} edicion={edicion} />
-            <OrdenesDeCompra ordenes={datos.ordenes} alCambiar={recargar} />
+      <Contenido consulta={lista.estado}>
+        {({ egresos, ordenes }) => {
+          const mes = mesElegido ?? mesInicial(egresos);
+          return (
+            <>
+              <Contenidos
+                filas={egresos}
+                edicion={edicion}
+                mes={mes}
+                alCambiarMes={setMes}
+                actualizando={lista.actualizando}
+              />
+              <OrdenesDeCompra ordenes={ordenes} mes={mes} alCambiar={recargar} />
+            </>
+          );
+        }}
+      </Contenido>
 
+      {/* Los formularios aparecen cuando llegan sus datos; normalmente ya
+          llegaron antes de que alguien alcance a hacer clic. */}
+      {apoyo.estado.estado === "listo" && (() => {
+        const datos = apoyo.estado.datos;
+        return (
+          <>
             {registrandoOC && (
               <FormularioOrden
                 orden={null}
@@ -203,8 +252,8 @@ export function VistaEgresosTerceros() {
               />
             )}
           </>
-        )}
-      </Contenido>
+        );
+      })()}
 
       {edicion.historial && (
         <DialogoHistorial
@@ -286,13 +335,35 @@ function BotonCrear({
 }
 
 function Contenidos({
-  filas,
+  filas: todas,
   edicion,
+  mes,
+  alCambiarMes,
+  actualizando,
 }: {
   filas: EgresoTercero[];
   edicion: ReturnType<typeof useEdicion<EgresoTercero>>;
+  mes: Mes;
+  alCambiarMes: (m: Mes) => void;
+  actualizando: boolean;
 }) {
   const [filtro, setFiltro] = useState<Filtrado>("todos");
+
+  /* Los meses salen de los datos: solo se ofrece lo que tiene movimientos. */
+  const meses = useMemo(
+    () =>
+      [...new Set(todas.map((e) => primeroDelMes(e.periodo)))]
+        .sort()
+        .reverse()
+        .map((m) => ({ id: m, titulo: mesLargo(m) })),
+    [todas],
+  );
+
+  // Todo lo de abajo —tarjetas, filtros y total— mira el mes elegido.
+  const filas = useMemo(
+    () => (mes === "todos" ? todas : todas.filter((e) => primeroDelMes(e.periodo) === mes)),
+    [todas, mes],
+  );
 
   const visibles = useMemo(() => {
     if (filtro === "compras") return filas.filter((e) => e.origen === "compra");
@@ -318,10 +389,11 @@ function Contenidos({
     return dias !== null && dias <= 30;
   }).length;
 
-  /* El egreso del mes en curso: es la cifra por la que se pregunta, porque el
-     resultado del contrato se calcula por mes. */
-  const mes = new Date().toISOString().slice(0, 7);
-  const delMes = filas.filter((e) => e.periodo.slice(0, 7) === mes).reduce((t, e) => t + e.neto, 0);
+  /* Con todo el período a la vista, la cifra por la que se pregunta es la del
+     mes en curso, porque el resultado del contrato se calcula por mes. Con un
+     mes elegido, es el total de ese mes. */
+  const enCurso = primeroDelMes(new Date().toISOString());
+  const delMes = todas.filter((e) => primeroDelMes(e.periodo) === enCurso).reduce((t, e) => t + e.neto, 0);
 
   return (
     <>
@@ -343,24 +415,43 @@ function Contenidos({
             nota: "Se repite mientras dure el período",
             acento: recurrente > 0 ? "aviso" : undefined,
           },
-          {
-            etiqueta: "Egreso del mes en curso",
-            valor: formatearMonto(delMes),
-            nota: "Neto cargado en el mes actual",
-          },
+          mes === "todos"
+            ? {
+                etiqueta: "Egreso del mes en curso",
+                valor: formatearMonto(delMes),
+                nota: "Neto cargado en el mes actual",
+              }
+            : {
+                etiqueta: `Egreso de ${mesLargo(mes).toLowerCase()}`,
+                valor: formatearMonto(filas.reduce((t, e) => t + e.neto, 0)),
+                nota: `${formatearMonto(filas.reduce((t, e) => t + e.total, 0))} con IVA`,
+              },
         ]}
       />
 
       <Panel
         titulo="Detalle"
-        nota={`${visibles.length} de ${filas.length} movimientos${avisosPlazo ? ` · ${avisosPlazo} servicios por vencer o vencidos` : ""}${porDevolver.length ? ` · ${porDevolver.length} reembolsos por devolver (${formatearMonto(porDevolver.reduce((t, e) => t + e.total, 0))})` : ""}`}
-        filtros={<Filtro etiqueta="Ver" opciones={opciones} valor={filtro} alCambiar={setFiltro} />}
+        nota={`${actualizando ? "Actualizando… · " : ""}${visibles.length} de ${filas.length} movimientos${avisosPlazo ? ` · ${avisosPlazo} servicios por vencer o vencidos` : ""}${porDevolver.length ? ` · ${porDevolver.length} reembolsos por devolver (${formatearMonto(porDevolver.reduce((t, e) => t + e.total, 0))})` : ""}`}
+        filtros={
+          <div className="flex flex-wrap items-center gap-2">
+            <Desplegable
+              etiqueta="Mes"
+              valor={mes}
+              alCambiar={alCambiarMes}
+              grupos={[
+                { opciones: [{ id: "todos", titulo: "Todos los meses" }] },
+                { titulo: "Un mes", opciones: meses },
+              ]}
+            />
+            <Filtro etiqueta="Ver" opciones={opciones} valor={filtro} alCambiar={setFiltro} />
+          </div>
+        }
       >
         <Tabla
           columnas={columnas(edicion)}
           filas={visibles}
           claveDe={(e) => e.id}
-          vacio="Ningún movimiento en este filtro."
+          vacio={mes === "todos" ? "Ningún movimiento en este filtro." : "Ningún movimiento en este mes con este filtro."}
           pie={
             <>
               <Total colSpan={4}>Total</Total>
@@ -527,12 +618,15 @@ function estadoCiclo(o: Orden): EstadoCiclo {
  * detalle de arriba hasta que llega una factura. Desde acá se abre cada una
  * para recibir, agregar facturas, registrar la NC o cerrar el saldo.
  */
-function OrdenesDeCompra({ ordenes, alCambiar }: { ordenes: Orden[]; alCambiar: () => void }) {
+function OrdenesDeCompra({ ordenes, mes, alCambiar }: { ordenes: Orden[]; mes: Mes; alCambiar: () => void }) {
   const [filtro, setFiltro] = useState<"abiertas" | "todas">("abiertas");
   const [abierta, setAbierta] = useState<string | null>(null);
   const vigentes = ordenes.filter((o) => o.estado !== "anulada" && o.estado !== "borrador");
   const abiertas = vigentes.filter((o) => estadoCiclo(o) !== "pagada");
-  const visibles = filtro === "todas" ? vigentes : abiertas;
+  /* Las abiertas salen todas, sean del mes que sean: son trabajo pendiente, y
+     una OC de julio sin recibir sigue siendo de hoy. "Todas" sí sigue el mes. */
+  const delMes = mes === "todos" ? vigentes : vigentes.filter((o) => primeroDelMes(o.fechaEmision) === mes);
+  const visibles = filtro === "todas" ? delMes : abiertas;
   const porFacturar = vigentes.reduce((t, o) => t + Math.max(0, o.neto - o.facturado), 0);
   const nc = vigentes.filter((o) => o.solicitarNc).length;
   const orden = ordenes.find((o) => o.id === abierta) ?? null;
@@ -543,7 +637,7 @@ function OrdenesDeCompra({ ordenes, alCambiar }: { ordenes: Orden[]; alCambiar: 
         titulo="Órdenes de compra"
         nota={`${formatearMonto(porFacturar)} netos por facturar${nc ? ` · ${nc} ${nc === 1 ? "orden pide" : "órdenes piden"} nota de crédito` : ""}`}
         filtros={<Filtro etiqueta="Ver" valor={filtro} alCambiar={setFiltro}
-          opciones={[{ id: "abiertas", titulo: "Abiertas" }, { id: "todas", titulo: "Todas" }]} />}
+          opciones={[{ id: "abiertas", titulo: "Abiertas" }, { id: "todas", titulo: mes === "todos" ? "Todas" : "Todas del mes" }]} />}
       >
         <Tabla
           filas={visibles}
