@@ -38,6 +38,10 @@ function traducir(mensaje: string) {
   if (/proveedores_pagnol_unico/.test(mensaje)) {
     return "Ese proveedor de Pagnol ya está enlazado a otra ficha. Quita el enlace de la otra antes.";
   }
+  // El RUT es la identidad del proveedor: decirlo, no hablar de "código".
+  if (/duplicate key/i.test(mensaje) && /proveedores_.*rut/.test(mensaje)) {
+    return "Ya existe un proveedor con ese RUT. Búscalo en la lista de proveedores.";
+  }
   if (/duplicate key|already exists/i.test(mensaje)) {
     return "Ya existe un registro con ese código. Usa uno distinto.";
   }

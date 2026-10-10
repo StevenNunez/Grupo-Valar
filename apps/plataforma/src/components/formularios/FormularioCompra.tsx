@@ -19,7 +19,7 @@ import { Combo } from "../ui/Combo";
 import { CamposDelContrato } from "../ui/CamposDelContrato";
 import { FormularioProveedor } from "./FormularioProveedor";
 import { LineasDeGasto, lineaVacia, netoLinea, type LineaGasto } from "./LineasDeGasto";
-import { formatearRut, siguienteIdProveedor, type Proveedor } from "@/lib/abastecimiento";
+import { formatearRut, type Proveedor } from "@/lib/abastecimiento";
 import type { CampoContrato, Datos } from "@/lib/campos";
 import { categoriasDe, type Categoria } from "@/lib/categorias";
 import { eliminar } from "@/lib/crud";
@@ -424,8 +424,9 @@ export function FormularioCompra({
           proveedor={null}
           proveedores={proveedores}
           alCerrar={() => setCreandoProveedor(false)}
-          alGuardado={() => {
-            f.cambiar("proveedor_id", siguienteIdProveedor(proveedores));
+          alGuardado={(id) => {
+            // El código con que quedó de verdad, no el que se calculó al abrir.
+            if (id) f.cambiar("proveedor_id", id);
             alGuardado();
           }}
         />

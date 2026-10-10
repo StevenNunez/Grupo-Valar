@@ -164,6 +164,26 @@ export function siguienteIdProveedor(proveedores: Proveedor[]) {
   return `PRV-${String(siguiente).padStart(4, "0")}`;
 }
 
+/**
+ * Lo que se necesita saber JUSTO antes de crear un proveedor, preguntado a la
+ * base y no a la lista que la pantalla cargó al abrirse: el código que le toca
+ * y si ese RUT ya está. Con la lista vieja, dos altas seguidas proponían el
+ * mismo código y la segunda chocaba con "ya existe un registro con ese código".
+ */
+export async function antesDeCrearProveedor(rut: string | null): Promise<{
+  id: string;
+  mismoRut: { id: string; razonSocial: string } | null;
+}> {
+  const { data, error } = await supabase.from("proveedores").select("id, rut, razon_social");
+  if (error) throw new Error(error.message);
+  const filas = (data ?? []) as { id: string; rut: string | null; razon_social: string }[];
+  const igual = rut ? filas.find((p) => p.rut === rut) : undefined;
+  return {
+    id: siguienteIdProveedor(filas as unknown as Proveedor[]),
+    mismoRut: igual ? { id: igual.id, razonSocial: igual.razon_social } : null,
+  };
+}
+
 export function opcionesDeProveedor(proveedores: Proveedor[]) {
   return proveedores
     .filter((p) => p.estado === "activo" || p.estado === "por_completar")

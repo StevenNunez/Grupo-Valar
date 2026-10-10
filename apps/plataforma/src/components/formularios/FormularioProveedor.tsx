@@ -16,6 +16,7 @@ import {
 } from "../ui/Formulario";
 import { actualizar, crear } from "@/lib/crud";
 import {
+  antesDeCrearProveedor,
   condicionDeProveedor,
   diasDeCondicion,
   estadosProveedor,
@@ -120,7 +121,8 @@ export function FormularioProveedor({
   proveedor: Proveedor | null;
   proveedores: Proveedor[];
   alCerrar: () => void;
-  alGuardado: () => void;
+  /** Con el código con que quedó, para seleccionarlo donde se pidió (una compra). */
+  alGuardado: (id?: string) => void;
 }) {
   const f = useFormulario<Borrador>(borradorDe(proveedor, proveedores));
   const editando = proveedor !== null;
@@ -183,13 +185,25 @@ export function FormularioProveedor({
         .filter(Boolean),
     };
 
+    let creado = id.trim();
     f.enviar(
-      () =>
-        editando
-          ? actualizar("proveedores", proveedor.id, fila)
-          : crear("proveedores", { ...fila, id: id.trim() }),
+      async () => {
+        if (editando) return actualizar("proveedores", proveedor.id, fila);
+        /* El código y el RUT se revisan contra la base al guardar, no contra
+           la lista con que se abrió el formulario: esa puede estar atrasada. */
+        const antes = await antesDeCrearProveedor(fila.rut);
+        if (antes.mismoRut) {
+          throw new Error(
+            `Ese RUT ya está registrado como ${antes.mismoRut.razonSocial} (${antes.mismoRut.id}). Búscalo en la lista de proveedores en vez de crearlo de nuevo.`,
+          );
+        }
+        // Si el código propuesto ya se usó mientras tanto, se toma el siguiente libre.
+        const propuesto = siguienteIdProveedor(proveedores);
+        if (!creado || creado === propuesto) creado = antes.id;
+        await crear("proveedores", { ...fila, id: creado });
+      },
       () => {
-        alGuardado();
+        alGuardado(editando ? proveedor.id : creado);
         alCerrar();
       },
     );
