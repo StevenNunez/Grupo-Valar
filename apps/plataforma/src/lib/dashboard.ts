@@ -128,6 +128,7 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
     costo: number;
     reembolsable: number;
   }[]) {
+    if (!r.periodo) continue;
     if (!conAnexos.has(r.contrato_id) && !r.anexo_id) continue;
     const delContrato = anexos.filter((a) => a.contratoId === r.contrato_id);
     const raiz = r.anexo_id ? anexoRaiz(delContrato, r.anexo_id) : null;
@@ -160,7 +161,9 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
     anexos: filasAnexo,
     anexosVigentes,
     personalOficina: nominas.map((n) => ({ periodo: n.periodo, costo: n.costo_total })),
-    meses: ((resumen.data ?? []) as FilaResumenSQL[]).map((r) => ({
+    /* Un ítem suelto (sin orden ni factura, p. ej. de una OC borrada) llega con
+       periodo nulo: no pertenece a ningún mes y no debe tumbar el Dashboard. */
+    meses: ((resumen.data ?? []) as FilaResumenSQL[]).filter((r) => r.periodo).map((r) => ({
       contratoId: r.contrato_id,
       contrato: r.contrato,
       cliente: r.cliente,

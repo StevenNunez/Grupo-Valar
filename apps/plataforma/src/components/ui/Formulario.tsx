@@ -664,7 +664,13 @@ export function useFormulario<T extends object>(inicial: T) {
 }
 
 /** Confirmación y borrado de un registro. Mismo flujo en las seis vistas. */
-export function useBorrado(tabla: string, id: string | undefined, alHecho: () => void) {
+export function useBorrado(
+  tabla: string,
+  id: string | undefined,
+  alHecho: () => void,
+  /** Si el borrado necesita algo más que quitar la fila (por ejemplo, sus ítems). */
+  borrar: (id: string) => Promise<void> = (x) => eliminar(tabla, x),
+) {
   const [confirmando, setConfirmando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [borrando, setBorrando] = useState(false);
@@ -674,7 +680,7 @@ export function useBorrado(tabla: string, id: string | undefined, alHecho: () =>
     setError(null);
     setBorrando(true);
     try {
-      await eliminar(tabla, id);
+      await borrar(id);
       alHecho();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

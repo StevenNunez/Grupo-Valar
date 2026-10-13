@@ -31,6 +31,7 @@ import { emisorOC } from "@/lib/empresa";
 import { formatearPesos } from "@/lib/formato";
 import {
   cargarLineasDeOrden,
+  eliminarOrdenConItems,
   estadosOrden,
   siguienteNumero,
   ultimoTelefonoDeEmisor,
@@ -294,7 +295,7 @@ export function FormularioOrden({
   const borrado = useBorrado("ordenes_compra_proveedor", orden?.id, () => {
     alGuardado();
     alCerrar();
-  });
+  }, eliminarOrdenConItems);
 
   // Al abrir: si es nueva, se propone el número siguiente y una línea en
   // blanco. Si es existente, se traen sus ítems.
@@ -960,7 +961,7 @@ export function FormularioOrden({
       <Confirmacion
         abierto={borrado.confirmando}
         titulo="Eliminar orden de compra"
-        detalle={`Se va a eliminar ${orden?.numero ?? ""}. Sus ítems quedan sin orden asociada, pero no se borran: si ya se facturaron, siguen siendo costo del contrato.`}
+        detalle={`Se va a eliminar ${orden?.numero ?? ""}. Se borran también sus ítems, y con ellos el gasto que representaba en el mes. Si ya hay ítems recibidos o facturados, no se podrá borrar: se anula.`}
         error={borrado.error}
         procesando={borrado.borrando}
         alCancelar={borrado.cerrar}

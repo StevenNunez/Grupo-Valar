@@ -1,7 +1,7 @@
 "use client";
 
 import { SelectorAnexo } from "../ui/SelectorAnexo";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   Ancho,
@@ -19,14 +19,18 @@ import {
   useFormulario,
 } from "../ui/Formulario";
 import { CamposDelContrato } from "../ui/CamposDelContrato";
+import { LineasDeServicio } from "./LineasDeServicio";
 import { actualizar, crear } from "@/lib/crud";
 import type { CampoContrato, Datos } from "@/lib/campos";
 import { categoriasDe, opcionesDeCategoria, type Categoria } from "@/lib/categorias";
 import { opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
 import {
+  cargarLineasDeServicio,
+  guardarLineasDeServicio,
   periodicidades,
   tiposCompra,
   tiposServicio,
+  type LineaServicio,
   type Servicio,
   type Periodicidad,
   type TipoCompra,
@@ -124,6 +128,34 @@ export function FormularioServicio({
   const f = useFormulario<Borrador>(borradorDe(servicio, contratos));
   const editando = servicio !== null;
   const [propios, setPropios] = useState<Datos>(servicio?.datos ?? {});
+  /* Detalle por equipo (0071), opcional. Con líneas, el neto es su suma. */
+  const [lineas, setLineas] = useState<LineaServicio[]>([]);
+  const [teniaLineas, setTeniaLineas] = useState(false);
+  useEffect(() => {
+    if (!servicio) return;
+    let vigente = true;
+    cargarLineasDeServicio(servicio.id)
+      .then((ls) => {
+        if (!vigente) return;
+        setLineas(ls);
+        setTeniaLineas(ls.length > 0);
+      })
+      // Sin la migración 0071 el formulario sigue funcionando, sin detalle.
+      .catch(() => undefined);
+    return () => {
+      vigente = false;
+    };
+    // Solo al abrir: el servicio no cambia mientras el diálogo está abierto.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function cambiarLineas(ls: LineaServicio[]) {
+    setLineas(ls);
+    if (ls.some((l) => l.equipo.trim())) {
+      f.cambiar("neto", ls.filter((l) => l.equipo.trim()).reduce((t, l) => t + l.neto, 0));
+    }
+  }
+
   const borrado = useBorrado("servicios", servicio?.id, () => {
     alGuardado();
     alCerrar();
@@ -169,11 +201,14 @@ export function FormularioServicio({
       periodicidad: campos.recurrente ? campos.periodicidad || "mensual" : null,
     };
 
+    const servicioId = editando ? servicio.id : id.trim();
+
     f.enviar(
-      () =>
-        editando
-          ? actualizar("servicios", servicio.id, fila)
-          : crear("servicios", { ...fila, id: id.trim() }),
+      async () => {
+        if (editando) await actualizar("servicios", servicio.id, fila);
+        else await crear("servicios", { ...fila, id: servicioId });
+        if (lineas.length > 0 || teniaLineas) await guardarLineasDeServicio(servicioId, campos.contrato_id, lineas);
+      },
       () => {
         alGuardado();
         alCerrar();
@@ -332,6 +367,16 @@ export function FormularioServicio({
               alCambiar={setPropios}
             />
           </Campos>
+
+          <LineasDeServicio
+            lineas={lineas}
+            alCambiar={cambiarLineas}
+            contratoId={f.datos.contrato_id}
+            contratista={f.datos.contratista}
+            fecha={f.datos.fecha}
+            servicioId={servicio?.id}
+            faenaPorDefecto={contratos.find((c) => c.id === f.datos.contrato_id)?.faena ?? ""}
+          />
 
           <Pie
             error={f.error}

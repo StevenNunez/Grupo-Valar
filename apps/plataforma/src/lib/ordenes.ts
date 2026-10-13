@@ -1,5 +1,6 @@
 "use client";
 
+import { eliminar } from "./crud";
 import { emisorOC } from "./empresa";
 import { supabase } from "./supabase";
 
@@ -495,4 +496,33 @@ export async function abrirPdfDeOrden(ordenId: string): Promise<string | null> {
     ventana?.close();
     return e instanceof Error ? e.message : "No se pudo generar el PDF.";
   }
+}
+
+/**
+ * Borra la orden con todos sus ítems: una OC es un gasto, y sin ella sus líneas
+ * no tienen mes ni sentido (quedaban sueltas, contando costo sin período).
+ *
+ * Se niega si algo ya se recibió o se facturó: ahí hay guías, facturas y pagos
+ * que dependen de esas líneas, y borrarlas dejaría la historia incompleta. Para
+ * esos casos el camino es anular la orden o cerrar lo pendiente.
+ */
+export async function eliminarOrdenConItems(ordenId: string) {
+  const { data, error } = await supabase
+    .from("items_compra")
+    .select("id, compra_id, cantidad_recibida")
+    .eq("orden_id", ordenId);
+  if (error) throw new Error(error.message);
+
+  const filas = (data ?? []) as { id: string; compra_id: string | null; cantidad_recibida: number }[];
+  if (filas.some((i) => i.compra_id || Number(i.cantidad_recibida) > 0)) {
+    throw new Error(
+      "Esta orden ya tiene ítems recibidos o facturados, así que no se puede borrar. Anúlala (estado «Anulada») o cierra lo pendiente desde el ciclo de la orden.",
+    );
+  }
+
+  if (filas.length > 0) {
+    const { error: errItems } = await supabase.from("items_compra").delete().eq("orden_id", ordenId);
+    if (errItems) throw new Error(errItems.message);
+  }
+  await eliminar("ordenes_compra_proveedor", ordenId);
 }

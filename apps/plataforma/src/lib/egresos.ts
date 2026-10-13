@@ -581,3 +581,141 @@ export function siguienteIdPersonal(
   while (usados.has(`${base}-${n}`)) n += 1;
   return `${base}-${n}`;
 }
+
+/* ── Detalle por equipo de un servicio (0071) ─────────────────────────────── */
+
+export type ConceptoLinea = "arriendo" | "traslado" | "mantencion" | "otro";
+
+export const conceptosLinea: { id: ConceptoLinea; titulo: string }[] = [
+  { id: "arriendo", titulo: "Arriendo" },
+  { id: "traslado", titulo: "Traslado" },
+  { id: "mantencion", titulo: "Mantención" },
+  { id: "otro", titulo: "Otro" },
+];
+
+/**
+ * Una línea del estado de pago del proveedor: una torre (o un equipo) con sus
+ * días y su valor. El servicio sigue siendo UN registro; esto es su detalle.
+ */
+export type LineaServicio = {
+  /** Solo para React: las líneas se reemplazan enteras al guardar. */
+  clave: string;
+  equipo: string;
+  concepto: ConceptoLinea;
+  faena: string;
+  dias: number;
+  cantidad: number;
+  precioUnitario: number;
+  neto: number;
+};
+
+let correlativoLinea = 0;
+export function lineaServicioVacia(parcial: Partial<LineaServicio> = {}): LineaServicio {
+  correlativoLinea += 1;
+  return {
+    clave: `ls-${correlativoLinea}`,
+    equipo: "",
+    concepto: "arriendo",
+    faena: "",
+    dias: 0,
+    cantidad: 1,
+    precioUnitario: 0,
+    neto: 0,
+    ...parcial,
+  };
+}
+
+export const netoDeLineaServicio = (l: Pick<LineaServicio, "cantidad" | "precioUnitario">) =>
+  Math.round(l.cantidad * l.precioUnitario);
+
+type FilaLineaServicio = {
+  equipo: string;
+  concepto: ConceptoLinea;
+  faena: string | null;
+  dias: number | null;
+  cantidad: number;
+  precio_unitario: number;
+  neto: number;
+};
+
+export async function cargarLineasDeServicio(servicioId: string): Promise<LineaServicio[]> {
+  const { data, error } = await supabase
+    .from("servicio_lineas")
+    .select("equipo, concepto, faena, dias, cantidad, precio_unitario, neto")
+    .eq("servicio_id", servicioId)
+    .order("orden");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as FilaLineaServicio[]).map((f) =>
+    lineaServicioVacia({
+      equipo: f.equipo,
+      concepto: f.concepto,
+      faena: f.faena ?? "",
+      dias: f.dias ?? 0,
+      cantidad: Number(f.cantidad),
+      precioUnitario: Number(f.precio_unitario),
+      neto: Number(f.neto),
+    }),
+  );
+}
+
+/** Las del último servicio anterior del mismo contrato y contratista: punto de partida del mes. */
+export async function lineasDelMesAnterior(
+  contratoId: string,
+  contratista: string,
+  antesDe: string,
+  excluirId?: string,
+): Promise<LineaServicio[]> {
+  let q = supabase
+    .from("servicios")
+    .select("id")
+    .eq("contrato_id", contratoId)
+    .lt("fecha", antesDe)
+    .order("fecha", { ascending: false })
+    .limit(10);
+  if (contratista.trim()) q = q.eq("contratista", contratista.trim());
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+  for (const s of (data ?? []) as { id: string }[]) {
+    if (s.id === excluirId) continue;
+    const lineas = await cargarLineasDeServicio(s.id);
+    if (lineas.length > 0) return lineas;
+  }
+  return [];
+}
+
+/**
+ * Reemplaza el detalle del servicio. No es una sola transacción: si falla a la
+ * mitad, quien guarda ve el error y vuelve a guardar; el neto del servicio ya
+ * quedó escrito y el siguiente intento rehace las líneas completas.
+ */
+export async function guardarLineasDeServicio(servicioId: string, contratoId: string, lineas: LineaServicio[]) {
+  const { error: errBorrar } = await supabase.from("servicio_lineas").delete().eq("servicio_id", servicioId);
+  if (errBorrar) throw new Error(errBorrar.message);
+
+  const validas = lineas.filter((l) => l.equipo.trim());
+  if (validas.length === 0) return;
+
+  const { error } = await supabase.from("servicio_lineas").insert(
+    validas.map((l, i) => ({
+      servicio_id: servicioId,
+      contrato_id: contratoId,
+      orden: i,
+      equipo: l.equipo.trim(),
+      concepto: l.concepto,
+      faena: l.faena.trim() || null,
+      dias: l.dias || null,
+      cantidad: l.cantidad,
+      precio_unitario: l.precioUnitario,
+      neto: l.neto,
+    })),
+  );
+  if (error) throw new Error(error.message);
+}
+
+/** Cuántos equipos arrienda el contrato y cómo se llaman, según sus condiciones. */
+export async function equiposDelContrato(contratoId: string): Promise<{ tipo: string; cantidad: number }[]> {
+  const { data, error } = await supabase.from("contratos").select("condiciones").eq("id", contratoId).maybeSingle();
+  if (error || !data) return [];
+  const eq = (data.condiciones as { arriendo?: { equipos?: { tipo: string; cantidad: number }[] } } | null)?.arriendo?.equipos;
+  return (eq ?? []).filter((e) => e.tipo && Number(e.cantidad) > 0).map((e) => ({ tipo: e.tipo, cantidad: Number(e.cantidad) }));
+}
