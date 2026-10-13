@@ -108,6 +108,7 @@ export async function POST(pedido: Request, { params }: Contexto) {
       numero: orden.numero,
       proveedor: orden.proveedor,
       total: orden.items.reduce((s, i) => s + i.neto + i.iva, 0),
+      exenta: orden.items.length > 0 && orden.items.every((i) => i.iva === 0),
       fechaRequerida: orden.fechaRequerida,
       lugarEntrega: orden.lugarEntrega,
       emisorNombre: orden.emisorNombre,

@@ -128,6 +128,8 @@ export type ResumenCorreo = {
   numero: string;
   proveedor: string;
   total: number;
+  /** Sin IVA en ninguna línea: el correo no dice «con IVA». */
+  exenta?: boolean;
   fechaRequerida: string | null;
   lugarEntrega: string | null;
   emisorNombre: string | null;
@@ -175,13 +177,16 @@ export function cuerpoDelCorreo(
               <div style="margin-top:4px;font-size:15px;font-weight:bold;color:${MARCA.tinta}">${escapar(valor)}</div>
             </td>`;
 
+  // Sin IVA en ninguna línea (exámenes, capacitación): no decir "con IVA".
+  const exenta = o.exenta === true;
+
   const contacto = [o.emisorNombre, o.emisorCorreo, o.emisorTelefono].filter(Boolean).map((x) => escapar(x!));
 
   const html = `<!doctype html>
 <html lang="es">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Orden de compra ${escapar(o.numero)}</title></head>
 <body style="margin:0;padding:0;background:${MARCA.niebla}">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0">Orden de compra ${escapar(o.numero)} · ${pesos(o.total)} con IVA · Ver y confirmar la fecha de entrega.</div>
+<div style="display:none;max-height:0;overflow:hidden;opacity:0">Orden de compra ${escapar(o.numero)} · ${pesos(o.total)}${exenta ? " exento de IVA" : " con IVA"} · Ver y confirmar la fecha de entrega.</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${MARCA.niebla}">
   <tr><td align="center" style="padding:28px 12px">
     <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;font-family:Arial,Helvetica,sans-serif;color:${MARCA.tinta}">
@@ -206,7 +211,7 @@ export function cuerpoDelCorreo(
         <div style="margin-top:4px;font-size:14px;color:${MARCA.suave}">Para <strong style="color:${MARCA.tinta}">${escapar(o.proveedor)}</strong></div>
 
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;background:#f4f6f7;border-radius:12px">
-          <tr>${dato("Total con IVA", pesos(o.total))}${dato("Requerida para", fechaCorta(o.fechaRequerida))}${dato("Lugar de entrega", o.lugarEntrega || "—")}</tr>
+          <tr>${dato(exenta ? "Total exento de IVA" : "Total con IVA", pesos(o.total))}${dato("Requerida para", fechaCorta(o.fechaRequerida))}${dato("Lugar de entrega", o.lugarEntrega || "—")}</tr>
         </table>
 
         <div style="margin-top:24px;font-size:14px;line-height:1.6;color:${MARCA.tinta}">${parrafos}</div>

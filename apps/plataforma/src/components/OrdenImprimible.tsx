@@ -124,7 +124,7 @@ export function OrdenImprimible({ orden, items }: { orden: Orden; items: Item[] 
 
         <dl className="w-full max-w-xs text-sm">
           <Linea etiqueta="Subtotal neto" valor={formatearPesos(neto)} />
-          <Linea etiqueta="IVA 19%" valor={formatearPesos(iva)} />
+          <Linea etiqueta={iva === 0 && neto > 0 ? "IVA (exento)" : "IVA 19%"} valor={formatearPesos(iva)} />
           <div className="mt-2 flex justify-between border-t-2 border-ink pt-2">
             <dt className="font-display font-semibold">TOTAL</dt>
             <dd className="font-display text-lg font-semibold tabular-nums">

@@ -521,7 +521,8 @@ function FormFactura({ orden, ciclo, alVolver, alHecho }: { orden: Orden; ciclo:
   const f = useFormulario({ documento: "", fechaFactura: hoy(), vencimiento: sumarDias(hoy(), plazo), neto: sugerido, iva: Math.round(sugerido * 0.19) });
   const [netoTocado, setNetoTocado] = useState(false);
   // El IVA no se escribe: el 19% del neto, o nada si la factura es exenta.
-  const [exento, setExento] = useState(false);
+  // Una orden sin IVA (exámenes médicos, capacitación) llega facturada exenta.
+  const [exento, setExento] = useState(orden.neto > 0 && orden.total === orden.neto);
   const netoLineas = netoDe(ciclo.lineas, cantidades);
   const noLlegado = ciclo.lineas.reduce((t, l) => t + Math.max(0, (cantidades[l.id] ?? 0) - l.recibidaSinFacturar) * l.precioUnitario, 0);
 

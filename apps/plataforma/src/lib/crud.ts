@@ -17,12 +17,12 @@ export type Fila = Record<string, unknown>;
 
 export async function crear(tabla: string, datos: Fila) {
   const { error } = await supabase.from(tabla).insert(datos);
-  if (error) throw new Error(traducir(error.message));
+  if (error) throw new Error(traducir(error.message, error.details, tabla));
 }
 
 export async function actualizar(tabla: string, id: string, datos: Fila) {
   const { error } = await supabase.from(tabla).update(datos).eq("id", id);
-  if (error) throw new Error(traducir(error.message));
+  if (error) throw new Error(traducir(error.message, error.details, tabla));
 }
 
 export async function eliminar(tabla: string, id: string) {
@@ -31,7 +31,7 @@ export async function eliminar(tabla: string, id: string) {
 }
 
 /** Convierte los errores de Postgres en algo que sirva a quien está mirando. */
-function traducir(mensaje: string) {
+function traducir(mensaje: string, detalle?: string | null, tabla?: string) {
   if (/violates row-level security|permission denied/i.test(mensaje)) {
     return "Tu acceso no permite este cambio (o ese contrato no está entre los tuyos).";
   }
@@ -43,7 +43,9 @@ function traducir(mensaje: string) {
     return "Ya existe un proveedor con ese RUT. Búscalo en la lista de proveedores.";
   }
   if (/duplicate key|already exists/i.test(mensaje)) {
-    return "Ya existe un registro con ese código. Usa uno distinto.";
+    // Qué choca y en qué tabla: sin eso, el mismo aviso sirve para cualquier duplicado.
+    const que = [tabla, detalle ?? mensaje].filter(Boolean).join(" · ");
+    return `Ya existe un registro con ese código. Usa uno distinto. (${que})`;
   }
   if (/violates foreign key/i.test(mensaje)) {
     if (/contratos/i.test(mensaje)) {

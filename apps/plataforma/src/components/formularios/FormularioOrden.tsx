@@ -24,6 +24,7 @@ import {
 import { cargarAnexos, proyectoDeAnexo, type Anexo } from "@/lib/anexos";
 import { SelectorAnexo } from "../ui/SelectorAnexo";
 import { actualizar, crear, eliminar } from "@/lib/crud";
+import { supabase } from "@/lib/supabase";
 import { opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
 import { tiposCompra } from "@/lib/egresos";
 import { emisorOC } from "@/lib/empresa";
@@ -249,6 +250,10 @@ export function FormularioOrden({
   // efecto provoca un render en cascada.
   const [lineas, setLineas] = useState<Linea[]>(orden ? [] : [lineaVacia(0)]);
   const [eliminadas, setEliminadas] = useState<string[]>([]);
+  /* Orden sin IVA: servicios como exámenes médicos o capacitación. Es de toda la
+     orden y no de cada línea, porque así se emiten; al editar se deduce de sus
+     ítems (todos con IVA cero). */
+  const [exenta, setExenta] = useState(false);
 
   const claveGuardado = editando ? null : `oc-borrador:${usuario.id}:${registrar ? "registrar" : "nueva"}`;
   /* La que quedó de antes, mientras no se decida qué hacer con ella. Hasta
@@ -299,6 +304,7 @@ export function FormularioOrden({
     if (orden) {
       cargarLineasDeOrden(orden.id).then((items) => {
         if (!vigente) return;
+        setExenta(items.length > 0 && items.every((i) => i.iva === 0));
         setLineas(
           items.map((i) => ({
             id: i.id,
@@ -387,7 +393,7 @@ export function FormularioOrden({
   ];
 
   const neto = lineas.reduce((t, l) => t + Math.round(l.cantidad * l.precio_unitario), 0);
-  const iva = Math.round(neto * 0.19);
+  const iva = exenta ? 0 : Math.round(neto * 0.19);
   const reembolsable = lineas
     .filter((l) => l.tipo === "reembolsable")
     .reduce((t, l) => t + Math.round(l.cantidad * l.precio_unitario), 0);
@@ -461,7 +467,15 @@ export function FormularioOrden({
          orden (o que se acaba de borrar), no a su posición en pantalla: si se
          quitó un ítem o la orden vino de una cotización, contar posiciones
          repite un código ya usado y la base rechaza el guardado. */
-      const usados = [...lineas.filter((l) => !l.nuevo).map((l) => l.id), ...eliminadas];
+      const { data: enBase } = await supabase
+        .from("items_compra")
+        .select("id")
+        .like("id", `IT-${ordenId}-%`);
+      const usados = [
+        ...lineas.filter((l) => !l.nuevo).map((l) => l.id),
+        ...eliminadas,
+        ...((enBase ?? []) as { id: string }[]).map((i) => i.id),
+      ];
       let n = usados.reduce((mayor, id) => Math.max(mayor, Number(/-(\d+)$/.exec(id)?.[1] ?? 0)), 0);
       for (const l of lineas) {
         if (!l.descripcion.trim()) continue;
@@ -475,9 +489,8 @@ export function FormularioOrden({
           unidad: l.unidad || "UN",
           cantidad: l.cantidad || 1,
           precio_unitario: l.precio_unitario,
-          // El IVA de la línea sigue la regla general; si una partida fuera
-          // exenta, se corrige después en el detalle del ítem.
-          iva: Math.round(l.cantidad * l.precio_unitario * 0.19),
+          // El IVA de la línea sigue la regla general, salvo en la orden exenta.
+          iva: exenta ? 0 : Math.round(l.cantidad * l.precio_unitario * 0.19),
           tipo: l.tipo,
         };
 
@@ -905,11 +918,21 @@ export function FormularioOrden({
             </div>
 
             <div className="mt-5 flex flex-col items-end gap-1 text-sm">
+              <label className="mb-2 flex cursor-pointer items-center gap-2 text-sm font-semibold text-ink">
+                <input
+                  type="checkbox"
+                  checked={exenta}
+                  onChange={(e) => setExenta(e.target.checked)}
+                  className="h-4 w-4 accent-[#0e7490]"
+                />
+                Orden exenta de IVA
+                <span className="text-xs font-normal text-ink-soft">(exámenes médicos, capacitación…)</span>
+              </label>
               <p className="text-ink-soft">
                 Neto <span className="ml-2 font-semibold tabular-nums text-ink">{formatearPesos(neto)}</span>
               </p>
               <p className="text-ink-soft">
-                IVA 19% <span className="ml-2 tabular-nums">{formatearPesos(iva)}</span>
+                {exenta ? "IVA (exento)" : "IVA 19%"} <span className="ml-2 tabular-nums">{formatearPesos(iva)}</span>
               </p>
               <p className="font-display text-lg font-semibold text-ink">
                 Total {formatearPesos(neto + iva)}

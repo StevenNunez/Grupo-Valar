@@ -370,7 +370,7 @@ export async function cargarItems(): Promise<Item[]> {
 export async function cargarLineasDeOrden(ordenId: string) {
   const { data, error } = await supabase
     .from("items_compra")
-    .select("id, descripcion, unidad, cantidad, precio_unitario, tipo, categoria_id, pagnol_material_id")
+    .select("id, descripcion, unidad, cantidad, precio_unitario, iva, tipo, categoria_id, pagnol_material_id")
     .eq("orden_id", ordenId)
     .order("id");
   if (error) throw new Error(error.message);
@@ -380,6 +380,7 @@ export async function cargarLineasDeOrden(ordenId: string) {
     unidad: f.unidad as string,
     cantidad: Number(f.cantidad),
     precioUnitario: Number(f.precio_unitario),
+    iva: Number(f.iva ?? 0),
     tipo: f.tipo as "ordinario" | "reembolsable",
     categoriaId: (f.categoria_id as string | null) ?? null,
     pagnolMaterialId: (f.pagnol_material_id as string | null) ?? null,

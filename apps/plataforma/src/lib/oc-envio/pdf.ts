@@ -263,7 +263,7 @@ export async function pdfDeOrden(o: OrdenParaEnviar): Promise<Uint8Array> {
   texto("Subtotal neto", xEtiqueta, y, { tam: 9, color: SUAVE });
   texto(pesos(neto), derecha, y, { tam: 9, alinear: "der" });
   y -= 15;
-  texto("IVA 19%", xEtiqueta, y, { tam: 9, color: SUAVE });
+  texto(iva === 0 && neto > 0 ? "IVA (exento)" : "IVA 19%", xEtiqueta, y, { tam: 9, color: SUAVE });
   texto(pesos(iva), derecha, y, { tam: 9, alinear: "der" });
   y -= 9;
   raya(y, 1.4, TINTA, xEtiqueta, derecha);
