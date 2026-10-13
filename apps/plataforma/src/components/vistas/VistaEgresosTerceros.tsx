@@ -42,7 +42,7 @@ import { diasHastaFecha, formatearFecha, formatearMonto, mesLargo } from "@/lib/
  * apagados según lo que se elija arriba, que es peor que tener dos botones.
  */
 
-type Filtrado = "todos" | "compras" | "servicios" | "reembolsos" | "recurrentes" | "plazos";
+type Filtrado = "todos" | "compras" | "servicios" | "reembolsos" | "recurrentes" | "plazos" | "porPagar";
 
 const opciones: { id: Filtrado; titulo: string }[] = [
   { id: "todos", titulo: "Todos" },
@@ -50,8 +50,30 @@ const opciones: { id: Filtrado; titulo: string }[] = [
   { id: "servicios", titulo: "Servicios" },
   { id: "reembolsos", titulo: "Reembolsos" },
   { id: "recurrentes", titulo: "Recurrentes" },
-  { id: "plazos", titulo: "Por vencer" },
+  { id: "porPagar", titulo: "Por pagar" },
+  { id: "plazos", titulo: "Término próximo" },
 ];
+
+/**
+ * Dónde va el pago de un servicio: sin factura todavía, por vencer, vencido o
+ * pagado. El gasto ya cuenta en su mes desde que se registra; esto controla
+ * cuándo hay que pagarlo (el plazo corre desde la factura).
+ */
+function pagoDe(e: EgresoTercero): { tono: Tono; texto: string } | null {
+  if (e.origen !== "servicio" || e.rendidoPor) return null;
+  if (e.estadoPago === "pagada") {
+    return { tono: "bueno", texto: e.fechaPago ? `Pagado el ${formatearFecha(e.fechaPago)}` : "Pagado" };
+  }
+  if (!e.vencimiento) {
+    const dias = -diasHastaFecha(e.fecha);
+    return { tono: dias > 30 ? "aviso" : "neutro", texto: "Factura pendiente" };
+  }
+  const dias = diasHastaFecha(e.vencimiento);
+  if (dias < 0) return { tono: "critico", texto: `Pago vencido hace ${-dias} días` };
+  if (dias === 0) return { tono: "aviso", texto: "Paga hoy" };
+  if (dias <= 7) return { tono: "aviso", texto: `Paga en ${dias} días` };
+  return { tono: "info", texto: `Paga el ${formatearFecha(e.vencimiento)}` };
+}
 
 function diasDeServicio(e: EgresoTercero) {
   return e.origen === "servicio" && e.hasta ? diasHastaFecha(e.hasta) : null;
@@ -370,6 +392,7 @@ function Contenidos({
     if (filtro === "servicios") return filas.filter((e) => e.origen === "servicio");
     if (filtro === "reembolsos") return filas.filter((e) => e.rendidoPor);
     if (filtro === "recurrentes") return filas.filter((e) => e.recurrente);
+    if (filtro === "porPagar") return filas.filter((e) => e.origen === "servicio" && e.estadoPago !== "pagada" && !e.rendidoPor);
     if (filtro === "plazos") return filas.filter((e) => {
       const dias = diasDeServicio(e);
       return dias !== null && dias <= 30;
@@ -384,6 +407,8 @@ function Contenidos({
   const servicios = filas.filter((e) => e.origen === "servicio");
   const recurrente = filas.filter((e) => e.recurrente).reduce((t, e) => t + e.neto, 0);
   const porDevolver = filas.filter((e) => e.rendidoPor && e.estadoPago !== "pagada");
+  const porPagar = filas.filter((e) => pagoDe(e) && e.estadoPago !== "pagada");
+  const pagoVencido = porPagar.filter((e) => e.vencimiento && diasHastaFecha(e.vencimiento) < 0);
   const avisosPlazo = filas.filter((e) => {
     const dias = diasDeServicio(e);
     return dias !== null && dias <= 30;
@@ -431,7 +456,7 @@ function Contenidos({
 
       <Panel
         titulo="Detalle"
-        nota={`${actualizando ? "Actualizando… · " : ""}${visibles.length} de ${filas.length} movimientos${avisosPlazo ? ` · ${avisosPlazo} servicios por vencer o vencidos` : ""}${porDevolver.length ? ` · ${porDevolver.length} reembolsos por devolver (${formatearMonto(porDevolver.reduce((t, e) => t + e.total, 0))})` : ""}`}
+        nota={`${actualizando ? "Actualizando… · " : ""}${visibles.length} de ${filas.length} movimientos${avisosPlazo ? ` · ${avisosPlazo} servicios por vencer o vencidos` : ""}${pagoVencido.length ? ` · ${pagoVencido.length} pagos vencidos (${formatearMonto(pagoVencido.reduce((t, e) => t + e.total, 0))})` : ""}${porPagar.length ? ` · ${porPagar.length} servicios por pagar (${formatearMonto(porPagar.reduce((t, e) => t + e.total, 0))})` : ""}${porDevolver.length ? ` · ${porDevolver.length} reembolsos por devolver (${formatearMonto(porDevolver.reduce((t, e) => t + e.total, 0))})` : ""}`}
         filtros={
           <div className="flex flex-wrap items-center gap-2">
             <Desplegable
@@ -508,6 +533,11 @@ const columnas = (
         {e.clase && (
           <span className="mt-1 block text-xs text-ink-soft">
             {tiposServicio.find((t) => t.id === e.clase)?.titulo ?? e.clase}
+          </span>
+        )}
+        {pagoDe(e) && (
+          <span className="mt-1.5 block">
+            <Chip tono={pagoDe(e)!.tono}>{pagoDe(e)!.texto}</Chip>
           </span>
         )}
       </>

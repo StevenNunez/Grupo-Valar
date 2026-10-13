@@ -401,6 +401,11 @@ export type Servicio = {
   recurrente: boolean;
   periodicidad: Periodicidad | null;
   estadoPago: EstadoPagoCompra;
+  /** Fecha impresa en la factura del contratista; de ahí corre el plazo (0072). */
+  fechaFactura: string | null;
+  plazoDias: number;
+  fechaVencimiento: string | null;
+  fechaPago: string | null;
 };
 
 export type Periodicidad = "mensual" | "quincenal" | "semanal" | "anual";
@@ -432,6 +437,10 @@ type FilaServicio = {
   recurrente: boolean;
   periodicidad: Periodicidad | null;
   estado_pago: EstadoPagoCompra;
+  fecha_factura?: string | null;
+  plazo_dias?: number | null;
+  fecha_vencimiento?: string | null;
+  fecha_pago?: string | null;
   contratos: { nombre: string } | null;
 };
 
@@ -439,7 +448,7 @@ export async function cargarServicios(): Promise<Servicio[]> {
   const { data, error } = await supabase
     .from("servicios")
     .select(
-      "id, contrato_id, anexo_id, categoria_id, contratista, documento, detalle, tipo_servicio, tipo, neto, iva, total, fecha, desde, hasta, recurrente, periodicidad, estado_pago, datos, contratos(nombre)",
+      "id, contrato_id, anexo_id, categoria_id, contratista, documento, detalle, tipo_servicio, tipo, neto, iva, total, fecha, desde, hasta, recurrente, periodicidad, estado_pago, fecha_factura, plazo_dias, fecha_vencimiento, fecha_pago, datos, contratos(nombre)",
     )
     .order("fecha", { ascending: false });
 
@@ -466,6 +475,10 @@ export async function cargarServicios(): Promise<Servicio[]> {
     recurrente: Boolean(f.recurrente),
     periodicidad: f.periodicidad,
     estadoPago: f.estado_pago,
+    fechaFactura: f.fecha_factura ?? null,
+    plazoDias: f.plazo_dias ?? 30,
+    fechaVencimiento: f.fecha_vencimiento ?? null,
+    fechaPago: f.fecha_pago ?? null,
   }));
 }
 
@@ -504,6 +517,9 @@ export type EgresoTercero = {
   /** Si es un reembolso, quién lo rindió (0068). */
   rendidoPor: string | null;
   fechaPago: string | null;
+  /** Cuándo vence el pago (0072). Nulo mientras no llegue la factura. */
+  vencimiento: string | null;
+  fechaFactura: string | null;
 };
 
 export async function cargarEgresosTerceros(): Promise<EgresoTercero[]> {
@@ -537,6 +553,8 @@ export async function cargarEgresosTerceros(): Promise<EgresoTercero[]> {
     estadoPago: f.estado_pago as EstadoPagoCompra,
     rendidoPor: (f.rendido_por as string | null) ?? null,
     fechaPago: (f.fecha_pago as string | null) ?? null,
+    vencimiento: (f.vencimiento as string | null) ?? null,
+    fechaFactura: (f.fecha_factura as string | null) ?? null,
   }));
 }
 
@@ -718,4 +736,20 @@ export async function equiposDelContrato(contratoId: string): Promise<{ tipo: st
   if (error || !data) return [];
   const eq = (data.condiciones as { arriendo?: { equipos?: { tipo: string; cantidad: number }[] } } | null)?.arriendo?.equipos;
   return (eq ?? []).filter((e) => e.tipo && Number(e.cantidad) > 0).map((e) => ({ tipo: e.tipo, cantidad: Number(e.cantidad) }));
+}
+
+/**
+ * El código del próximo servicio de un contrato: SV-<contrato>-001, 002… Se
+ * calcula con el mayor correlativo que ya existe, no contando filas, para no
+ * repetir uno si alguna vez se borró un servicio.
+ */
+export async function siguienteIdServicio(contratoId: string): Promise<string> {
+  const base = `SV-${contratoId.replace(/^C-/, "")}-`;
+  const { data, error } = await supabase.from("servicios").select("id").like("id", `${base}%`);
+  if (error) throw new Error(error.message);
+  const mayor = ((data ?? []) as { id: string }[]).reduce((m, { id }) => {
+    const n = Number(/-(\d+)$/.exec(id)?.[1] ?? 0);
+    return n > m ? n : m;
+  }, 0);
+  return `${base}${String(mayor + 1).padStart(3, "0")}`;
 }

@@ -7,6 +7,7 @@ import {
   Ancho,
   CampoDinero,
   CampoFecha,
+  CampoNumero,
   CampoSeleccion,
   CampoTexto,
   Campos,
@@ -24,10 +25,12 @@ import { actualizar, crear } from "@/lib/crud";
 import type { CampoContrato, Datos } from "@/lib/campos";
 import { categoriasDe, opcionesDeCategoria, type Categoria } from "@/lib/categorias";
 import { opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
+import { formatearPesos } from "@/lib/formato";
 import {
   cargarLineasDeServicio,
   guardarLineasDeServicio,
   periodicidades,
+  siguienteIdServicio,
   tiposCompra,
   tiposServicio,
   type LineaServicio,
@@ -43,6 +46,12 @@ const estadosPago = [
 ];
 
 const hoy = () => new Date().toISOString().slice(0, 10);
+
+/** La fecha ISO más `dias` días, sin pasar por la zona horaria. */
+const sumarDias = (iso: string, dias: number) => {
+  const [a, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(a, m - 1, d + dias)).toISOString().slice(0, 10);
+};
 
 type Borrador = {
   /** El anexo al que se carga; vacío = contrato base. */
@@ -63,6 +72,11 @@ type Borrador = {
   recurrente: boolean;
   periodicidad: Periodicidad | "";
   estado_pago: "pendiente" | "pagada";
+  /* Factura y pago a plazo (0072): el gasto cuenta en `fecha`; el plazo corre desde la factura. */
+  fecha_factura: string;
+  plazo_dias: number;
+  fecha_vencimiento: string;
+  fecha_pago: string;
 };
 
 function borradorDe(s: Servicio | null, contratos: ContratoBreve[]): Borrador {
@@ -85,6 +99,10 @@ function borradorDe(s: Servicio | null, contratos: ContratoBreve[]): Borrador {
       recurrente: false,
       periodicidad: "",
       estado_pago: "pendiente",
+      fecha_factura: "",
+      plazo_dias: 30,
+      fecha_vencimiento: "",
+      fecha_pago: "",
     };
   }
   return {
@@ -105,6 +123,10 @@ function borradorDe(s: Servicio | null, contratos: ContratoBreve[]): Borrador {
     recurrente: s.recurrente,
     periodicidad: s.periodicidad ?? "",
     estado_pago: s.estadoPago,
+    fecha_factura: s.fechaFactura ?? "",
+    plazo_dias: s.plazoDias,
+    fecha_vencimiento: s.fechaVencimiento ?? "",
+    fecha_pago: s.fechaPago ?? "",
   };
 }
 
@@ -197,14 +219,18 @@ export function FormularioServicio({
       documento: campos.documento.trim() || null,
       desde: campos.desde || null,
       hasta: campos.hasta || null,
+      fecha_factura: campos.fecha_factura || null,
+      fecha_vencimiento: campos.fecha_vencimiento || null,
+      // Pagado sin fecha escrita: se toma hoy.
+      fecha_pago: campos.estado_pago === "pagada" ? campos.fecha_pago || hoy() : null,
       // Sin recurrencia no hay periodicidad que guardar.
       periodicidad: campos.recurrente ? campos.periodicidad || "mensual" : null,
     };
 
-    const servicioId = editando ? servicio.id : id.trim();
-
     f.enviar(
       async () => {
+        // El código no se teclea: es el siguiente correlativo del contrato.
+        const servicioId = editando ? servicio.id : id.trim() || (await siguienteIdServicio(campos.contrato_id));
         if (editando) await actualizar("servicios", servicio.id, fila);
         else await crear("servicios", { ...fila, id: servicioId });
         if (lineas.length > 0 || teniaLineas) await guardarLineasDeServicio(servicioId, campos.contrato_id, lineas);
@@ -230,16 +256,6 @@ export function FormularioServicio({
       >
         <form onSubmit={onSubmit}>
           <Campos>
-            {!editando && (
-              <CampoTexto
-                etiqueta="Código"
-                requerido
-                marcador="SV-C2601-04"
-                ayuda="Identificador único. No se puede cambiar después."
-                {...f.campo("id")}
-              />
-            )}
-
             <CampoSeleccion
               etiqueta="Contrato"
               requerido
@@ -292,8 +308,8 @@ export function FormularioServicio({
 
             <CampoTexto
               etiqueta="N° de documento"
-              marcador="123456"
-              ayuda="Factura del contratista."
+              marcador="EDP 9, OC22-001150 o factura"
+              ayuda="Opcional. Puede ser el estado de pago, la orden de compra o la factura; se completa cuando llegue."
               {...f.campo("documento")}
             />
 
@@ -306,15 +322,70 @@ export function FormularioServicio({
               />
             </Ancho>
 
-            <CampoDinero etiqueta="Neto" requerido {...f.campo("neto")} />
+            {lineas.some((l) => l.equipo.trim()) ? (
+              <div>
+                <p className="text-sm font-semibold text-ink">Neto</p>
+                <p className="mt-2 font-display text-lg font-semibold tabular-nums text-ink">
+                  {formatearPesos(f.datos.neto)}
+                </p>
+                <p className="mt-1.5 text-xs text-ink-soft">Suma del detalle por equipo, abajo.</p>
+              </div>
+            ) : (
+              <CampoDinero
+                etiqueta="Neto"
+                ayuda="Déjalo en 0 si aún no llega el estado de pago: el gasto queda registrado en el mes y lo completas después."
+                {...f.campo("neto")}
+              />
+            )}
 
-            <CampoFecha etiqueta="Fecha del documento" requerido {...f.campo("fecha")} />
+            <CampoFecha
+              etiqueta="Fecha del gasto"
+              requerido
+              ayuda="El gasto cuenta en el mes de esta fecha, aunque la factura llegue después y se pague a 30 días."
+              {...f.campo("fecha")}
+            />
 
             <CampoSeleccion
               etiqueta="Estado de pago"
               opciones={estadosPago}
               {...f.campo("estado_pago")}
             />
+
+            {/* El gasto ya cuenta en el mes de arriba. Acá se controla el pago: el
+                plazo corre desde la fecha de la factura, que llega después. */}
+            <CampoFecha
+              etiqueta="Fecha de la factura"
+              ayuda="Cuando llegue la factura. Mientras no esté, el servicio figura «factura pendiente»."
+              valor={f.datos.fecha_factura}
+              alCambiar={(v) =>
+                f.setDatos((d) => ({
+                  ...d,
+                  fecha_factura: v,
+                  fecha_vencimiento: v ? sumarDias(v, d.plazo_dias) : "",
+                }))
+              }
+            />
+            <CampoNumero
+              etiqueta="Plazo de pago (días)"
+              min={0}
+              ayuda="Desde la fecha de la factura. Normalmente 30."
+              valor={f.datos.plazo_dias}
+              alCambiar={(v) =>
+                f.setDatos((d) => ({
+                  ...d,
+                  plazo_dias: v,
+                  fecha_vencimiento: d.fecha_factura ? sumarDias(d.fecha_factura, v) : d.fecha_vencimiento,
+                }))
+              }
+            />
+            <CampoFecha
+              etiqueta="Vence"
+              ayuda="Se calcula sola con la factura y el plazo; corrígela si el contratista pactó otra."
+              {...f.campo("fecha_vencimiento")}
+            />
+            {f.datos.estado_pago === "pagada" && (
+              <CampoFecha etiqueta="Fecha de pago" ayuda="Si la dejas vacía se toma hoy." {...f.campo("fecha_pago")} />
+            )}
 
             <CampoFecha
               etiqueta="Servicio desde"
