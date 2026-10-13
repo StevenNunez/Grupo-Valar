@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Etiqueta } from "../ui/Chip";
 import { claseCelda } from "./LineasDeGasto";
 import {
+  cobrosLinea,
   conceptosLinea,
   equiposDelContrato,
   lineaServicioVacia,
@@ -64,7 +65,7 @@ export function LineasDeServicio({
         if (l.clave !== clave) return l;
         const nueva = { ...l, ...parte };
         // Cantidad y precio recalculan el neto; si se escribe el neto, manda lo escrito.
-        if ("cantidad" in parte || "precioUnitario" in parte) nueva.neto = netoDeLineaServicio(nueva);
+        if ("cantidad" in parte || "precioUnitario" in parte || "dias" in parte || "cobro" in parte) nueva.neto = netoDeLineaServicio(nueva);
         return nueva;
       }),
     );
@@ -100,7 +101,7 @@ export function LineasDeServicio({
         <div>
           <h3 className="font-display text-base font-semibold text-ink">Detalle por equipo</h3>
           <p className="mt-0.5 text-xs text-ink-soft">
-            Una línea por torre del estado de pago. Opcional: si lo llenas, el neto sale de la suma.
+            Una línea por torre. El neto de cada una se calcula con sus días, la cantidad y la tarifa (por mes, por día o por unidad); el del servicio es la suma.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -117,7 +118,7 @@ export function LineasDeServicio({
       {lineas.length > 0 && (
         <>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[56rem] border-collapse text-sm">
+            <table className="w-full min-w-[64rem] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-mist text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
                   <th className="py-2 pr-3">Equipo</th>
@@ -125,7 +126,8 @@ export function LineasDeServicio({
                   <th className="w-36 py-2 pr-3">Faena</th>
                   <th className="w-20 py-2 pr-3 text-right">Días</th>
                   <th className="w-20 py-2 pr-3 text-right">Cant.</th>
-                  <th className="w-32 py-2 pr-3 text-right">Precio unit.</th>
+                  <th className="w-28 py-2 pr-3">Tarifa</th>
+                  <th className="w-32 py-2 pr-3 text-right">Valor tarifa</th>
                   <th className="w-32 py-2 pr-3 text-right">Neto</th>
                   <th className="w-10 py-2" />
                 </tr>
@@ -156,7 +158,13 @@ export function LineasDeServicio({
                         onChange={(e) => cambiar(l.clave, { cantidad: Number(e.target.value) || 0 })} />
                     </td>
                     <td className="py-2 pr-3">
-                      <input aria-label="Precio unitario" inputMode="numeric" value={pesos(l.precioUnitario)} placeholder="0" className={`${claseCelda} text-right tabular-nums`}
+                      <select aria-label="Cómo se cobra" value={l.cobro} className={claseCelda}
+                        onChange={(e) => cambiar(l.clave, { cobro: e.target.value as LineaServicio["cobro"] })}>
+                        {cobrosLinea.map((c) => <option key={c.id} value={c.id}>{c.titulo}</option>)}
+                      </select>
+                    </td>
+                    <td className="py-2 pr-3">
+                      <input aria-label="Valor de la tarifa" inputMode="numeric" value={pesos(l.precioUnitario)} placeholder="0" className={`${claseCelda} text-right tabular-nums`}
                         onChange={(e) => cambiar(l.clave, { precioUnitario: soloNumero(e.target.value) })} />
                     </td>
                     <td className="py-2 pr-3">

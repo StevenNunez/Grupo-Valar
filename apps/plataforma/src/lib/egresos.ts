@@ -602,6 +602,15 @@ export function siguienteIdPersonal(
 
 /* ── Detalle por equipo de un servicio (0071) ─────────────────────────────── */
 
+/** Cómo se cobra la tarifa de una línea (0073). */
+export type CobroLinea = "dia" | "mes" | "unidad";
+
+export const cobrosLinea: { id: CobroLinea; titulo: string }[] = [
+  { id: "mes", titulo: "Por mes" },
+  { id: "dia", titulo: "Por día" },
+  { id: "unidad", titulo: "Por unidad" },
+];
+
 export type ConceptoLinea = "arriendo" | "traslado" | "mantencion" | "otro";
 
 export const conceptosLinea: { id: ConceptoLinea; titulo: string }[] = [
@@ -622,6 +631,7 @@ export type LineaServicio = {
   concepto: ConceptoLinea;
   faena: string;
   dias: number;
+  cobro: CobroLinea;
   cantidad: number;
   precioUnitario: number;
   neto: number;
@@ -636,6 +646,7 @@ export function lineaServicioVacia(parcial: Partial<LineaServicio> = {}): LineaS
     concepto: "arriendo",
     faena: "",
     dias: 0,
+    cobro: "mes",
     cantidad: 1,
     precioUnitario: 0,
     neto: 0,
@@ -643,14 +654,25 @@ export function lineaServicioVacia(parcial: Partial<LineaServicio> = {}): LineaS
   };
 }
 
-export const netoDeLineaServicio = (l: Pick<LineaServicio, "cantidad" | "precioUnitario">) =>
-  Math.round(l.cantidad * l.precioUnitario);
+/**
+ * El neto de una línea según cómo se cobre su tarifa:
+ *   por día     días × cantidad × tarifa
+ *   por mes     cantidad × tarifa × días/30 (sin días, el mes completo)
+ *   por unidad  cantidad × tarifa
+ */
+export const netoDeLineaServicio = (l: Pick<LineaServicio, "cantidad" | "precioUnitario" | "dias" | "cobro">) => {
+  const base = l.cantidad * l.precioUnitario;
+  if (l.cobro === "dia") return Math.round(base * l.dias);
+  if (l.cobro === "mes") return Math.round(l.dias > 0 ? (base * l.dias) / 30 : base);
+  return Math.round(base);
+};
 
 type FilaLineaServicio = {
   equipo: string;
   concepto: ConceptoLinea;
   faena: string | null;
   dias: number | null;
+  cobro?: CobroLinea | null;
   cantidad: number;
   precio_unitario: number;
   neto: number;
@@ -659,7 +681,7 @@ type FilaLineaServicio = {
 export async function cargarLineasDeServicio(servicioId: string): Promise<LineaServicio[]> {
   const { data, error } = await supabase
     .from("servicio_lineas")
-    .select("equipo, concepto, faena, dias, cantidad, precio_unitario, neto")
+    .select("equipo, concepto, faena, dias, cobro, cantidad, precio_unitario, neto")
     .eq("servicio_id", servicioId)
     .order("orden");
   if (error) throw new Error(error.message);
@@ -669,6 +691,7 @@ export async function cargarLineasDeServicio(servicioId: string): Promise<LineaS
       concepto: f.concepto,
       faena: f.faena ?? "",
       dias: f.dias ?? 0,
+      cobro: f.cobro ?? "mes",
       cantidad: Number(f.cantidad),
       precioUnitario: Number(f.precio_unitario),
       neto: Number(f.neto),
@@ -722,6 +745,7 @@ export async function guardarLineasDeServicio(servicioId: string, contratoId: st
       concepto: l.concepto,
       faena: l.faena.trim() || null,
       dias: l.dias || null,
+      cobro: l.cobro,
       cantidad: l.cantidad,
       precio_unitario: l.precioUnitario,
       neto: l.neto,
