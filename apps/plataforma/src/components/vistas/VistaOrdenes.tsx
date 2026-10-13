@@ -79,6 +79,53 @@ const opciones: { id: Filtrado; titulo: string }[] = [
   { id: "cerradas", titulo: "Cerradas" },
 ];
 
+type Orden_ =
+  | "numero-desc"
+  | "numero-asc"
+  | "fecha-desc"
+  | "fecha-asc"
+  | "monto-desc"
+  | "monto-asc"
+  | "proveedor";
+
+const opcionesOrden: { id: Orden_; titulo: string }[] = [
+  { id: "numero-desc", titulo: "N° mayor a menor" },
+  { id: "numero-asc", titulo: "N° menor a mayor" },
+  { id: "fecha-desc", titulo: "Más recientes" },
+  { id: "fecha-asc", titulo: "Más antiguas" },
+  { id: "monto-desc", titulo: "Monto mayor a menor" },
+  { id: "monto-asc", titulo: "Monto menor a mayor" },
+  { id: "proveedor", titulo: "Proveedor A–Z" },
+];
+
+/** La parte numérica del N°: como texto, "OC22-9" le ganaría a "OC22-001128". */
+const correlativo = (numero: string) => {
+  const m = /(\d+)\D*$/.exec(numero ?? "");
+  return m ? Number(m[1]) : 0;
+};
+
+const porNumero = (a: Orden, b: Orden) =>
+  correlativo(a.numero) - correlativo(b.numero) || a.numero.localeCompare(b.numero, "es", { numeric: true });
+
+const comparadores: Record<Orden_, (a: Orden, b: Orden) => number> = {
+  "numero-desc": (a, b) => porNumero(b, a),
+  "numero-asc": porNumero,
+  "fecha-desc": (a, b) => b.fechaEmision.localeCompare(a.fechaEmision) || porNumero(b, a),
+  "fecha-asc": (a, b) => a.fechaEmision.localeCompare(b.fechaEmision) || porNumero(a, b),
+  "monto-desc": (a, b) => b.total - a.total,
+  "monto-asc": (a, b) => a.total - b.total,
+  proveedor: (a, b) => a.proveedor.localeCompare(b.proveedor, "es") || porNumero(b, a),
+};
+
+/** Minúsculas y sin tildes, para que "Cañería" se encuentre escribiendo "caneria". */
+const normalizar = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+const nombreMes = (aaaamm: string) => {
+  const [a, m] = aaaamm.split("-").map(Number);
+  const t = new Date(a, m - 1, 1).toLocaleDateString("es-CL", { month: "long", year: "numeric" });
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+
 export function VistaOrdenes() {
   const { estado, recargar } = useConsulta<Datos>(cargar);
   const edicion = useEdicion<Orden>("ordenes_compra_proveedor");
@@ -188,14 +235,38 @@ function Contenidos({
   const [filtro, setFiltro] = useState<Filtrado>("todas");
   const puedeEmitir = usePuede("ordenes.emitir");
 
+  const [texto, setTexto] = useState("");
+  const [mes, setMes] = useState("");
+  const [orden, setOrden] = useState<Orden_>("numero-desc");
+
+  // Los meses que tienen órdenes, del más reciente al más antiguo.
+  const meses = useMemo(
+    () => [...new Set(filas.map((o) => o.fechaEmision.slice(0, 7)))].sort().reverse(),
+    [filas],
+  );
+
   const visibles = useMemo(() => {
-    if (filtro === "borrador") return filas.filter((o) => o.estado === "borrador");
-    if (filtro === "cerradas")
-      return filas.filter((o) => o.estado === "cerrada" || o.estado === "anulada");
-    if (filtro === "abiertas")
-      return filas.filter((o) => ["emitida", "parcial", "recibida"].includes(o.estado));
-    return filas;
-  }, [filas, filtro]);
+    let r = filas;
+    if (filtro === "borrador") r = r.filter((o) => o.estado === "borrador");
+    else if (filtro === "cerradas") r = r.filter((o) => o.estado === "cerrada" || o.estado === "anulada");
+    else if (filtro === "abiertas") r = r.filter((o) => ["emitida", "parcial", "recibida"].includes(o.estado));
+
+    if (mes) r = r.filter((o) => o.fechaEmision.startsWith(mes));
+
+    const q = normalizar(texto.trim());
+    if (q) {
+      r = r.filter((o) =>
+        normalizar([o.numero, o.proveedor, o.rutProveedor, o.proyecto, o.contratoId, o.id].filter(Boolean).join(" ")).includes(q),
+      );
+    }
+
+    return [...r].sort(comparadores[orden]);
+  }, [filas, filtro, mes, texto, orden]);
+
+  const ultimo = useMemo(
+    () => filas.reduce<Orden | null>((m, o) => (!m || correlativo(o.numero) > correlativo(m.numero) ? o : m), null),
+    [filas],
+  );
 
   const neto = visibles.reduce((t, o) => t + o.neto, 0);
   const total = visibles.reduce((t, o) => t + o.total, 0);
@@ -232,9 +303,44 @@ function Contenidos({
 
       <Panel
         titulo="Detalle"
-        nota={`${visibles.length} de ${filas.length} órdenes`}
+        nota={`${visibles.length} de ${filas.length} órdenes${ultimo ? ` · último N°: ${ultimo.numero}` : ""}`}
         filtros={<Filtro etiqueta="Estado" opciones={opciones} valor={filtro} alCambiar={setFiltro} />}
       >
+        <div className="flex flex-wrap items-center gap-3 border-b border-mist px-6 py-4 lg:px-8">
+          <input
+            type="search"
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            placeholder="Buscar por N°, proveedor, RUT o contrato…"
+            aria-label="Buscar órdenes"
+            className="min-w-[16rem] flex-1 rounded-full border border-mist-deep bg-white px-4 py-2 text-sm text-ink outline-none transition-colors placeholder:text-ink-soft/60 focus:border-cyan focus:ring-2 focus:ring-cyan/20"
+          />
+          <select
+            value={mes}
+            onChange={(e) => setMes(e.target.value)}
+            aria-label="Mes de emisión"
+            className="rounded-full border border-mist-deep bg-white px-4 py-2 text-sm font-semibold text-ink-soft"
+          >
+            <option value="">Todos los meses</option>
+            {meses.map((m) => (
+              <option key={m} value={m}>
+                {nombreMes(m)}
+              </option>
+            ))}
+          </select>
+          <select
+            value={orden}
+            onChange={(e) => setOrden(e.target.value as Orden_)}
+            aria-label="Ordenar por"
+            className="rounded-full border border-mist-deep bg-white px-4 py-2 text-sm font-semibold text-ink-soft"
+          >
+            {opcionesOrden.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.titulo}
+              </option>
+            ))}
+          </select>
+        </div>
         <Tabla
           columnas={columnas(edicion, alImprimir, alRecepcionar, puedeEmitir, alEnviar, envios)}
           filas={visibles}

@@ -457,10 +457,15 @@ export function FormularioOrden({
 
       for (const borrada of eliminadas) await eliminar("items_compra", borrada);
 
-      let n = 0;
+      /* El código de un ítem nuevo sigue al mayor correlativo que ya existe en la
+         orden (o que se acaba de borrar), no a su posición en pantalla: si se
+         quitó un ítem o la orden vino de una cotización, contar posiciones
+         repite un código ya usado y la base rechaza el guardado. */
+      const usados = [...lineas.filter((l) => !l.nuevo).map((l) => l.id), ...eliminadas];
+      let n = usados.reduce((mayor, id) => Math.max(mayor, Number(/-(\d+)$/.exec(id)?.[1] ?? 0)), 0);
       for (const l of lineas) {
         if (!l.descripcion.trim()) continue;
-        n += 1;
+        if (l.nuevo) n += 1;
         const fila = {
           contrato_id: cabecera.contrato_id,
           orden_id: ordenId,
