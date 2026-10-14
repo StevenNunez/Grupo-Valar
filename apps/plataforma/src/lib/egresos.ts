@@ -28,7 +28,7 @@ export const tiposCompra: { id: TipoCompra; titulo: string }[] = [
   { id: "activo", titulo: "Activo (inversión)" },
 ];
 
-export type EstadoPagoCompra = "pendiente" | "pagada";
+export type EstadoPagoCompra = "pendiente" | "pagada" | "anulada";
 
 export type Compra = {
   /** El anexo al que se carga (0059); nulo = contrato base. */
@@ -502,7 +502,8 @@ export async function cargarServicios(): Promise<Servicio[]> {
  */
 export type EgresoTercero = {
   id: string;
-  origen: "compra" | "servicio";
+  /** "orden": una OC emitida, por mes de costo (0080). Su gasto cuenta desde que se emite. */
+  origen: "compra" | "servicio" | "orden";
   contratoId: string;
   /** El anexo al que se carga (0076); nulo = contrato base. */
   anexoId: string | null;
@@ -529,7 +530,18 @@ export type EgresoTercero = {
   /** Cuándo vence el pago (0072). Nulo mientras no llegue la factura. */
   vencimiento: string | null;
   fechaFactura: string | null;
+  /** Solo en las filas de OC (0080). */
+  ordenId: string | null;
+  etapa: EtapaOrden | null;
+  netoRecibido: number;
+  netoFacturado: number;
+  /** Con IVA: lo facturado de la OC y lo que de eso ya se pagó. */
+  totalFacturado: number;
+  totalPagado: number;
 };
+
+/** Hasta dónde llegó una OC: emitida → recibida → facturada (parcial o total) → pagada. */
+export type EtapaOrden = "emitida" | "recibida" | "parcial" | "facturada" | "pagada";
 
 export async function cargarEgresosTerceros(): Promise<EgresoTercero[]> {
   const { data, error } = await supabase
@@ -542,7 +554,7 @@ export async function cargarEgresosTerceros(): Promise<EgresoTercero[]> {
 
   return (data ?? []).map((f: Record<string, unknown>) => ({
     id: f.id as string,
-    origen: f.origen as "compra" | "servicio",
+    origen: f.origen as "compra" | "servicio" | "orden",
     contratoId: f.contrato_id as string,
     anexoId: (f.anexo_id as string | null | undefined) ?? null,
     categoria: f.categoria as string,
@@ -565,6 +577,12 @@ export async function cargarEgresosTerceros(): Promise<EgresoTercero[]> {
     fechaPago: (f.fecha_pago as string | null) ?? null,
     vencimiento: (f.vencimiento as string | null) ?? null,
     fechaFactura: (f.fecha_factura as string | null) ?? null,
+    ordenId: (f.orden_id as string | null) ?? null,
+    etapa: (f.etapa as EtapaOrden | null) ?? null,
+    netoRecibido: Number(f.neto_recibido ?? 0),
+    netoFacturado: Number(f.neto_facturado ?? 0),
+    totalFacturado: Number(f.total_facturado ?? 0),
+    totalPagado: Number(f.total_pagado ?? 0),
   }));
 }
 

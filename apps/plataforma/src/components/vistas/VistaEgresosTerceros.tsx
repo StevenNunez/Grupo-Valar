@@ -43,12 +43,13 @@ import { diasHastaFecha, formatearFecha, formatearMonto, mesLargo } from "@/lib/
  * apagados según lo que se elija arriba, que es peor que tener dos botones.
  */
 
-type Filtrado = "todos" | "compras" | "servicios" | "reembolsos" | "recurrentes" | "sinFactura" | "porPagar" | "vencidos" | "pagados" | "activos";
+type Filtrado = "todos" | "compras" | "ordenes" | "servicios" | "reembolsos" | "recurrentes" | "sinFactura" | "porPagar" | "vencidos" | "pagados" | "activos";
 
 /* Filtros secundarios; los primarios son el contrato y el mes. */
 const opciones: { id: Filtrado; titulo: string }[] = [
   { id: "todos", titulo: "Todos" },
   { id: "compras", titulo: "Compras" },
+  { id: "ordenes", titulo: "Órdenes de compra" },
   { id: "servicios", titulo: "Servicios" },
   { id: "reembolsos", titulo: "Reembolsos" },
   { id: "recurrentes", titulo: "Recurrentes" },
@@ -59,12 +60,31 @@ const opciones: { id: Filtrado; titulo: string }[] = [
   { id: "activos", titulo: "Activos" },
 ];
 
-/** Falta el documento del proveedor. Un reembolso se respalda con su rendición, no con factura. */
-const sinFactura = (e: EgresoTercero) =>
-  !e.rendidoPor && (e.origen === "compra" ? !e.documento : !e.vencimiento && !e.fechaFactura);
+/** Una compra o servicio anulado se ve en la lista, pero no suma ni resta. */
+const cuenta = (e: EgresoTercero) => e.estadoPago !== "anulada";
 
-/** Deuda con proveedores: lo que se debe y todavía no se pagó (los reembolsos van aparte). */
-const debe = (e: EgresoTercero) => !e.rendidoPor && e.estadoPago !== "pagada";
+/**
+ * Falta el documento del proveedor. Un reembolso se respalda con su rendición,
+ * no con factura. En una OC, falta factura de lo que ya llegó.
+ */
+const sinFactura = (e: EgresoTercero) =>
+  cuenta(e) &&
+  !e.rendidoPor &&
+  (e.origen === "orden" ? e.netoRecibido > e.netoFacturado : e.origen === "compra" ? !e.documento : !e.vencimiento && !e.fechaFactura);
+
+/** Neto que falta facturar: en una OC, lo recibido que el proveedor no ha facturado. */
+const netoSinFactura = (e: EgresoTercero) =>
+  !sinFactura(e) ? 0 : e.origen === "orden" ? e.netoRecibido - e.netoFacturado : e.neto;
+
+/**
+ * Deuda con proveedores: lo que se debe y todavía no se pagó (los reembolsos
+ * van aparte). Una OC se paga solo con factura: debe lo facturado y no pagado.
+ */
+const debe = (e: EgresoTercero) =>
+  cuenta(e) && !e.rendidoPor && (e.origen === "orden" ? e.totalFacturado > e.totalPagado : e.estadoPago !== "pagada");
+
+/** Con IVA, lo que hay que pagar hoy de esa fila. */
+const montoPorPagar = (e: EgresoTercero) => (!debe(e) ? 0 : e.origen === "orden" ? e.totalFacturado - e.totalPagado : e.total);
 
 /** Impago y con el plazo ya cumplido. */
 const vencido = (e: EgresoTercero) => debe(e) && !!e.vencimiento && diasHastaFecha(e.vencimiento) < 0;
@@ -76,6 +96,20 @@ const vencido = (e: EgresoTercero) => debe(e) && !!e.vencimiento && diasHastaFec
  */
 function pagoDe(e: EgresoTercero): { tono: Tono; texto: string } | null {
   if (e.rendidoPor) return null;
+  if (e.estadoPago === "anulada") return { tono: "neutro", texto: "Anulada · no cuenta" };
+  if (e.origen === "orden") {
+    if (e.etapa === "pagada") return { tono: "bueno", texto: e.fechaPago ? `Pagada el ${formatearFecha(e.fechaPago)}` : "Pagada" };
+    if (e.etapa === "emitida") return { tono: "neutro", texto: "Emitida · por recibir" };
+    if (e.etapa === "recibida") return { tono: "info", texto: "Recibida · sin factura" };
+    // Facturada (toda o en parte): el plazo de pago corre desde la factura.
+    if (!debe(e)) return { tono: "info", texto: "Facturada en parte" };
+    if (!e.vencimiento) return { tono: "aviso", texto: e.etapa === "parcial" ? "Facturada en parte · por pagar" : "Facturada · por pagar" };
+    const diasOc = diasHastaFecha(e.vencimiento);
+    if (diasOc < 0) return { tono: "critico", texto: `Pago vencido hace ${-diasOc} días` };
+    if (diasOc === 0) return { tono: "aviso", texto: "Paga hoy" };
+    if (diasOc <= 7) return { tono: "aviso", texto: `Paga en ${diasOc} días` };
+    return { tono: "info", texto: `Paga el ${formatearFecha(e.vencimiento)}` };
+  }
   if (e.estadoPago === "pagada") {
     return { tono: "bueno", texto: e.fechaPago ? `Pagado el ${formatearFecha(e.fechaPago)}` : "Pagado" };
   }
@@ -147,7 +181,7 @@ function mesInicial(egresos: EgresoTercero[]): Mes {
 
 export function VistaEgresosTerceros() {
   const usuario = useUsuario();
-  const lista = useConsulta<Lista>(cargarLista, `${usuario.id}:${usuario.empresa}:egresos-terceros-v2`);
+  const lista = useConsulta<Lista>(cargarLista, `${usuario.id}:${usuario.empresa}:egresos-terceros-v3`);
   const apoyo = useConsulta<Apoyo>(cargarApoyo);
   const recargar = () => {
     lista.recargar();
@@ -157,6 +191,8 @@ export function VistaEgresosTerceros() {
      Mostrar todo de una vez eran cientos de filas para mirar un mes. */
   const [mesElegido, setMes] = useState<Mes | null>(null);
   const edicion = useEdicion<EgresoTercero>();
+  /* La OC cuyo ciclo (recibir, facturar, NC, cerrar) está abierto: se abre desde su fila o desde el panel. */
+  const [ordenAbierta, setOrdenAbierta] = useState<string | null>(null);
   const [creando, setCreando] = useState<"compra" | "servicio" | "reembolso" | null>(null);
   /* Al registrar un reembolso se abre su respaldo: la foto de la rendición y
      de las boletas queda colgando del mismo registro. */
@@ -167,7 +203,7 @@ export function VistaEgresosTerceros() {
     <>
       <Encabezado
         titulo="Compras y Servicios"
-        descripcion="Todo lo que se gasta con terceros: materiales, subcontratos, arriendos y fletes. El personal va aparte, porque no es un gasto con un tercero."
+        descripcion="Todo lo que se gasta con terceros: materiales, subcontratos, arriendos y fletes. Una orden de compra cuenta como gasto del mes desde que se emite; después avanza (recibida, facturada, pagada) sin cambiar de monto. El personal va aparte."
         acciones={
           puedeCargar && (
             <MenuNuevo
@@ -195,8 +231,13 @@ export function VistaEgresosTerceros() {
                 mes={mes}
                 alCambiarMes={setMes}
                 actualizando={lista.actualizando}
+                abrirOrden={setOrdenAbierta}
               />
-              <OrdenesDeCompra ordenes={ordenes} mes={mes} alCambiar={recargar} />
+              <OrdenesDeCompra ordenes={ordenes} mes={mes} abrir={setOrdenAbierta} />
+              {(() => {
+                const orden = ordenes.find((o) => o.id === ordenAbierta);
+                return orden ? <CicloOrden orden={orden} alCerrar={() => setOrdenAbierta(null)} alCambiar={recargar} /> : null;
+              })()}
             </>
           );
         }}
@@ -369,6 +410,7 @@ function Contenidos({
   mes,
   alCambiarMes,
   actualizando,
+  abrirOrden,
 }: {
   filas: EgresoTercero[];
   anexos: Anexo[];
@@ -377,6 +419,7 @@ function Contenidos({
   mes: Mes;
   alCambiarMes: (m: Mes) => void;
   actualizando: boolean;
+  abrirOrden: (id: string) => void;
 }) {
   const [filtro, setFiltro] = useState<Filtrado>("todos");
   const [contrato, setContrato] = useState("todos");
@@ -410,6 +453,7 @@ function Contenidos({
 
   const visibles = useMemo(() => {
     if (filtro === "compras") return filas.filter((e) => e.origen === "compra");
+    if (filtro === "ordenes") return filas.filter((e) => e.origen === "orden");
     if (filtro === "servicios") return filas.filter((e) => e.origen === "servicio");
     if (filtro === "reembolsos") return filas.filter((e) => e.rendidoPor);
     if (filtro === "recurrentes") return filas.filter((e) => e.recurrente);
@@ -421,17 +465,22 @@ function Contenidos({
     return filas;
   }, [filas, filtro]);
 
-  const neto = visibles.reduce((t, e) => t + e.neto, 0);
-  const total = visibles.reduce((t, e) => t + e.total, 0);
+  // Lo anulado se ve en la lista pero no suma en ninguna tarjeta ni en el total.
+  const contables = visibles.filter(cuenta);
+  const neto = contables.reduce((t, e) => t + e.neto, 0);
+  const total = contables.reduce((t, e) => t + e.total, 0);
 
-  const compras = visibles.filter((e) => e.origen === "compra");
-  const servicios = visibles.filter((e) => e.origen === "servicio");
-  const porDevolver = visibles.filter((e) => e.rendidoPor && e.estadoPago !== "pagada");
-  const porPagar = visibles.filter(debe);
+  const compras = contables.filter((e) => e.origen === "compra");
+  const ordenes = contables.filter((e) => e.origen === "orden");
+  const servicios = contables.filter((e) => e.origen === "servicio");
+  const porDevolver = contables.filter((e) => e.rendidoPor && e.estadoPago !== "pagada");
+  const porPagar = contables.filter(debe);
   const pagoVencido = porPagar.filter(vencido);
-  const sinDocumento = visibles.filter(sinFactura);
-  const pagadasSinFactura = sinDocumento.filter((e) => e.estadoPago === "pagada");
+  const sinDocumento = contables.filter(sinFactura);
+  const pagadasSinFactura = sinDocumento.filter((e) => e.origen !== "orden" && e.estadoPago === "pagada");
   const suma = (ls: EgresoTercero[], campo: "neto" | "total" = "neto") => ls.reduce((t, e) => t + e[campo], 0);
+  const sumaPorPagar = (ls: EgresoTercero[]) => ls.reduce((t, e) => t + montoPorPagar(e), 0);
+  const anuladas = visibles.length - contables.length;
   const avisosPlazo = visibles.filter((e) => {
     const dias = diasDeServicio(e);
     return dias !== null && dias <= 30;
@@ -443,24 +492,24 @@ function Contenidos({
         datos={[
           {
             etiqueta: "Gasto total",
-            valor: formatearMonto(suma(visibles)),
-            nota: `${visibles.length} movimientos · compras ${formatearMonto(suma(compras))} · servicios ${formatearMonto(suma(servicios))}. Con o sin OC o factura`,
+            valor: formatearMonto(suma(contables)),
+            nota: `${contables.length} movimientos · órdenes ${formatearMonto(suma(ordenes))} · compras ${formatearMonto(suma(compras))} · servicios ${formatearMonto(suma(servicios))}. La OC cuenta desde que se emite${anuladas ? ` · ${anuladas} anulada${anuladas === 1 ? "" : "s"} no suma${anuladas === 1 ? "" : "n"}` : ""}`,
           },
           {
             etiqueta: "Pendiente de pago",
-            valor: formatearMonto(suma(porPagar, "total")),
-            nota: `${porPagar.length} por pagar · compras ${formatearMonto(suma(porPagar.filter((e) => e.origen === "compra"), "total"))} · servicios ${formatearMonto(suma(porPagar.filter((e) => e.origen === "servicio"), "total"))}`,
+            valor: formatearMonto(sumaPorPagar(porPagar)),
+            nota: `${porPagar.length} por pagar (con IVA, lo facturado) · órdenes ${formatearMonto(sumaPorPagar(porPagar.filter((e) => e.origen === "orden")))} · compras ${formatearMonto(sumaPorPagar(porPagar.filter((e) => e.origen === "compra")))} · servicios ${formatearMonto(sumaPorPagar(porPagar.filter((e) => e.origen === "servicio")))}`,
             acento: porPagar.length > 0 ? "aviso" : undefined,
           },
           {
             etiqueta: "Pendiente de factura",
-            valor: formatearMonto(suma(sinDocumento)),
-            nota: `${sinDocumento.length} ${sinDocumento.length === 1 ? "factura faltante" : "facturas faltantes"} (neto)${pagadasSinFactura.length ? ` · ${pagadasSinFactura.length} ya pagadas sin factura` : ""}`,
+            valor: formatearMonto(sinDocumento.reduce((t, e) => t + netoSinFactura(e), 0)),
+            nota: `${sinDocumento.length} ${sinDocumento.length === 1 ? "factura faltante" : "facturas faltantes"} (neto; en una OC, lo ya recibido)${pagadasSinFactura.length ? ` · ${pagadasSinFactura.length} ya pagadas sin factura` : ""}`,
             acento: sinDocumento.length > 0 ? "aviso" : undefined,
           },
           {
             etiqueta: "Pagos vencidos",
-            valor: formatearMonto(suma(pagoVencido, "total")),
+            valor: formatearMonto(sumaPorPagar(pagoVencido)),
             nota: `${pagoVencido.length} ${pagoVencido.length === 1 ? "pago vencido" : "pagos vencidos"}`,
             acento: pagoVencido.length > 0 ? "critico" : "bueno",
           },
@@ -473,8 +522,8 @@ function Contenidos({
         avisos={
           <>
             {avisosPlazo > 0 && <Chip tono="aviso">{avisosPlazo} {avisosPlazo === 1 ? "servicio por vencer o vencido" : "servicios por vencer o vencidos"}</Chip>}
-            {pagoVencido.length > 0 && <Chip tono="critico">{pagoVencido.length} {pagoVencido.length === 1 ? "pago vencido" : "pagos vencidos"} · {formatearMonto(pagoVencido.reduce((t, e) => t + e.total, 0))}</Chip>}
-            {porPagar.length > 0 && <Chip tono="info">{porPagar.length} por pagar · {formatearMonto(porPagar.reduce((t, e) => t + e.total, 0))}</Chip>}
+            {pagoVencido.length > 0 && <Chip tono="critico">{pagoVencido.length} {pagoVencido.length === 1 ? "pago vencido" : "pagos vencidos"} · {formatearMonto(sumaPorPagar(pagoVencido))}</Chip>}
+            {porPagar.length > 0 && <Chip tono="info">{porPagar.length} por pagar · {formatearMonto(sumaPorPagar(porPagar))}</Chip>}
             {porDevolver.length > 0 && <Chip tono="aviso">{porDevolver.length} {porDevolver.length === 1 ? "reembolso por devolver" : "reembolsos por devolver"} · {formatearMonto(porDevolver.reduce((t, e) => t + e.total, 0))}</Chip>}
           </>
         }
@@ -507,9 +556,9 @@ function Contenidos({
         }
       >
         <Tabla
-          columnas={columnas(edicion)}
+          columnas={columnas(edicion, abrirOrden)}
           filas={visibles}
-          claveDe={(e) => e.id}
+          claveDe={(e) => `${e.id}|${e.periodo}`}
           vacio={mes === "todos" ? "Ningún movimiento en este filtro." : "Ningún movimiento en este mes con este filtro."}
           pie={
             <>
@@ -525,13 +574,17 @@ function Contenidos({
   );
 }
 
-const tonoOrigen: Record<"compra" | "servicio", Tono> = {
+const tonoOrigen: Record<"compra" | "servicio" | "orden", Tono> = {
   compra: "neutro",
   servicio: "info",
+  orden: "info",
 };
+
+const nombreOrigen = { compra: "Compra", servicio: "Servicio", orden: "Orden de compra" } as const;
 
 const columnas = (
   edicion: ReturnType<typeof useEdicion<EgresoTercero>>,
+  abrirOrden: (id: string) => void,
 ): Columna<EgresoTercero>[] => [
   {
     clave: "detalle",
@@ -562,7 +615,7 @@ const columnas = (
             </span>
           </>
         ) : (
-          <Chip tono={tonoOrigen[e.origen]}>{e.origen === "compra" ? "Compra" : "Servicio"}</Chip>
+          <Chip tono={tonoOrigen[e.origen]}>{nombreOrigen[e.origen]}</Chip>
         )}
         {e.clase && (
           <span className="mt-1 block text-xs text-ink-soft">
@@ -596,8 +649,9 @@ const columnas = (
       const dias = diasDeServicio(e);
       return <>
         <span className="block whitespace-nowrap text-ink-soft">
-          {e.origen === "compra" ? mesLargo(e.periodo) : formatearFecha(e.fecha)}
+          {e.origen !== "servicio" ? mesLargo(e.periodo) : formatearFecha(e.fecha)}
         </span>
+        {e.origen === "orden" && <span className="mt-0.5 block text-xs text-ink-soft">Emitida: {formatearFecha(e.fecha)}</span>}
         {e.origen === "compra" && e.fecha.slice(0, 7) !== e.periodo.slice(0, 7) && (
           <span className="mt-0.5 block text-xs text-ink-soft">Documento: {formatearFecha(e.fecha)}</span>
         )}
@@ -626,6 +680,11 @@ const columnas = (
     celda: (e) => (
       <>
         <span className="block text-ink-soft">{formatearMonto(e.neto)}</span>
+        {e.origen === "orden" && (e.netoRecibido > 0 || e.netoFacturado > 0) && (
+          <span className="mt-0.5 block text-xs text-ink-soft">
+            recibido {formatearMonto(e.netoRecibido)} · facturado {formatearMonto(e.netoFacturado)}
+          </span>
+        )}
         {e.tipo === "reembolsable" && (
           <span className="mt-0.5 block text-xs text-ink-soft">reembolsable</span>
         )}
@@ -645,14 +704,21 @@ const columnas = (
     clave: "acciones",
     titulo: "",
     derecha: true,
-    celda: (e) => (
-      <AccionesFila
+    celda: (e) =>
+      e.origen === "orden" && e.ordenId ? (
+        // Una OC no se edita acá: se abre su ciclo (recibir, facturar, NC, cerrar).
+        <button type="button" onClick={() => abrirOrden(e.ordenId as string)}
+          className="rounded-full border border-mist-deep px-3 py-1.5 text-xs font-semibold text-ink-soft hover:border-ink hover:text-ink">
+          Abrir
+        </button>
+      ) : (
+        <AccionesFila
           permiso="gestion.editar"
-        alEditar={() => edicion.abrirEdicion(e)}
-        alVerHistorial={() => edicion.verHistorial(e.id, `${e.id} · ${e.tercero}`)}
-        alVerAdjuntos={() => edicion.verAdjuntos(e.id, `${e.id} · ${e.tercero}`)}
-      />
-    ),
+          alEditar={() => edicion.abrirEdicion(e)}
+          alVerHistorial={() => edicion.verHistorial(e.id, `${e.id} · ${e.tercero}`)}
+          alVerAdjuntos={() => edicion.verAdjuntos(e.id, `${e.id} · ${e.tercero}`)}
+        />
+      ),
   },
 ];
 
@@ -681,13 +747,13 @@ function estadoCiclo(o: Orden): EstadoCiclo {
 /**
  * Las OC con su ciclo: lo que llegó, lo facturado y lo pagado.
  *
- * Su costo ya pesa en el contrato desde que se emiten, pero no aparecen en el
- * detalle de arriba hasta que llega una factura. Desde acá se abre cada una
- * para recibir, agregar facturas, registrar la NC o cerrar el saldo.
+ * Su gasto ya está en el detalle de arriba desde que se emiten (0080); este
+ * panel es la cola de trabajo: las que siguen abiertas, sean del mes que sean.
+ * Desde acá se abre cada una para recibir, agregar facturas, registrar la NC o
+ * cerrar el saldo.
  */
-function OrdenesDeCompra({ ordenes, mes, alCambiar }: { ordenes: Orden[]; mes: Mes; alCambiar: () => void }) {
+function OrdenesDeCompra({ ordenes, mes, abrir }: { ordenes: Orden[]; mes: Mes; abrir: (id: string) => void }) {
   const [filtro, setFiltro] = useState<"abiertas" | "todas">("abiertas");
-  const [abierta, setAbierta] = useState<string | null>(null);
   const vigentes = ordenes.filter((o) => o.estado !== "anulada" && o.estado !== "borrador");
   const abiertas = vigentes.filter((o) => estadoCiclo(o) !== "pagada");
   /* Las abiertas salen todas, sean del mes que sean: son trabajo pendiente, y
@@ -696,7 +762,6 @@ function OrdenesDeCompra({ ordenes, mes, alCambiar }: { ordenes: Orden[]; mes: M
   const visibles = filtro === "todas" ? delMes : abiertas;
   const porFacturar = vigentes.reduce((t, o) => t + Math.max(0, o.neto - o.facturado), 0);
   const nc = vigentes.filter((o) => o.solicitarNc).length;
-  const orden = ordenes.find((o) => o.id === abierta) ?? null;
 
   return (
     <div className="mt-6">
@@ -710,10 +775,9 @@ function OrdenesDeCompra({ ordenes, mes, alCambiar }: { ordenes: Orden[]; mes: M
           filas={visibles}
           claveDe={(o) => o.id}
           vacio={filtro === "abiertas" ? "No hay órdenes abiertas." : "Todavía no hay órdenes registradas."}
-          columnas={columnasOrden(setAbierta)}
+          columnas={columnasOrden(abrir)}
         />
       </Panel>
-      {orden && <CicloOrden orden={orden} alCerrar={() => setAbierta(null)} alCambiar={alCambiar} />}
     </div>
   );
 }

@@ -63,6 +63,7 @@ type Cabecera = {
 const estadosPago = [
   { id: "pendiente" as const, titulo: "Pendiente de pago" },
   { id: "pagada" as const, titulo: "Pagada" },
+  { id: "anulada" as const, titulo: "Anulada (se dejó sin efecto: no cuenta como gasto)" },
 ];
 
 function cabeceraDe(compra: Compra | null, contratos: ContratoBreve[]): Cabecera {

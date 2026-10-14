@@ -17,7 +17,8 @@ const tonos: Record<Tono, { texto: string; fondo: string; simbolo: string }> = {
 };
 
 export function Chip({ tono, children }: { tono: Tono; children: React.ReactNode }) {
-  const t = tonos[tono];
+  // Un tono desconocido (dato nuevo que la pantalla aún no conoce) no debe tumbar la página.
+  const t = tonos[tono] ?? tonos.neutro;
   return (
     <span
       className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${t.fondo} ${t.texto}`}

@@ -43,6 +43,7 @@ import {
 const estadosPago = [
   { id: "pendiente" as const, titulo: "Pendiente de pago" },
   { id: "pagada" as const, titulo: "Pagada" },
+  { id: "anulada" as const, titulo: "Anulada (se dejó sin efecto: no cuenta como gasto)" },
 ];
 
 const hoy = () => new Date().toISOString().slice(0, 10);
@@ -71,7 +72,7 @@ type Borrador = {
   hasta: string;
   recurrente: boolean;
   periodicidad: Periodicidad | "";
-  estado_pago: "pendiente" | "pagada";
+  estado_pago: "pendiente" | "pagada" | "anulada";
   /* Factura y pago a plazo (0072): el gasto cuenta en `fecha`; el plazo corre desde la factura. */
   fecha_factura: string;
   plazo_dias: number;
