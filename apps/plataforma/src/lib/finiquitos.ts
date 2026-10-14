@@ -6,10 +6,11 @@ import { supabase } from "./supabase";
  * Finiquitos (0063): un registro por trabajador, en el mes en que se paga.
  *
  * No va dentro de la nómina del mes porque es otra cosa —un pago único al
- * terminar la relación laboral, con su propio documento firmado— pero sí suma
- * a lo que se gastó en personal ese mes. Con contrato, entra a su costo de
- * personal, al Dashboard y al resultado por anexo; sin contrato, es de Oficina
- * Central.
+ * terminar la relación laboral, con su propio documento firmado— y tampoco es
+ * costo mensual: es informativo y sirve para el cierre del contrato (0082).
+ * Antes (0063) sumaba al costo de personal del mes. Con contrato, se ve en el
+ * Personal de ese contrato (o de su anexo); sin contrato, es de Oficina
+ * Central. En ningún caso entra al Dashboard ni al resultado.
  */
 
 export type CausalFiniquito =

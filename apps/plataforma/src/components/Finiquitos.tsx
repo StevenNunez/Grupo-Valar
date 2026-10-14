@@ -125,7 +125,7 @@ export function PanelFiniquitos({
     <>
       <Panel
         titulo="Finiquitos"
-        nota="Un registro por trabajador, en el mes en que se paga. Suma al pago de personal del mes; el finiquito firmado se adjunta con el clip."
+        nota="Un registro por trabajador, en el mes en que se paga. Es informativo: no suma al costo mensual ni al del contrato, y sirve para el cierre del contrato. El finiquito firmado se adjunta con el clip."
         filtros={<BotonNuevo permiso={PERMISO} onClick={edicion.abrirNuevo}>Nuevo finiquito</BotonNuevo>}
       >
         <Tabla
@@ -291,8 +291,8 @@ function FormularioFiniquito({
         titulo={editando ? "Editar finiquito" : "Nuevo finiquito"}
         descripcion={
           de === "contratos"
-            ? "Lo que se pagó al terminar la relación laboral. Suma al costo de personal del contrato en el mes de pago."
-            : "Lo que se pagó al terminar la relación laboral. Suma al pago de personal de Oficina Central en el mes de pago."
+            ? "Lo que se pagó al terminar la relación laboral. Es informativo: no suma al costo del contrato, queda para su cierre."
+            : "Lo que se pagó al terminar la relación laboral. Es informativo: no suma al costo de Oficina Central."
         }
         abierto
         alCerrar={alCerrar}
@@ -321,7 +321,7 @@ function FormularioFiniquito({
               {...f.campo("causal")}
             />
 
-            <CampoMes etiqueta="Mes" requerido ayuda="El mes en que se paga: es el mes en que cuenta como gasto." {...f.campo("periodo")} />
+            <CampoMes etiqueta="Mes" requerido ayuda="El mes en que se paga. Es informativo: no cuenta como costo." {...f.campo("periodo")} />
             <CampoFecha etiqueta="Fecha de pago" ayuda="Opcional, la del finiquito firmado." {...f.campo("fecha_pago")} />
 
             <Ancho>

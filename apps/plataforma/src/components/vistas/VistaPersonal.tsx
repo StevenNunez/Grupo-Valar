@@ -195,8 +195,8 @@ function Contenidos({
         datos={[
           {
             etiqueta: "Pago de personal",
-            valor: formatearMonto(costo + finiquitos),
-            nota: `${cuando} · haberes ${formatearMonto(remuneraciones)} · aporte patronal ${formatearMonto(aporte)}${finiquitos > 0 ? ` · finiquitos ${formatearMonto(finiquitos)}` : ""}`,
+            valor: formatearMonto(costo),
+            nota: `${cuando} · haberes ${formatearMonto(remuneraciones)} · aporte patronal ${formatearMonto(aporte)} · sin finiquitos`,
           },
           {
             etiqueta: "Dotación actual",
@@ -211,7 +211,7 @@ function Contenidos({
           {
             etiqueta: "Finiquitos",
             valor: formatearMonto(finiquitos),
-            nota: `${finiquitosVisibles.length} ${finiquitosVisibles.length === 1 ? "finiquito" : "finiquitos"}${conReserva.length > 0 ? ` · ${conReserva.length} con reserva de derechos` : ""}`,
+            nota: `Informativo, no suma al costo · ${finiquitosVisibles.length} ${finiquitosVisibles.length === 1 ? "finiquito" : "finiquitos"}${conReserva.length > 0 ? ` · ${conReserva.length} con reserva de derechos` : ""}`,
             acento: conReserva.length > 0 ? "aviso" : undefined,
           },
         ]}

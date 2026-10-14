@@ -62,6 +62,30 @@ const rangos: { id: Periodo; titulo: string }[] = [
 const esMes = (p: Periodo) => p.startsWith("mes:");
 const mesDe = (p: Periodo) => p.slice(4);
 
+/** El primer día del mes que está corriendo, "2026-10-01". */
+function mesEnCurso() {
+  const hoy = new Date();
+  return hoy.getFullYear() + "-" + String(hoy.getMonth() + 1).padStart(2, "0") + "-01";
+}
+
+/** Los meses con movimientos, de contratos o de Oficina Central, del más viejo al más nuevo. */
+function periodosDe(datos: DatosDashboard) {
+  return [...new Set([
+    ...datos.meses.map((f) => f.periodo),
+    ...datos.oficina.map((f) => f.fecha.slice(0, 7) + "-01"),
+    ...datos.personalOficina.map((f) => f.periodo),
+  ])].sort();
+}
+
+/**
+ * Para analizar se abre en el último mes CERRADO: el mes corriente aún está
+ * a medias y distorsiona los márgenes. Se puede elegir igual desde el selector.
+ */
+function periodoInicial(datos: DatosDashboard): Periodo {
+  const cerrado = periodosDe(datos).filter((p) => p < mesEnCurso()).pop();
+  return cerrado ? ("mes:" + cerrado) as Periodo : "todo";
+}
+
 export function ControlDeGestion() {
   const usuario = useUsuario();
   /* Con clave, el Dashboard abre al instante con lo último que se vio y se
@@ -86,7 +110,7 @@ export function ControlDeGestion() {
 }
 
 function Tablero({ datos }: { datos: DatosDashboard }) {
-  const [periodo, setPeriodo] = useState<Periodo>("todo");
+  const [periodo, setPeriodo] = useState<Periodo>(() => periodoInicial(datos));
   const [contratoFiltro, setContratoFiltroCrudo] = useState<string>("todos");
   /* Los anexos que se suman al contrato elegido. Por defecto ninguno: el
      contrato se ve solo, y cada anexo se marca para sumarlo o se elige solo. */
@@ -136,14 +160,7 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
     }
     return id;
   };
-  const periodosDatos = useMemo(
-    () => [...new Set([
-      ...datos.meses.map((f) => f.periodo),
-      ...datos.oficina.map((f) => `${f.fecha.slice(0, 7)}-01`),
-      ...datos.personalOficina.map((f) => f.periodo),
-    ])].sort(),
-    [datos.meses, datos.oficina, datos.personalOficina],
-  );
+  const periodosDatos = useMemo(() => periodosDe(datos), [datos]);
 
   const filas = useMemo(() => {
     let base = datos.meses;
@@ -164,7 +181,7 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
   const mesesDisponibles = useMemo(() => {
     return [...periodosDatos].reverse().map((periodo) => ({
       id: `mes:${periodo}` as Periodo,
-      titulo: mesLargo(periodo),
+      titulo: mesLargo(periodo) + (periodo === mesEnCurso() ? " · en curso" : ""),
     }));
   }, [periodosDatos]);
 
