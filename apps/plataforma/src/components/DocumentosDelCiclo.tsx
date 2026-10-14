@@ -83,6 +83,7 @@ export function EstadoPagoImprimible({ ciclo, campos }: { ciclo: Ciclo; campos: 
         <Bloque titulo="Mandante">
           <Dato etiqueta="Cliente" valor={ciclo.cliente} />
           <Dato etiqueta="Contrato" valor={ciclo.contrato} />
+          {ciclo.anexoNombre && <Dato etiqueta="Anexo" valor={ciclo.anexoNombre} />}
           <Dato etiqueta="Código" valor={ciclo.contratoId} />
         </Bloque>
       </div>

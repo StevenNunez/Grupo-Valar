@@ -113,6 +113,37 @@ type Acum = {
 };
 const acumVacio = (): Acum => ({ venta: 0, ordinaria: 0, extraordinaria: 0, cobrado: 0, costo: 0, reembolsable: 0 });
 
+/**
+ * El período de un movimiento puede venir con cualquier día del mes (un EP
+ * con período "2026-08-15", una compra con su fecha). El Dashboard cuenta
+ * meses: sin llevarlos todos al día 1, agosto aparecía dos veces en el filtro
+ * y las cifras de un contrato quedaban partidas en dos filas.
+ */
+const primeroDelMes = (fecha: string) => `${fecha.slice(0, 7)}-01`;
+
+/** Junta las filas de un mismo contrato y mes (distintos días del mismo mes). */
+function unirResumenPorMes(filas: FilaResumenSQL[]): FilaResumenSQL[] {
+  const porClave = new Map<string, FilaResumenSQL>();
+  for (const r of filas) {
+    const periodo = primeroDelMes(r.periodo);
+    const clave = `${r.contrato_id}|${periodo}`;
+    const previa = porClave.get(clave);
+    if (!previa) {
+      porClave.set(clave, { ...r, periodo });
+      continue;
+    }
+    previa.venta += r.venta;
+    previa.venta_ordinaria += r.venta_ordinaria;
+    previa.venta_extraordinaria += r.venta_extraordinaria;
+    previa.cobrado += r.cobrado;
+    previa.costo += r.costo;
+    previa.reembolsable += r.reembolsable;
+    previa.margen = previa.venta - previa.costo;
+    previa.margen_pct = previa.venta > 0 ? Math.round(((previa.venta - previa.costo) / previa.venta) * 10000) / 100 : null;
+  }
+  return [...porClave.values()];
+}
+
 export async function cargarDashboard(): Promise<DatosDashboard> {
   const [resumen, categorias, oficina, nominas, anexos, alias, edpsAnexo, costosAnexo] = await Promise.all([
     supabase.from("resumen_mensual").select("*").order("periodo"),
@@ -162,7 +193,7 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
     contrato_id: string; anexo_id: string; periodo: string; tipo_edp: string; monto_neto: number; monto_cobrado: number;
   }[]) {
     if (!e.periodo) continue;
-    const a = celda(unidadDe(e.contrato_id, e.anexo_id), e.periodo);
+    const a = celda(unidadDe(e.contrato_id, e.anexo_id), primeroDelMes(e.periodo));
     a.venta += Number(e.monto_neto);
     if (e.tipo_edp === "extraordinario") a.extraordinaria += Number(e.monto_neto);
     else a.ordinaria += Number(e.monto_neto);
@@ -170,14 +201,14 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
   }
   for (const m of movimientos) {
     if (!m.periodo) continue;
-    const a = celda(unidadDe(m.contrato_id, m.anexo_id), m.periodo);
+    const a = celda(unidadDe(m.contrato_id, m.anexo_id), primeroDelMes(m.periodo));
     // Igual que resumen_mensual: lo ordinario es costo, lo reembolsable va aparte y un activo no cuenta.
     if (m.tipo === "ordinario") a.costo += Number(m.neto);
     else if (m.tipo === "reembolsable") a.reembolsable += Number(m.neto);
   }
 
   /* La base de cada contrato = el resumen menos lo de sus anexos. */
-  const filasResumen = ((resumen.data ?? []) as FilaResumenSQL[]).filter((r) => r.periodo);
+  const filasResumen = unirResumenPorMes(((resumen.data ?? []) as FilaResumenSQL[]).filter((r) => r.periodo));
   const meses: FilaMes[] = [];
   const baseDe = new Map<string, FilaMes>();
   for (const r of filasResumen) {
@@ -256,25 +287,38 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
     .map((a) => ({ id: `${a.contratoId}#${a.id}`, contratoId: a.contratoId, nombre: nombreAnexo(a.contratoId, a.id) }));
 
   /* Las categorías: lo del anexo sale de la categoría del contrato y pasa a una fila propia. */
-  const filasCategoria: FilaCategoria[] = ((categorias.data ?? []) as FilaCategoriaSQL[]).map((c) => ({
-    categoriaId: c.categoria_id,
-    contratoId: c.contrato_id,
-    categoria: c.categoria,
-    familia: c.familia,
-    presupuestoMensual: c.presupuesto_mensual,
-    periodo: c.periodo,
-    real: c.real,
+  const categoriaBase = new Map<string, FilaCategoria>();
+  for (const c of (categorias.data ?? []) as FilaCategoriaSQL[]) {
+    const periodo = c.periodo ? primeroDelMes(c.periodo) : null;
     // Si la 0014 no está aplicada, la columna no viene y `real` es lo mejor
     // que hay. La composición del costo quedará incluyendo reembolsables
     // hasta que se aplique, pero nada se cae.
-    realOrdinario: c.real_ordinario ?? c.real,
-  }));
-  const categoriaBase = new Map(filasCategoria.map((c) => [`${c.contratoId}|${c.categoriaId}|${c.periodo}`, c]));
+    const realOrdinario = c.real_ordinario ?? c.real;
+    const clave = `${c.contrato_id}|${c.categoria_id}|${periodo}`;
+    const previa = categoriaBase.get(clave);
+    if (previa) {
+      previa.real += c.real;
+      previa.realOrdinario += realOrdinario;
+    } else {
+      categoriaBase.set(clave, {
+        categoriaId: c.categoria_id,
+        contratoId: c.contrato_id,
+        categoria: c.categoria,
+        familia: c.familia,
+        presupuestoMensual: c.presupuesto_mensual,
+        periodo,
+        real: c.real,
+        realOrdinario,
+      });
+    }
+  }
+  const filasCategoria = [...categoriaBase.values()];
   const categoriasDeAnexo = new Map<string, FilaCategoria>();
   for (const m of movimientos) {
     if (!m.periodo) continue;
+    const mes = primeroDelMes(m.periodo);
     const catId = m.categoria_id ?? "sin-categoria";
-    const base = categoriaBase.get(`${m.contrato_id}|${catId}|${m.periodo}`);
+    const base = categoriaBase.get(`${m.contrato_id}|${catId}|${mes}`);
     const neto = Number(m.neto);
     const ordinario = m.tipo === "ordinario" ? neto : 0;
     if (base) {
@@ -282,7 +326,7 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
       base.realOrdinario = Math.max(0, base.realOrdinario - ordinario);
     }
     const unidad = unidadDe(m.contrato_id, m.anexo_id);
-    const clave = `${unidad}|${catId}|${m.periodo}`;
+    const clave = `${unidad}|${catId}|${mes}`;
     const actual = categoriasDeAnexo.get(clave);
     if (actual) {
       actual.real += neto;
@@ -294,7 +338,7 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
         categoria: m.categoria ?? "Sin categoría",
         familia: (m.familia as FilaCategoria["familia"] | null) ?? "compras",
         presupuestoMensual: 0,
-        periodo: m.periodo,
+        periodo: mes,
         real: neto,
         realOrdinario: ordinario,
       });
@@ -304,7 +348,7 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
   return {
     oficina,
     anexosDisponibles,
-    personalOficina: nominas.map((n) => ({ periodo: n.periodo, costo: n.costo_total })),
+    personalOficina: nominas.map((n) => ({ periodo: primeroDelMes(n.periodo), costo: n.costo_total })),
     /* Un ítem suelto (sin orden ni factura, p. ej. de una OC borrada) llega con
        periodo nulo: no pertenece a ningún mes y no debe tumbar el Dashboard. */
     meses: filasMes,

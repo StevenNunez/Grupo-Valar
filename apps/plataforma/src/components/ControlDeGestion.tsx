@@ -63,7 +63,10 @@ const esMes = (p: Periodo) => p.startsWith("mes:");
 const mesDe = (p: Periodo) => p.slice(4);
 
 export function ControlDeGestion() {
-  const { estado } = useConsulta<DatosDashboard>(cargarDashboard);
+  const usuario = useUsuario();
+  /* Con clave, el Dashboard abre al instante con lo último que se vio y se
+     actualiza por detrás: las vistas de las que sale son pesadas. */
+  const { estado } = useConsulta<DatosDashboard>(cargarDashboard, `${usuario.id}:${usuario.empresa}:dashboard-v2`);
 
   return (
     <>

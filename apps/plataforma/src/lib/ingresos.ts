@@ -1,5 +1,6 @@
 "use client";
 
+import { anexoRaiz, cargarAnexos, etiquetaAnexo } from "./anexos";
 import type { Datos } from "./campos";
 import type { PlantillaEdp } from "./plantillas-edp";
 import { resolverPlantillaEdp, resolverSeleccionEdp } from "./plantillas-edp";
@@ -291,6 +292,16 @@ export const etapas: { id: Etapa; titulo: string; falta: string }[] = [
  * objeto de ida y de vuelta.
  */
 export type Ciclo = EstadoPago & {
+  /**
+   * Lo que se controla por separado: el contrato base, o cada anexo con sus
+   * adendas ("C-MISC#AD-MISC-02"). Un anexo es un contrato más; sus estados de
+   * pago no se mezclan con los del contrato del que cuelga.
+   */
+  unidadId: string;
+  /** "Carpas" para un anexo; el nombre del contrato para la base. */
+  unidadNombre: string;
+  /** El nombre del anexo, o nulo si es el contrato base. */
+  anexoNombre: string | null;
   plantillaEdp: PlantillaEdp;
   /** Plantilla configurable: los campos con que se emitió (o los del contrato). */
   camposEdp: string[];
@@ -359,19 +370,34 @@ export function facturaDelCiclo(c: Ciclo): Factura | null {
 }
 
 export async function cargarCiclo(): Promise<Ciclo[]> {
-  const [ciclos, contratos] = await Promise.all([
+  const [ciclos, contratos, anexos] = await Promise.all([
     supabase.from("ciclo_ingreso").select("*")
       .order("periodo", { ascending: false }).order("numero", { ascending: false }),
     supabase.from("contratos").select("id, plantilla_edp, edp_campos"),
+    // Sin anexos (o sin la migración) todo queda en el contrato, como antes.
+    cargarAnexos().catch(() => []),
   ]);
 
   const error = ciclos.error ?? contratos.error;
   if (error) throw new Error(error.message);
+  const raizDe = (contratoId: string, anexoId: string) =>
+    anexoRaiz(anexos.filter((a) => a.contratoId === contratoId), anexoId);
+  const nombreDeAnexo = (contratoId: string, raiz: string) => {
+    const a = anexos.find((x) => x.contratoId === contratoId && x.id === raiz);
+    return a ? (a.nombre?.trim() || etiquetaAnexo(a)) : null;
+  };
   const plantillas = new Map((contratos.data ?? []).map((fila) => [fila.id, fila.plantilla_edp as PlantillaEdp]));
   const selecciones = new Map((contratos.data ?? []).map((fila) => [fila.id, (fila.edp_campos as string[] | null) ?? []]));
 
-  return (ciclos.data ?? []).map((f: Record<string, unknown>) => ({
-    anexoId: (f.anexo_id as string | null | undefined) ?? null,
+  return (ciclos.data ?? []).map((f: Record<string, unknown>) => {
+    const anexoId = (f.anexo_id as string | null | undefined) ?? null;
+    const raiz = anexoId ? raizDe(f.contrato_id as string, anexoId) : null;
+    const anexoNombre = raiz ? nombreDeAnexo(f.contrato_id as string, raiz) : null;
+    return {
+    unidadId: raiz ? `${f.contrato_id as string}#${raiz}` : (f.contrato_id as string),
+    unidadNombre: anexoNombre ?? (f.contrato as string),
+    anexoNombre,
+    anexoId,
     camposEdp: resolverSeleccionEdp((f.datos as Datos | null)?.campos_edp, selecciones.get(f.contrato_id as string) ?? []),
     id: f.id as string,
     plantillaEdp: resolverPlantillaEdp(
@@ -413,7 +439,8 @@ export async function cargarCiclo(): Promise<Ciclo[]> {
     estadoCobro: (f.estado_cobro as EstadoCobro | null) ?? null,
 
     etapa: f.etapa as Etapa,
-  }));
+    };
+  });
 }
 
 /**

@@ -18,6 +18,7 @@ import { CampoFiltro, Contenido, Desplegable, Encabezado, Filtro, Panel, Resumen
 import { cargarCampos, type CampoContrato } from "@/lib/campos";
 import { useConsulta } from "@/lib/consulta";
 import { cargarContratosBreve, type ContratoBreve } from "@/lib/contratos";
+import { useUsuario } from "@/lib/sesion";
 import { formatearMonto, mesLargo } from "@/lib/formato";
 import {
   cargarCiclo,
@@ -55,6 +56,8 @@ const opciones: { id: Filtrado; titulo: string }[] = [
 /* El flujo pide la OC antes de la factura, pero la falta de factura se cuenta
    igual aunque todavía no haya OC: de lo contrario "Sin factura" daba 0 con
    muchos EP sin facturar. Un EP rechazado no espera documentos. */
+/* El período de un EP puede venir con cualquier día del mes; el filtro cuenta meses. */
+const delMes = (fecha: string) => `${fecha.slice(0, 7)}-01`;
 const sinOrden = (c: Ciclo) => c.estado !== "rechazado" && !c.ordenId;
 const sinFactura = (c: Ciclo) => c.estado !== "rechazado" && !c.facturaId;
 const documentoPendiente = (c: Ciclo) => sinOrden(c) || sinFactura(c);
@@ -72,7 +75,8 @@ async function cargar(): Promise<Datos> {
 }
 
 export function VistaEstadosPago() {
-  const { estado, recargar } = useConsulta<Datos>(cargar);
+  const usuario = useUsuario();
+  const { estado, recargar } = useConsulta<Datos>(cargar, `${usuario.id}:${usuario.empresa}:estados-de-pago-v2`);
 
   /* Solo una ficha abierta a la vez: con varias desplegadas el listado deja de
      servir para lo que se usa, que es encontrar el EP que falta. */
@@ -195,9 +199,9 @@ export function VistaEstadosPago() {
 
 /** El nombre que lleva la barra de la vista previa. */
 function tituloDocumento(ciclo: Ciclo, cual: Documento) {
-  if (cual === "orden") return `Orden de compra N° ${ciclo.ordenNumero} · ${ciclo.contrato}`;
-  if (cual === "factura") return `Detalle de facturación ${ciclo.facturaId} · ${ciclo.contrato}`;
-  return `${nombreEdp(ciclo.numero, ciclo.tipoEdp)} · ${ciclo.contrato}`;
+  if (cual === "orden") return `Orden de compra N° ${ciclo.ordenNumero} · ${ciclo.unidadNombre}`;
+  if (cual === "factura") return `Detalle de facturación ${ciclo.facturaId} · ${ciclo.unidadNombre}`;
+  return `${nombreEdp(ciclo.numero, ciclo.tipoEdp)} · ${ciclo.unidadNombre}`;
 }
 
 /**
@@ -221,9 +225,9 @@ function TarjetaDeContrato({ ciclos, children }: { ciclos: Ciclo[]; children: Re
         className="flex w-full flex-col gap-3 px-5 py-4 text-left transition-colors hover:bg-mist/40 sm:flex-row sm:items-center"
       >
         <span className="min-w-0 flex-1">
-          <span className="block font-display text-base font-semibold text-ink">{primero.contrato}</span>
+          <span className="block font-display text-base font-semibold text-ink">{primero.unidadNombre}</span>
           <span className="mt-0.5 block text-xs text-ink-soft">
-            {primero.contratoId}{primero.cliente ? ` · ${primero.cliente}` : ""} · {ciclos.length} {ciclos.length === 1 ? "estado de pago" : "estados de pago"}
+            {primero.anexoNombre ? `Anexo de ${primero.contrato}` : primero.contratoId}{primero.cliente ? ` · ${primero.cliente}` : ""} · {ciclos.length} {ciclos.length === 1 ? "estado de pago" : "estados de pago"}
           </span>
         </span>
         <span className="flex flex-wrap items-center gap-2">
@@ -279,15 +283,16 @@ function Listado({
   const periodos = useMemo(
     () => [
       { id: "todos", titulo: "Todos" },
-      ...[...new Set(ciclos.map((c) => c.periodo))].sort().reverse()
+      ...[...new Set(ciclos.map((c) => delMes(c.periodo)))].sort().reverse()
         .map((p) => ({ id: p, titulo: mesLargo(p) })),
     ],
     [ciclos],
   );
   const opcionesContrato = useMemo(() => {
+    /* Cada anexo es su propio contrato: aparece aparte en el filtro. */
     const alias = new Map(contratos.map((c) => [c.id, c.nombreCorto || c.nombre]));
     const vistos = new Map<string, string>();
-    for (const c of ciclos) vistos.set(c.contratoId, alias.get(c.contratoId) ?? c.contrato);
+    for (const c of ciclos) vistos.set(c.unidadId, c.anexoNombre ?? alias.get(c.contratoId) ?? c.contrato);
     return [
       { id: "todos", titulo: "Todos" },
       ...[...vistos].map(([id, titulo]) => ({ id, titulo })).sort((a, b) => a.titulo.localeCompare(b.titulo, "es")),
@@ -297,7 +302,7 @@ function Listado({
   /* Período y contrato recortan todo, KPIs incluidos; la barra de estatus
      solo recorta la lista. */
   const delRecorte = useMemo(
-    () => ciclos.filter((c) => (periodo === "todos" || c.periodo === periodo) && (contrato === "todos" || c.contratoId === contrato)),
+    () => ciclos.filter((c) => (periodo === "todos" || delMes(c.periodo) === periodo) && (contrato === "todos" || c.unidadId === contrato)),
     [ciclos, periodo, contrato],
   );
 
@@ -314,8 +319,9 @@ function Listado({
      mezclaban los números (el EP 30 de un contrato junto al EP 30 de otro). */
   const porContrato = useMemo(() => {
     const grupos = new Map<string, Ciclo[]>();
-    for (const c of visibles) grupos.set(c.contratoId, [...(grupos.get(c.contratoId) ?? []), c]);
-    return [...grupos.values()].sort((a, b) => a[0].contrato.localeCompare(b[0].contrato, "es"));
+    for (const c of visibles) grupos.set(c.unidadId, [...(grupos.get(c.unidadId) ?? []), c]);
+    return [...grupos.values()].sort((a, b) =>
+      a[0].contrato.localeCompare(b[0].contrato, "es") || (a[0].anexoNombre ?? "").localeCompare(b[0].anexoNombre ?? "", "es"));
   }, [visibles]);
 
   const suma = (ls: Ciclo[]) => ls.reduce((t, c) => t + c.montoNeto, 0);
@@ -390,7 +396,7 @@ function Listado({
         ) : (
           <div className="flex flex-col gap-5 px-6 py-6 lg:px-8">
             {porContrato.map((grupo) => (
-              <TarjetaDeContrato key={grupo[0].contratoId} ciclos={grupo}>
+              <TarjetaDeContrato key={grupo[0].unidadId} ciclos={grupo}>
                 {grupo.map((c) => (
                   <FichaDeCiclo
                     key={c.id}
