@@ -54,9 +54,9 @@ import Link from "next/link";
 type Periodo = "3" | "6" | "todo" | `mes:${string}`;
 
 const rangos: { id: Periodo; titulo: string }[] = [
-  { id: "todo", titulo: "Todo el período" },
-  { id: "3", titulo: "Últimos 3 meses" },
-  { id: "6", titulo: "Últimos 6 meses" },
+  { id: "todo", titulo: "Todos los meses cerrados" },
+  { id: "3", titulo: "Últimos 3 meses cerrados" },
+  { id: "6", titulo: "Últimos 6 meses cerrados" },
 ];
 
 const esMes = (p: Periodo) => p.startsWith("mes:");
@@ -162,6 +162,15 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
   };
   const periodosDatos = useMemo(() => periodosDe(datos), [datos]);
 
+  /* "Todos los meses" y los últimos N cuentan solo meses CERRADOS: el que está
+     corriendo viene a medias y distorsiona el análisis. Un mes en particular,
+     el corriente incluido, sí se puede elegir. Si aún no hay ninguno cerrado,
+     se usa lo que haya. */
+  const periodosCerrados = useMemo(() => {
+    const cerrados = periodosDatos.filter((p) => p < mesEnCurso());
+    return cerrados.length > 0 ? cerrados : periodosDatos;
+  }, [periodosDatos]);
+
   const filas = useMemo(() => {
     let base = datos.meses;
     if (unidades) {
@@ -169,12 +178,16 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
     }
     if (esMes(periodo)) {
       base = base.filter((f) => f.periodo === mesDe(periodo));
-    } else if (periodo !== "todo") {
-      const meses = (!unidades ? periodosDatos : [...new Set(base.map((f) => f.periodo))].sort()).slice(-Number(periodo));
+    } else if (periodo === "todo") {
+      base = base.filter((f) => periodosCerrados.includes(f.periodo));
+    } else {
+      const meses = (
+        !unidades ? periodosCerrados : [...new Set(base.map((f) => f.periodo).filter((p) => periodosCerrados.includes(p)))].sort()
+      ).slice(-Number(periodo));
       base = base.filter((f) => meses.includes(f.periodo));
     }
     return base;
-  }, [datos.meses, periodo, unidades, periodosDatos]);
+  }, [datos.meses, periodo, unidades, periodosCerrados]);
 
   /* Los meses que hay para elegir, del más nuevo al más viejo. Salen de los
      datos, no de un calendario: solo se ofrece lo que tiene movimientos. */
@@ -187,20 +200,19 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
 
   const oficinaVisible = useMemo(() => {
     if (esMes(periodo)) return datos.oficina.filter((f) => f.fecha.startsWith(mesDe(periodo).slice(0, 7)));
-    if (periodo === "todo") return datos.oficina;
-    const meses = periodosDatos.slice(-Number(periodo)).map((p) => p.slice(0, 7));
+    const elegidos = periodo === "todo" ? periodosCerrados : periodosCerrados.slice(-Number(periodo));
+    const meses = elegidos.map((p) => p.slice(0, 7));
     return datos.oficina.filter((f) => meses.includes(f.fecha.slice(0, 7)));
-  }, [datos.oficina, periodo, periodosDatos]);
+  }, [datos.oficina, periodo, periodosCerrados]);
 
   // Mismo recorte de período que los egresos de oficina.
   const personalOficina = useMemo(() => {
+    const elegidos = periodo === "todo" ? periodosCerrados : periodosCerrados.slice(-Number(periodo));
     const filas = esMes(periodo)
       ? datos.personalOficina.filter((f) => f.periodo === mesDe(periodo))
-      : periodo === "todo"
-        ? datos.personalOficina
-        : datos.personalOficina.filter((f) => periodosDatos.slice(-Number(periodo)).includes(f.periodo));
+      : datos.personalOficina.filter((f) => elegidos.includes(f.periodo));
     return filas.reduce((t, f) => t + f.costo, 0);
-  }, [datos.personalOficina, periodo, periodosDatos]);
+  }, [datos.personalOficina, periodo, periodosCerrados]);
 
   const total = sumar(filas);
   const contratos = agruparPorContrato(filas);
@@ -223,7 +235,7 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
 
   const alcance = [
     unidades ? unidades.map(nombreDeUnidad).join(" + ") : "Todos los contratos",
-    [...rangos, ...mesesDisponibles].find((p) => p.id === periodo)?.titulo ?? "Todo el período",
+    [...rangos, ...mesesDisponibles].find((p) => p.id === periodo)?.titulo ?? "Todos los meses cerrados",
   ].join(" · ");
 
   if (filas.length === 0) {
