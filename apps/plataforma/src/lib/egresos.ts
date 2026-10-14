@@ -504,6 +504,8 @@ export type EgresoTercero = {
   id: string;
   origen: "compra" | "servicio";
   contratoId: string;
+  /** El anexo al que se carga (0076); nulo = contrato base. */
+  anexoId: string | null;
   categoria: string;
   tercero: string;
   documento: string | null;
@@ -542,6 +544,7 @@ export async function cargarEgresosTerceros(): Promise<EgresoTercero[]> {
     id: f.id as string,
     origen: f.origen as "compra" | "servicio",
     contratoId: f.contrato_id as string,
+    anexoId: (f.anexo_id as string | null | undefined) ?? null,
     categoria: f.categoria as string,
     tercero: f.tercero as string,
     documento: (f.documento as string | null) ?? null,

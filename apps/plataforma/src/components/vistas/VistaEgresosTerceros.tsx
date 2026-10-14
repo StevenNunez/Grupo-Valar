@@ -16,7 +16,9 @@ import { cargarCategorias, type Categoria } from "@/lib/categorias";
 import { useConsulta } from "@/lib/consulta";
 import { usePuede, useUsuario } from "@/lib/sesion";
 import { cargarOrdenes, type Orden } from "@/lib/ordenes";
+import { cargarAnexos, type Anexo } from "@/lib/anexos";
 import { cargarContratosBreve, type ContratoBreve } from "@/lib/contratos";
+import { opcionesDeUnidad, unidadDe, unidades } from "@/lib/unidades";
 import {
   cargarCompras,
   cargarEgresosTerceros,
@@ -41,7 +43,7 @@ import { diasHastaFecha, formatearFecha, formatearMonto, mesLargo } from "@/lib/
  * apagados según lo que se elija arriba, que es peor que tener dos botones.
  */
 
-type Filtrado = "todos" | "compras" | "servicios" | "reembolsos" | "recurrentes" | "sinFactura";
+type Filtrado = "todos" | "compras" | "servicios" | "reembolsos" | "recurrentes" | "sinFactura" | "porPagar" | "vencidos" | "pagados" | "activos";
 
 /* Filtros secundarios; los primarios son el contrato y el mes. */
 const opciones: { id: Filtrado; titulo: string }[] = [
@@ -51,6 +53,10 @@ const opciones: { id: Filtrado; titulo: string }[] = [
   { id: "reembolsos", titulo: "Reembolsos" },
   { id: "recurrentes", titulo: "Recurrentes" },
   { id: "sinFactura", titulo: "Sin factura" },
+  { id: "porPagar", titulo: "Por pagar" },
+  { id: "vencidos", titulo: "Vencidos" },
+  { id: "pagados", titulo: "Pagados" },
+  { id: "activos", titulo: "Activos" },
 ];
 
 /** Falta el documento del proveedor. Un reembolso se respalda con su rendición, no con factura. */
@@ -59,6 +65,9 @@ const sinFactura = (e: EgresoTercero) =>
 
 /** Deuda con proveedores: lo que se debe y todavía no se pagó (los reembolsos van aparte). */
 const debe = (e: EgresoTercero) => !e.rendidoPor && e.estadoPago !== "pagada";
+
+/** Impago y con el plazo ya cumplido. */
+const vencido = (e: EgresoTercero) => debe(e) && !!e.vencimiento && diasHastaFecha(e.vencimiento) < 0;
 
 /**
  * Dónde va el pago de un servicio: sin factura todavía, por vencer, vencido o
@@ -95,6 +104,7 @@ function diasDeServicio(e: EgresoTercero) {
 type Lista = {
   egresos: EgresoTercero[];
   ordenes: Orden[];
+  anexos: Anexo[];
 };
 
 type Apoyo = {
@@ -107,8 +117,8 @@ type Apoyo = {
 };
 
 async function cargarLista(): Promise<Lista> {
-  const [egresos, ordenes] = await Promise.all([cargarEgresosTerceros(), cargarOrdenes()]);
-  return { egresos, ordenes };
+  const [egresos, ordenes, anexos] = await Promise.all([cargarEgresosTerceros(), cargarOrdenes(), cargarAnexos().catch(() => [] as Anexo[])]);
+  return { egresos, ordenes, anexos };
 }
 
 async function cargarApoyo(): Promise<Apoyo> {
@@ -137,7 +147,7 @@ function mesInicial(egresos: EgresoTercero[]): Mes {
 
 export function VistaEgresosTerceros() {
   const usuario = useUsuario();
-  const lista = useConsulta<Lista>(cargarLista, `${usuario.id}:${usuario.empresa}:egresos-terceros`);
+  const lista = useConsulta<Lista>(cargarLista, `${usuario.id}:${usuario.empresa}:egresos-terceros-v2`);
   const apoyo = useConsulta<Apoyo>(cargarApoyo);
   const recargar = () => {
     lista.recargar();
@@ -173,12 +183,13 @@ export function VistaEgresosTerceros() {
       />
 
       <Contenido consulta={lista.estado}>
-        {({ egresos, ordenes }) => {
+        {({ egresos, ordenes, anexos }) => {
           const mes = mesElegido ?? mesInicial(egresos);
           return (
             <>
               <Contenidos
                 filas={egresos}
+                anexos={anexos}
                 edicion={edicion}
                 contratos={apoyo.estado.estado === "listo" ? apoyo.estado.datos.contratos : []}
                 mes={mes}
@@ -352,6 +363,7 @@ function MenuNuevo({
 
 function Contenidos({
   filas: todas,
+  anexos,
   contratos,
   edicion,
   mes,
@@ -359,6 +371,7 @@ function Contenidos({
   actualizando,
 }: {
   filas: EgresoTercero[];
+  anexos: Anexo[];
   contratos: ContratoBreve[];
   edicion: ReturnType<typeof useEdicion<EgresoTercero>>;
   mes: Mes;
@@ -368,15 +381,12 @@ function Contenidos({
   const [filtro, setFiltro] = useState<Filtrado>("todos");
   const [contrato, setContrato] = useState("todos");
 
-  const opcionesContrato = useMemo(() => {
-    const alias = new Map(contratos.map((c) => [c.id, c.nombreCorto || c.nombre]));
-    return [
-      { id: "todos", titulo: "Todos" },
-      ...[...new Set(todas.map((e) => e.contratoId))]
-        .map((id) => ({ id, titulo: alias.get(id) ?? id }))
-        .sort((a, b) => a.titulo.localeCompare(b.titulo, "es")),
-    ];
-  }, [todas, contratos]);
+  /* Un anexo se controla como un contrato aparte: Carpas tiene su propia opción. */
+  const unidadDeFila = (e: EgresoTercero) => unidadDe(anexos, e.contratoId, e.anexoId);
+  const opcionesContrato = useMemo(
+    () => opcionesDeUnidad(unidades(contratos, anexos), todas.map((e) => unidadDe(anexos, e.contratoId, e.anexoId))),
+    [todas, contratos, anexos],
+  );
 
   /* Los meses salen de los datos: solo se ofrece lo que tiene movimientos. */
   const meses = useMemo(
@@ -392,9 +402,10 @@ function Contenidos({
   const filas = useMemo(
     () =>
       todas.filter(
-        (e) => (mes === "todos" || primeroDelMes(e.periodo) === mes) && (contrato === "todos" || e.contratoId === contrato),
+        (e) => (mes === "todos" || primeroDelMes(e.periodo) === mes) && (contrato === "todos" || unidadDeFila(e) === contrato),
       ),
-    [todas, mes, contrato],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [todas, mes, contrato, anexos],
   );
 
   const visibles = useMemo(() => {
@@ -403,20 +414,25 @@ function Contenidos({
     if (filtro === "reembolsos") return filas.filter((e) => e.rendidoPor);
     if (filtro === "recurrentes") return filas.filter((e) => e.recurrente);
     if (filtro === "sinFactura") return filas.filter(sinFactura);
+    if (filtro === "porPagar") return filas.filter(debe);
+    if (filtro === "vencidos") return filas.filter(vencido);
+    if (filtro === "pagados") return filas.filter((e) => !e.rendidoPor && e.estadoPago === "pagada");
+    if (filtro === "activos") return filas.filter((e) => e.tipo === "activo");
     return filas;
   }, [filas, filtro]);
 
   const neto = visibles.reduce((t, e) => t + e.neto, 0);
   const total = visibles.reduce((t, e) => t + e.total, 0);
 
-  const compras = filas.filter((e) => e.origen === "compra");
-  const servicios = filas.filter((e) => e.origen === "servicio");
-  const porDevolver = filas.filter((e) => e.rendidoPor && e.estadoPago !== "pagada");
-  const porPagar = filas.filter(debe);
-  const pagoVencido = porPagar.filter((e) => e.vencimiento && diasHastaFecha(e.vencimiento) < 0);
-  const sinDocumento = filas.filter(sinFactura);
+  const compras = visibles.filter((e) => e.origen === "compra");
+  const servicios = visibles.filter((e) => e.origen === "servicio");
+  const porDevolver = visibles.filter((e) => e.rendidoPor && e.estadoPago !== "pagada");
+  const porPagar = visibles.filter(debe);
+  const pagoVencido = porPagar.filter(vencido);
+  const sinDocumento = visibles.filter(sinFactura);
+  const pagadasSinFactura = sinDocumento.filter((e) => e.estadoPago === "pagada");
   const suma = (ls: EgresoTercero[], campo: "neto" | "total" = "neto") => ls.reduce((t, e) => t + e[campo], 0);
-  const avisosPlazo = filas.filter((e) => {
+  const avisosPlazo = visibles.filter((e) => {
     const dias = diasDeServicio(e);
     return dias !== null && dias <= 30;
   }).length;
@@ -427,8 +443,8 @@ function Contenidos({
         datos={[
           {
             etiqueta: "Gasto total",
-            valor: formatearMonto(suma(filas)),
-            nota: `${filas.length} movimientos · compras ${formatearMonto(suma(compras))} · servicios ${formatearMonto(suma(servicios))}. Con o sin OC o factura`,
+            valor: formatearMonto(suma(visibles)),
+            nota: `${visibles.length} movimientos · compras ${formatearMonto(suma(compras))} · servicios ${formatearMonto(suma(servicios))}. Con o sin OC o factura`,
           },
           {
             etiqueta: "Pendiente de pago",
@@ -439,7 +455,7 @@ function Contenidos({
           {
             etiqueta: "Pendiente de factura",
             valor: formatearMonto(suma(sinDocumento)),
-            nota: `${sinDocumento.length} ${sinDocumento.length === 1 ? "factura faltante" : "facturas faltantes"} (neto)`,
+            nota: `${sinDocumento.length} ${sinDocumento.length === 1 ? "factura faltante" : "facturas faltantes"} (neto)${pagadasSinFactura.length ? ` · ${pagadasSinFactura.length} ya pagadas sin factura` : ""}`,
             acento: sinDocumento.length > 0 ? "aviso" : undefined,
           },
           {
@@ -453,7 +469,7 @@ function Contenidos({
 
       <Panel
         titulo="Detalle"
-        nota={`${actualizando ? "Actualizando… · " : ""}${visibles.length} de ${filas.length} movimientos`}
+        nota={`${actualizando ? "Actualizando… · " : ""}${visibles.length} de ${filas.length} movimientos · las tarjetas siguen los filtros`}
         avisos={
           <>
             {avisosPlazo > 0 && <Chip tono="aviso">{avisosPlazo} {avisosPlazo === 1 ? "servicio por vencer o vencido" : "servicios por vencer o vencidos"}</Chip>}

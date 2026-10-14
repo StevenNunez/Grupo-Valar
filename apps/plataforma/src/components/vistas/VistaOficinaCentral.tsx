@@ -19,9 +19,17 @@ import {
 } from "../ui/Formulario";
 import { DialogoHistorial } from "../ui/Historial";
 import { Tabla, Total, type Columna } from "../ui/Tabla";
-import { Contenido, Desplegable, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
+import { CampoFiltro, Contenido, Desplegable, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
 
 type FiltroCategoria = "todos" | CategoriaOficina;
+type Estatus = "todos" | "porPagar" | "pagados" | "sinDocumento";
+
+const estatusGasto: { id: Estatus; titulo: string }[] = [
+  { id: "todos", titulo: "Todos" },
+  { id: "porPagar", titulo: "Por pagar" },
+  { id: "pagados", titulo: "Pagados" },
+  { id: "sinDocumento", titulo: "Sin documento" },
+];
 
 const nombreCategoria = Object.fromEntries(
   categoriasOficina.map((categoria) => [categoria.id, categoria.titulo]),
@@ -50,6 +58,7 @@ export function VistaOficinaCentral() {
   const { estado, recargar } = useConsulta(cargarEgresosOficina);
   const [categoria, setCategoria] = useState<FiltroCategoria>("todos");
   const [mes, setMes] = useState("todos");
+  const [estatus, setEstatus] = useState<Estatus>("todos");
   const [formulario, setFormulario] = useState<{ registro: EgresoOficina | null; categoria: CategoriaOficina } | null>(null);
   const [historial, setHistorial] = useState<EgresoOficina | null>(null);
   const puedeCargar = usePuede("gestion.editar");
@@ -72,17 +81,27 @@ export function VistaOficinaCentral() {
         {(filas) => {
           const meses = [...new Set(filas.map((fila) => fila.fecha.slice(0, 7)))].sort().reverse();
           const delMes = mes === "todos" ? filas : filas.filter((fila) => fila.fecha.startsWith(mes));
-          const visibles = categoria === "todos" ? delMes : delMes.filter((fila) => fila.categoria === categoria);
+          // Período y estatus recortan todo; la categoría, además, la lista y las tarjetas de arriba.
+          const delEstatus = delMes.filter((fila) =>
+            estatus === "porPagar" ? fila.estado === "pendiente"
+              : estatus === "pagados" ? fila.estado === "pagado"
+              : estatus === "sinDocumento" ? !fila.documento
+              : true);
+          const visibles = categoria === "todos" ? delEstatus : delEstatus.filter((fila) => fila.categoria === categoria);
           const porCategoria = Object.fromEntries(
-            categoriasOficina.map(({ id }) => [id, totalOficina(delMes.filter((fila) => fila.categoria === id))]),
+            categoriasOficina.map(({ id }) => [id, totalOficina(delEstatus.filter((fila) => fila.categoria === id))]),
           ) as Record<CategoriaOficina, number>;
+          const porPagar = visibles.filter((fila) => fila.estado === "pendiente");
+          const sinDocumento = visibles.filter((fila) => !fila.documento);
+          const activos = visibles.filter((fila) => fila.categoria === "activos");
           return (
             <>
               <Resumen datos={[
-                { etiqueta: "Egresos netos", valor: formatearMonto(totalOficina(delMes)), nota: "Incluye compra de activos" },
-                { etiqueta: "Gastos operativos", valor: formatearMonto(totalOficina(delMes.filter((fila) => fila.categoria !== "activos"))), nota: "Compras, arriendos, insumos y reembolsos" },
-                { etiqueta: "Compra de activos", valor: formatearMonto(porCategoria.activos), nota: "Inversión identificada aparte" },
-                { etiqueta: "Pendiente de pago", valor: formatearMonto(totalOficina(delMes.filter((fila) => fila.estado === "pendiente"))), nota: "Valor neto registrado" },
+                { etiqueta: "Egresos netos", valor: formatearMonto(totalOficina(visibles)), nota: `${visibles.length} ${visibles.length === 1 ? "movimiento" : "movimientos"} · incluye compra de activos` },
+                { etiqueta: "Gastos operativos", valor: formatearMonto(totalOficina(visibles.filter((fila) => fila.categoria !== "activos"))), nota: "Compras, arriendos, insumos y reembolsos" },
+                { etiqueta: "Compra de activos", valor: formatearMonto(totalOficina(activos)), nota: `${activos.length} ${activos.length === 1 ? "activo" : "activos"} · inversión identificada aparte` },
+                { etiqueta: "Pendiente de pago", valor: formatearMonto(totalOficina(porPagar)), nota: `${porPagar.length} por pagar${sinDocumento.length > 0 ? ` · ${sinDocumento.length} sin documento` : ""} · neto`,
+                  acento: porPagar.length > 0 ? "aviso" : undefined },
               ]} />
               <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {categoriasOficina.map(({ id, titulo }) => (
@@ -95,14 +114,22 @@ export function VistaOficinaCentral() {
                   </button>
                 ))}
               </div>
-              <Panel titulo="Movimientos de Oficina Central" nota="Cada movimiento pertenece a la empresa, sin afectar el margen de un contrato."
-                filtros={<div className="flex flex-wrap gap-2">
-                  <Desplegable etiqueta="Mes" valor={mes} alCambiar={setMes} grupos={[{ opciones: [
-                    { id: "todos", titulo: "Todos los meses" },
-                    ...meses.map((id) => ({ id, titulo: mesLargo(`${id}-01`) })),
-                  ] }]} />
-                  <Filtro etiqueta="Categoría" opciones={[{ id: "todos", titulo: "Todos" }, ...categoriasOficina]} valor={categoria} alCambiar={setCategoria} />
-                </div>}>
+              <Panel titulo="Movimientos de Oficina Central" nota={`${visibles.length} de ${filas.length} movimientos · las tarjetas siguen los filtros · cada movimiento es de la empresa y no afecta el margen de un contrato`}
+                filtrosAbajo
+                filtros={<>
+                  <CampoFiltro etiqueta="Período">
+                    <Desplegable etiqueta="Período" valor={mes} alCambiar={setMes} grupos={[{ opciones: [
+                      { id: "todos", titulo: "Todos los meses" },
+                      ...meses.map((id) => ({ id, titulo: mesLargo(`${id}-01`) })),
+                    ] }]} />
+                  </CampoFiltro>
+                  <CampoFiltro etiqueta="Categoría">
+                    <Filtro etiqueta="Categoría" opciones={[{ id: "todos", titulo: "Todos" }, ...categoriasOficina]} valor={categoria} alCambiar={setCategoria} />
+                  </CampoFiltro>
+                  <CampoFiltro etiqueta="Estatus">
+                    <Filtro etiqueta="Estatus" opciones={estatusGasto} valor={estatus} alCambiar={setEstatus} />
+                  </CampoFiltro>
+                </>}>
                 <Tabla filas={visibles} claveDe={(fila) => fila.id} vacio="Aún no hay egresos de oficina central para este filtro."
                   columnas={columnas(puedeCargar ? (fila) => setFormulario({ registro: fila, categoria: fila.categoria }) : null, setHistorial)}
                   pie={<><Total colSpan={4}>Total neto</Total><Total derecha>{formatearPesos(totalOficina(visibles))}</Total><Total colSpan={2} /></>} />

@@ -17,7 +17,7 @@ import {
 } from "../ui/Formulario";
 import { AccionesFila, BotonNuevo, DialogoHistorial, useEdicion } from "../ui/Historial";
 import { Tabla, Total, type Columna } from "../ui/Tabla";
-import { Contenido, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
+import { CampoFiltro, Contenido, Desplegable, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
 
 /**
  * La nómina del personal de Oficina Central.
@@ -72,50 +72,88 @@ export function VistaPersonalOficina() {
   );
 }
 
-function Contenidos({ filas, finiquitos: todosFiniquitos, edicion, alCambiar }: {
+type Estatus = "todos" | "hhExtra" | "finiquitos" | "reserva";
+
+const estatusPersonal: { id: Estatus; titulo: string }[] = [
+  { id: "todos", titulo: "Todos" },
+  { id: "hhExtra", titulo: "Con HH extra" },
+  { id: "finiquitos", titulo: "Con finiquitos" },
+  { id: "reserva", titulo: "Finiquito con reserva" },
+];
+
+const delMes = (fecha: string) => `${fecha.slice(0, 7)}-01`;
+
+function Contenidos({ filas: todas, finiquitos: todosFiniquitos, edicion, alCambiar }: {
   filas: NominaOficina[];
   finiquitos: Finiquito[];
   edicion: ReturnType<typeof useEdicion<NominaOficina>>;
   alCambiar: () => void;
 }) {
   const [mes, setMes] = useState<string>("todos");
+  const [estatus, setEstatus] = useState<Estatus>("todos");
 
-  const meses = useMemo(() => [
-    { id: "todos", titulo: "Todos" },
-    ...[...new Set([...filas, ...todosFiniquitos].map((f) => f.periodo))].sort().reverse()
-      .map((p) => ({ id: p, titulo: mesLargo(p).replace(/ \d{4}$/, "") })),
-  ], [filas, todosFiniquitos]);
-  const visibles = mes === "todos" ? filas : filas.filter((f) => f.periodo === mes);
+  const meses = useMemo(
+    () => [...new Set([...todas, ...todosFiniquitos].map((f) => delMes(f.periodo)))].sort().reverse()
+      .map((m) => ({ id: m, titulo: mesLargo(m) })),
+    [todas, todosFiniquitos],
+  );
+
+  // Oficina Central no cuelga de un contrato: el filtro es el período y el estatus.
+  const delPeriodo = mes === "todos" ? todas : todas.filter((f) => delMes(f.periodo) === mes);
+  const finiquitosDelPeriodo = mes === "todos" ? todosFiniquitos : todosFiniquitos.filter((f) => delMes(f.periodo) === mes);
+
+  const visibles = estatus === "hhExtra"
+    ? delPeriodo.filter((f) => f.horas_extra_cantidad > 0 || f.horas_extra_monto > 0)
+    : estatus === "finiquitos" || estatus === "reserva" ? [] : delPeriodo;
+  const finiquitosVisibles = estatus === "hhExtra" ? []
+    : estatus === "reserva" ? finiquitosDelPeriodo.filter((f) => f.conReserva)
+    : finiquitosDelPeriodo;
 
   const suma = (campo: "total_haberes" | "aporte_patronal" | "horas_extra_monto" | "costo_total" | "horas_hombre") =>
     visibles.reduce((t, f) => t + f[campo], 0);
   const costo = suma("costo_total");
-  const finiquitosVisibles = mes === "todos" ? todosFiniquitos : todosFiniquitos.filter((f) => f.periodo === mes);
   const finiquitos = finiquitosVisibles.reduce((t, f) => t + f.total, 0);
+  const conReserva = finiquitosVisibles.filter((f) => f.conReserva);
   const horas = suma("horas_hombre");
+  const costoHhExtra = suma("horas_extra_monto");
+  const cuando = mes === "todos" ? "Acumulado" : mesLargo(mes);
   // La dotación del último mes es la foto de hoy; sumar meses contaría a la misma persona varias veces.
-  const ultimo = filas[0] ?? null;
+  const ultimo = visibles.reduce<NominaOficina | null>((u, f) => (u === null || f.periodo > u.periodo ? f : u), null);
 
   return (
     <>
       <Resumen datos={[
         { etiqueta: "Pago de personal", valor: formatearMonto(costo + finiquitos),
-          nota: `${mes === "todos" ? "Acumulado" : mesLargo(mes)} · haberes ${formatearMonto(suma("total_haberes"))} · aporte patronal ${formatearMonto(suma("aporte_patronal"))}${finiquitos > 0 ? ` · finiquitos ${formatearMonto(finiquitos)}` : ""}` },
+          nota: `${cuando} · haberes ${formatearMonto(suma("total_haberes"))} · aporte patronal ${formatearMonto(suma("aporte_patronal"))}${finiquitos > 0 ? ` · finiquitos ${formatearMonto(finiquitos)}` : ""}` },
         { etiqueta: "Dotación actual", valor: formatearNumero(ultimo?.dotacion ?? 0), nota: ultimo ? `Personas en ${mesLargo(ultimo.periodo)}` : "Sin registro" },
-        { etiqueta: "Horas hombre", valor: formatearNumero(horas), nota: "En el período seleccionado" },
-        { etiqueta: "Costo por HH", valor: formatearPesos(horas > 0 ? Math.round(costo / horas) : 0), nota: "Costo total del mes, sin finiquitos" },
+        { etiqueta: "Horas hombre", valor: formatearNumero(horas),
+          nota: costoHhExtra > 0 ? `${cuando} · HH extra ${formatearMonto(costoHhExtra)}` : `${cuando}, sin HH extra` },
+        { etiqueta: "Finiquitos", valor: formatearMonto(finiquitos),
+          nota: `${finiquitosVisibles.length} ${finiquitosVisibles.length === 1 ? "finiquito" : "finiquitos"}${conReserva.length > 0 ? ` · ${conReserva.length} con reserva de derechos` : ""}`,
+          acento: conReserva.length > 0 ? "aviso" : undefined },
       ]} />
 
-      <Panel titulo="Detalle por mes" nota={`${visibles.length} de ${filas.length} nóminas`}
-        filtros={<Filtro etiqueta="Mes" opciones={meses} valor={mes} alCambiar={setMes} />}>
+      <Panel titulo="Detalle por mes"
+        nota={`${visibles.length} de ${todas.length} nóminas · las tarjetas siguen los filtros · costo por HH ${formatearPesos(horas > 0 ? Math.round(costo / horas) : 0)}`}
+        filtrosAbajo
+        filtros={<>
+          <CampoFiltro etiqueta="Período">
+            <Desplegable etiqueta="Período" valor={mes} alCambiar={setMes}
+              grupos={[{ opciones: [{ id: "todos", titulo: "Todos los meses" }] }, { titulo: "Un mes", opciones: meses }]} />
+          </CampoFiltro>
+          <CampoFiltro etiqueta="Estatus">
+            <Filtro etiqueta="Estatus" opciones={estatusPersonal} valor={estatus} alCambiar={setEstatus} />
+          </CampoFiltro>
+        </>}>
         <Tabla columnas={columnas(edicion)} filas={visibles} claveDe={(f) => f.id}
-          vacio={filas.length === 0 ? "Todavía no hay nóminas de Oficina Central. Crea la primera con «Nueva nómina»." : "Ninguna nómina en este mes."}
+          vacio={todas.length === 0 ? "Todavía no hay nóminas de Oficina Central. Crea la primera con «Nueva nómina»."
+            : estatus === "finiquitos" || estatus === "reserva" ? "Este estatus solo mira finiquitos (abajo)." : "Ninguna nómina con este filtro."}
           pie={visibles.length > 1 ? <>
             <Total colSpan={2}>Total</Total>
             <Total derecha>{formatearNumero(horas)}</Total>
             <Total derecha>{formatearMonto(suma("total_haberes"))}</Total>
             <Total derecha>{formatearMonto(suma("aporte_patronal"))}</Total>
-            <Total derecha>{formatearMonto(suma("horas_extra_monto"))}</Total>
+            <Total derecha>{formatearMonto(costoHhExtra)}</Total>
             <Total derecha>{formatearMonto(costo)}</Total>
             <Total />
           </> : undefined} />

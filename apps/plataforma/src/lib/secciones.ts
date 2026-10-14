@@ -96,6 +96,8 @@ export const seccionesGestion: Seccion[] = [
          gastó con terceros— y en dos pantallas había que sumar de cabeza. */
       { titulo: "Compras y Servicios", href: `${RAIZ_GESTION}/egresos/terceros/`, permiso: "egresos.ver" },
       { titulo: "Personal", href: `${RAIZ_GESTION}/egresos/personal/`, permiso: "personal.ver" },
+      /* Depósitos que se pagan y se devuelven: no son gasto, pero salen de caja. */
+      { titulo: "Garantías", href: `${RAIZ_GESTION}/egresos/garantias/`, permiso: "egresos.ver" },
       /* Los sueldos de la casa matriz no son un egreso más: piden además
          "Ver costos de personal", igual que los de cada contrato. */
       {

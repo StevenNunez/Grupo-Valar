@@ -2,10 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { Tabla, Total, type Columna } from "../ui/Tabla";
-import { Contenido, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
+import { CampoFiltro, Contenido, Desplegable, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
 import { FormularioPersonal } from "../formularios/FormularioPersonal";
 import { DialogoAdjuntos } from "../ui/Adjuntos";
 import { AccionesFila, BotonNuevo, DialogoHistorial, useEdicion } from "../ui/Historial";
+import { anexoRaiz, cargarAnexos, type Anexo } from "@/lib/anexos";
+import { opcionesDeUnidad, unidadDe, unidades } from "@/lib/unidades";
 import { cargarCampos, type CampoContrato } from "@/lib/campos";
 import { cargarCategorias, type Categoria } from "@/lib/categorias";
 import { useConsulta } from "@/lib/consulta";
@@ -22,17 +24,19 @@ type Datos = {
   contratos: ContratoBreve[];
   campos: CampoContrato[];
   categorias: Categoria[];
+  anexos: Anexo[];
 };
 
 async function cargar(): Promise<Datos> {
-  const [personal, finiquitos, contratos, campos, categorias] = await Promise.all([
+  const [personal, finiquitos, contratos, campos, categorias, anexos] = await Promise.all([
     cargarPersonal(),
     cargarFiniquitos("contratos"),
     cargarContratosBreve(),
     cargarCampos(),
     cargarCategorias(),
+    cargarAnexos().catch(() => [] as Anexo[]),
   ]);
-  return { personal, finiquitos, contratos, campos, categorias };
+  return { personal, finiquitos, contratos, campos, categorias, anexos };
 }
 
 export function VistaPersonal() {
@@ -90,6 +94,17 @@ export function VistaPersonal() {
   );
 }
 
+type Estatus = "todos" | "hhExtra" | "finiquitos" | "reserva";
+
+const estatusPersonal: { id: Estatus; titulo: string }[] = [
+  { id: "todos", titulo: "Todos" },
+  { id: "hhExtra", titulo: "Con HH extra" },
+  { id: "finiquitos", titulo: "Con finiquitos" },
+  { id: "reserva", titulo: "Finiquito con reserva" },
+];
+
+const delMes = (fecha: string) => `${fecha.slice(0, 7)}-01`;
+
 function Contenidos({
   datos,
   edicion,
@@ -99,38 +114,80 @@ function Contenidos({
   edicion: ReturnType<typeof useEdicion<CostoPersonal>>;
   alCambiar: () => void;
 }) {
-  const filas = datos.personal;
+  const { anexos } = datos;
   const [mes, setMes] = useState<string>("todos");
+  const [contrato, setContrato] = useState("todos");
+  const [estatus, setEstatus] = useState<Estatus>("todos");
 
   const meses = useMemo(() => {
-    const unicos = [...new Set([...filas, ...datos.finiquitos].map((f) => f.periodo))].sort().reverse();
-    return [
-      { id: "todos", titulo: "Todos" },
-      ...unicos.map((m) => ({ id: m, titulo: mesLargo(m).replace(/ \d{4}$/, "") })),
-    ];
-  }, [filas, datos.finiquitos]);
+    const unicos = [...new Set([...datos.personal, ...datos.finiquitos].map((f) => delMes(f.periodo)))].sort().reverse();
+    return unicos.map((m) => ({ id: m, titulo: mesLargo(m) }));
+  }, [datos.personal, datos.finiquitos]);
 
-  const visibles = useMemo(
-    () => (mes === "todos" ? filas : filas.filter((f) => f.periodo === mes)),
-    [filas, mes],
+  /* Un anexo se controla como un contrato aparte: Carpas tiene su propia opción. */
+  const opcionesContrato = useMemo(
+    () =>
+      opcionesDeUnidad(unidades(datos.contratos, anexos), [
+        ...datos.personal.map((f) => unidadDe(anexos, f.contratoId, f.anexoId)),
+        ...datos.finiquitos.filter((f) => f.contratoId).map((f) => unidadDe(anexos, f.contratoId as string, f.anexoId)),
+      ]),
+    [datos.contratos, datos.personal, datos.finiquitos, anexos],
   );
+
+  // Período y contrato recortan los dos orígenes; el estatus decide qué se mira.
+  const filas = useMemo(
+    () =>
+      datos.personal.filter(
+        (f) =>
+          (mes === "todos" || delMes(f.periodo) === mes) &&
+          (contrato === "todos" || unidadDe(anexos, f.contratoId, f.anexoId) === contrato),
+      ),
+    [datos.personal, anexos, mes, contrato],
+  );
+  const finiquitosDelFiltro = useMemo(
+    () =>
+      datos.finiquitos.filter(
+        (f) =>
+          (mes === "todos" || delMes(f.periodo) === mes) &&
+          (contrato === "todos" || (f.contratoId !== null && unidadDe(anexos, f.contratoId, f.anexoId) === contrato)),
+      ),
+    [datos.finiquitos, anexos, mes, contrato],
+  );
+
+  const visibles = useMemo(() => {
+    if (estatus === "hhExtra") return filas.filter((f) => f.horasExtraCantidad > 0 || f.horasExtraMonto > 0);
+    if (estatus === "finiquitos" || estatus === "reserva") return [];
+    return filas;
+  }, [filas, estatus]);
+  const finiquitosVisibles = useMemo(() => {
+    if (estatus === "hhExtra") return [];
+    if (estatus === "reserva") return finiquitosDelFiltro.filter((f) => f.conReserva);
+    return finiquitosDelFiltro;
+  }, [finiquitosDelFiltro, estatus]);
 
   const remuneraciones = visibles.reduce((t, f) => t + f.remuneraciones, 0);
   const aporte = visibles.reduce((t, f) => t + f.aportePatronal, 0);
   const costoHhExtra = visibles.reduce((t, f) => t + f.horasExtraMonto, 0);
   const costo = visibles.reduce((t, f) => t + f.costoTotal, 0);
-  const finiquitosVisibles = mes === "todos" ? datos.finiquitos : datos.finiquitos.filter((f) => f.periodo === mes);
   const finiquitos = finiquitosVisibles.reduce((t, f) => t + f.total, 0);
+  const conReserva = finiquitosVisibles.filter((f) => f.conReserva);
   const horas = visibles.reduce((t, f) => t + f.horasHombre, 0);
 
   // La dotación del último mes es la foto de hoy; sumar todos los meses daría
   // un número sin sentido (la misma persona contada nueve veces).
-  const ultimoMes = filas.length > 0 ? filas[0].periodo : null;
-  const dotacionActual = filas
+  const ultimoMes = visibles.reduce<string | null>((u, f) => (u === null || f.periodo > u ? f.periodo : u), null);
+  const dotacionActual = visibles
     .filter((f) => f.periodo === ultimoMes)
     .reduce((t, f) => t + f.dotacion, 0);
 
   const costoPorHora = horas > 0 ? costo / horas : 0;
+  const cuando = mes === "todos" ? "Acumulado" : mesLargo(mes);
+
+  const nombreAnexo = (id: string | null) => {
+    if (!id) return null;
+    const a = anexos.find((x) => x.id === anexoRaiz(anexos, id));
+    return a ? a.nombre?.trim() || `Anexo N°${a.numero}` : null;
+  };
 
   return (
     <>
@@ -139,7 +196,7 @@ function Contenidos({
           {
             etiqueta: "Pago de personal",
             valor: formatearMonto(costo + finiquitos),
-            nota: `${mes === "todos" ? "Acumulado" : mesLargo(mes)} · haberes ${formatearMonto(remuneraciones)} · aporte patronal ${formatearMonto(aporte)}${finiquitos > 0 ? ` · finiquitos ${formatearMonto(finiquitos)}` : ""}`,
+            nota: `${cuando} · haberes ${formatearMonto(remuneraciones)} · aporte patronal ${formatearMonto(aporte)}${finiquitos > 0 ? ` · finiquitos ${formatearMonto(finiquitos)}` : ""}`,
           },
           {
             etiqueta: "Dotación actual",
@@ -149,26 +206,50 @@ function Contenidos({
           {
             etiqueta: "Horas hombre",
             valor: formatearNumero(horas),
-            nota: "En el período seleccionado",
+            nota: costoHhExtra > 0 ? `${cuando} · HH extra ${formatearMonto(costoHhExtra)}` : `${cuando}, sin HH extra`,
           },
           {
-            etiqueta: "Costo por HH",
-            valor: formatearPesos(Math.round(costoPorHora)),
-            nota: "Costo total del mes, sin finiquitos",
+            etiqueta: "Finiquitos",
+            valor: formatearMonto(finiquitos),
+            nota: `${finiquitosVisibles.length} ${finiquitosVisibles.length === 1 ? "finiquito" : "finiquitos"}${conReserva.length > 0 ? ` · ${conReserva.length} con reserva de derechos` : ""}`,
+            acento: conReserva.length > 0 ? "aviso" : undefined,
           },
         ]}
       />
 
       <Panel
         titulo="Detalle por contrato y mes"
-        nota={`${visibles.length} de ${filas.length} registros`}
-        filtros={<Filtro etiqueta="Mes" opciones={meses} valor={mes} alCambiar={setMes} />}
+        nota={`${visibles.length} de ${datos.personal.length} registros · las tarjetas siguen los filtros · costo por HH ${formatearPesos(Math.round(costoPorHora))}`}
+        filtrosAbajo
+        filtros={
+          <>
+            <CampoFiltro etiqueta="Período">
+              <Desplegable
+                etiqueta="Período"
+                valor={mes}
+                alCambiar={setMes}
+                grupos={[{ opciones: [{ id: "todos", titulo: "Todos los meses" }] }, { titulo: "Un mes", opciones: meses }]}
+              />
+            </CampoFiltro>
+            <CampoFiltro etiqueta="Contrato">
+              <Desplegable
+                etiqueta="Contrato"
+                valor={contrato}
+                alCambiar={setContrato}
+                grupos={[{ opciones: opcionesContrato.map((o) => ({ ...o, titulo: o.id === "todos" ? "Todos los contratos" : o.titulo })) }]}
+              />
+            </CampoFiltro>
+            <CampoFiltro etiqueta="Estatus">
+              <Filtro etiqueta="Estatus" opciones={estatusPersonal} valor={estatus} alCambiar={setEstatus} />
+            </CampoFiltro>
+          </>
+        }
       >
         <Tabla
-          columnas={columnas(edicion)}
+          columnas={columnas(edicion, nombreAnexo)}
           filas={visibles}
           claveDe={(f) => f.id}
-          vacio="Ningún registro en este mes."
+          vacio={estatus === "finiquitos" || estatus === "reserva" ? "Este estatus solo mira finiquitos (abajo)." : "Ningún registro con este filtro."}
           pie={
             <>
               <Total colSpan={3}>Total</Total>
@@ -241,6 +322,7 @@ export function HorasYCosto({ horas, costo }: { horas: number; costo: number }) 
 
 const columnas = (
   edicion: ReturnType<typeof useEdicion<CostoPersonal>>,
+  nombreAnexo: (id: string | null) => string | null,
 ): Columna<CostoPersonal>[] => [
   {
     clave: "contrato",
@@ -251,6 +333,7 @@ const columnas = (
         <span className="block font-semibold text-ink">{f.contrato}</span>
         <span className="mt-0.5 block text-xs text-ink-soft">
           {f.contratoId} · {f.faena}
+          {nombreAnexo(f.anexoId) ? ` · Anexo: ${nombreAnexo(f.anexoId)}` : ""}
         </span>
       </>
     ),
