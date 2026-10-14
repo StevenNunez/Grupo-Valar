@@ -24,7 +24,7 @@ import type { CampoContrato, Datos } from "@/lib/campos";
 import { categoriasDe, type Categoria } from "@/lib/categorias";
 import { eliminar } from "@/lib/crud";
 import { opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
-import { cargarLineasDeCompra, guardarCompraDirecta, siguienteIdCompra, type Compra } from "@/lib/egresos";
+import { cargarLineasDeCompra, guardarCompraDirecta, siguienteIdCompra, type Compra, type EstadoPagoCompra } from "@/lib/egresos";
 import { formatearPesos } from "@/lib/formato";
 
 /**
@@ -57,7 +57,13 @@ type Cabecera = {
   fecha: string;
   periodo_control: string;
   iva: number;
+  estado_pago: EstadoPagoCompra;
 };
+
+const estadosPago = [
+  { id: "pendiente" as const, titulo: "Pendiente de pago" },
+  { id: "pagada" as const, titulo: "Pagada" },
+];
 
 function cabeceraDe(compra: Compra | null, contratos: ContratoBreve[]): Cabecera {
   if (!compra) {
@@ -70,6 +76,7 @@ function cabeceraDe(compra: Compra | null, contratos: ContratoBreve[]): Cabecera
       fecha: hoy(),
       periodo_control: mesActual(),
       iva: 0,
+      estado_pago: "pendiente",
     };
   }
   return {
@@ -81,6 +88,7 @@ function cabeceraDe(compra: Compra | null, contratos: ContratoBreve[]): Cabecera
     fecha: compra.fecha,
     periodo_control: compra.periodoControl,
     iva: compra.iva,
+    estado_pago: compra.estadoPago,
   };
 }
 
@@ -204,6 +212,7 @@ export function FormularioCompra({
           fecha: f.datos.fecha,
           periodoControl: f.datos.periodo_control,
           iva,
+          estadoPago: f.datos.estado_pago,
           datos: propios,
           lineas: conDescripcion.map(({ descripcion, unidad, cantidad, precio_unitario, categoria_id, tipo }) => ({
             descripcion: descripcion.trim(), unidad, cantidad, precio_unitario, categoria_id, tipo,
@@ -296,6 +305,13 @@ export function FormularioCompra({
               {...f.campo("periodo_control")}
             />
 
+            <CampoSeleccion
+              etiqueta="Estado de pago"
+              opciones={estadosPago}
+              ayuda="Una compra hecha por fuera (ya pagada) se ingresa directo como pagada."
+              {...f.campo("estado_pago")}
+            />
+
             <Ancho>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
                 <div className="min-w-0 flex-1">
@@ -352,7 +368,7 @@ export function FormularioCompra({
               <LineasDeGasto
                 lineas={lineas}
                 alCambiar={setLineas}
-                categorias={propias.map((c) => ({ id: c.id, nombre: c.nombre }))}
+                categorias={propias.map((c) => ({ id: c.id, nombre: c.nombre, esActivo: c.esActivo }))}
                 afectaIva={afectaIva}
               />
             )}

@@ -145,6 +145,7 @@ export function CategoriasDelContrato({
                               </span>
                               <span className="flex shrink-0 items-center gap-1.5">
                                 {!c.afectaIva && <Chip tono="info">Sin IVA</Chip>}
+                                {c.esActivo && <Chip tono="info">Activos</Chip>}
                                 {!c.activa && <Chip tono="neutro">Apagada</Chip>}
                               </span>
                             </button>
@@ -180,6 +181,7 @@ type Borrador = {
   nombre: string;
   familia: Familia;
   afecta_iva: string;
+  es_activo: string;
   presupuesto_mensual: number;
   orden: number;
   activa: string;
@@ -218,6 +220,7 @@ function FormularioCategoria({
       : familia === "personal"
         ? "no"
         : "si",
+    es_activo: categoria?.esActivo ? "si" : "no",
     presupuesto_mensual: categoria?.presupuestoMensual ?? 0,
     orden: categoria?.orden ?? existentes.length,
     activa: categoria === null || categoria.activa ? "si" : "no",
@@ -234,6 +237,7 @@ function FormularioCategoria({
       nombre: d.nombre.trim(),
       familia: d.familia,
       afecta_iva: d.afecta_iva === "si",
+      es_activo: d.es_activo === "si",
       presupuesto_mensual: d.presupuesto_mensual,
       orden: d.orden,
       activa: d.activa === "si",
@@ -298,6 +302,13 @@ function FormularioCategoria({
             opciones={siNo}
             ayuda="Los sueldos y las HH extra no llevan IVA y entran íntegros al costo."
             {...f.campo("afecta_iva")}
+          />
+
+          <CampoSeleccion
+            etiqueta="Es de activos"
+            opciones={siNo}
+            ayuda="Equipos, herramientas, mobiliario: lo que se compra acá se marca como activo y no resta de la rentabilidad del contrato."
+            {...f.campo("es_activo")}
           />
 
           <CampoDinero

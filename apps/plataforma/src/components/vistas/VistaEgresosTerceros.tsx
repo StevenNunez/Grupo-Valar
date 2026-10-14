@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { FormularioCompra } from "../formularios/FormularioCompra";
-import { FormularioOrden } from "../formularios/FormularioOrden";
 import { FormularioReembolso } from "../formularios/FormularioReembolso";
 import { CicloOrden } from "../CicloOrden";
 import { FormularioServicio } from "../formularios/FormularioServicio";
@@ -10,7 +9,7 @@ import { DialogoAdjuntos } from "../ui/Adjuntos";
 import { Chip, type Tono } from "../ui/Chip";
 import { AccionesFila, DialogoHistorial, useEdicion } from "../ui/Historial";
 import { Tabla, Total, type Columna } from "../ui/Tabla";
-import { Contenido, Desplegable, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
+import { CampoFiltro, Contenido, Desplegable, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
 import { cargarProveedores, type Proveedor } from "@/lib/abastecimiento";
 import { cargarCampos, type CampoContrato } from "@/lib/campos";
 import { cargarCategorias, type Categoria } from "@/lib/categorias";
@@ -42,17 +41,24 @@ import { diasHastaFecha, formatearFecha, formatearMonto, mesLargo } from "@/lib/
  * apagados según lo que se elija arriba, que es peor que tener dos botones.
  */
 
-type Filtrado = "todos" | "compras" | "servicios" | "reembolsos" | "recurrentes" | "plazos" | "porPagar";
+type Filtrado = "todos" | "compras" | "servicios" | "reembolsos" | "recurrentes" | "sinFactura";
 
+/* Filtros secundarios; los primarios son el contrato y el mes. */
 const opciones: { id: Filtrado; titulo: string }[] = [
   { id: "todos", titulo: "Todos" },
   { id: "compras", titulo: "Compras" },
   { id: "servicios", titulo: "Servicios" },
   { id: "reembolsos", titulo: "Reembolsos" },
   { id: "recurrentes", titulo: "Recurrentes" },
-  { id: "porPagar", titulo: "Por pagar" },
-  { id: "plazos", titulo: "Término próximo" },
+  { id: "sinFactura", titulo: "Sin factura" },
 ];
+
+/** Falta el documento del proveedor. Un reembolso se respalda con su rendición, no con factura. */
+const sinFactura = (e: EgresoTercero) =>
+  !e.rendidoPor && (e.origen === "compra" ? !e.documento : !e.vencimiento && !e.fechaFactura);
+
+/** Deuda con proveedores: lo que se debe y todavía no se pagó (los reembolsos van aparte). */
+const debe = (e: EgresoTercero) => !e.rendidoPor && e.estadoPago !== "pagada";
 
 /**
  * Dónde va el pago de un servicio: sin factura todavía, por vencer, vencido o
@@ -60,10 +66,11 @@ const opciones: { id: Filtrado; titulo: string }[] = [
  * cuándo hay que pagarlo (el plazo corre desde la factura).
  */
 function pagoDe(e: EgresoTercero): { tono: Tono; texto: string } | null {
-  if (e.origen !== "servicio" || e.rendidoPor) return null;
+  if (e.rendidoPor) return null;
   if (e.estadoPago === "pagada") {
     return { tono: "bueno", texto: e.fechaPago ? `Pagado el ${formatearFecha(e.fechaPago)}` : "Pagado" };
   }
+  if (e.origen === "compra") return { tono: "neutro", texto: "Pendiente de pago" };
   if (!e.vencimiento) {
     const dias = -diasHastaFecha(e.fecha);
     return { tono: dias > 30 ? "aviso" : "neutro", texto: "Factura pendiente" };
@@ -145,11 +152,6 @@ export function VistaEgresosTerceros() {
      de las boletas queda colgando del mismo registro. */
   const [adjuntarReembolso, setAdjuntarReembolso] = useState<string | null>(null);
   const puedeCargar = usePuede("gestion.editar");
-  /* La OC es de Abastecimiento: registrarla pide su permiso, aunque se haga
-     desde acá. Es la misma orden, no una copia. */
-  const puedeRegistrarOC = usePuede("ordenes.emitir");
-  const [registrandoOC, setRegistrandoOC] = useState(false);
-  const [adjuntarOC, setAdjuntarOC] = useState<string | null>(null);
 
   return (
     <>
@@ -157,17 +159,15 @@ export function VistaEgresosTerceros() {
         titulo="Compras y Servicios"
         descripcion="Todo lo que se gasta con terceros: materiales, subcontratos, arriendos y fletes. El personal va aparte, porque no es un gasto con un tercero."
         acciones={
-          (puedeCargar || puedeRegistrarOC) && (
-            <div className="flex flex-wrap gap-2">
-              {puedeRegistrarOC && <BotonCrear onClick={() => setRegistrandoOC(true)}>Registrar OC</BotonCrear>}
-              {puedeCargar && <BotonCrear onClick={() => setCreando("compra")}>Nueva compra</BotonCrear>}
-              {puedeCargar && <BotonCrear onClick={() => setCreando("reembolso")}>Registrar reembolso</BotonCrear>}
-              {puedeCargar && (
-              <BotonCrear onClick={() => setCreando("servicio")} destacado>
-                Nuevo servicio
-              </BotonCrear>
-              )}
-            </div>
+          puedeCargar && (
+            <MenuNuevo
+              opciones={[
+                { id: "compra", titulo: "Nueva compra" },
+                { id: "servicio", titulo: "Nuevo servicio" },
+                { id: "reembolso", titulo: "Nuevo reembolso" },
+              ]}
+              alElegir={(id) => setCreando(id as "compra" | "servicio" | "reembolso")}
+            />
           )
         }
       />
@@ -180,6 +180,7 @@ export function VistaEgresosTerceros() {
               <Contenidos
                 filas={egresos}
                 edicion={edicion}
+                contratos={apoyo.estado.estado === "listo" ? apoyo.estado.datos.contratos : []}
                 mes={mes}
                 alCambiarMes={setMes}
                 actualizando={lista.actualizando}
@@ -196,23 +197,6 @@ export function VistaEgresosTerceros() {
         const datos = apoyo.estado.datos;
         return (
           <>
-            {registrandoOC && (
-              <FormularioOrden
-                orden={null}
-                registrar
-                contratos={datos.contratos}
-                categorias={datos.categorias}
-                proveedores={datos.proveedores}
-                usuario={usuario}
-                alCerrar={() => setRegistrandoOC(false)}
-                alGuardado={(id) => {
-                  recargar();
-                  // El PDF de Drive se adjunta apenas se registra: es el respaldo de la orden.
-                  if (id) setAdjuntarOC(id);
-                }}
-              />
-            )}
-
             {/* Cada origen abre su propio formulario, con sus campos. Un
                 reembolso es una compra, pero se carga por comprobante. */}
             {(creando === "compra" || (edicion.registro?.origen === "compra" && !edicion.registro.rendidoPor)) && (
@@ -297,16 +281,6 @@ export function VistaEgresosTerceros() {
         />
       )}
 
-      {adjuntarOC && (
-        <DialogoAdjuntos
-          tabla="ordenes_compra_proveedor"
-          registroId={adjuntarOC}
-          titulo={`Adjunta el PDF de la orden ${adjuntarOC}`}
-          abierto
-          alCerrar={() => setAdjuntarOC(null)}
-        />
-      )}
-
       {edicion.adjuntos && (
         <DialogoAdjuntos
           tabla={edicion.adjuntos.id.startsWith("SV") ? "servicios" : "compras"}
@@ -321,55 +295,88 @@ export function VistaEgresosTerceros() {
   );
 }
 
-function BotonCrear({
-  onClick,
-  destacado = false,
-  children,
+/** Un solo botón azul "+ Nuevo" con lo que se puede registrar. */
+function MenuNuevo({
+  opciones,
+  alElegir,
 }: {
-  onClick: () => void;
-  destacado?: boolean;
-  children: React.ReactNode;
+  opciones: { id: string; titulo: string }[];
+  alElegir: (id: string) => void;
 }) {
+  const [abierto, setAbierto] = useState(false);
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={
-        destacado
-          ? "inline-flex items-center gap-2 rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep"
-          : "inline-flex items-center gap-2 rounded-full border border-mist-deep px-5 py-2.5 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink"
-      }
+    <div
+      className="relative"
+      onBlur={(ev) => {
+        if (!ev.currentTarget.contains(ev.relatedTarget as Node | null)) setAbierto(false);
+      }}
     >
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.4"
-        aria-hidden="true"
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={abierto}
+        onClick={() => setAbierto((a) => !a)}
+        className="inline-flex items-center gap-2 rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep"
       >
-        <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-      </svg>
-      {children}
-    </button>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+          <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+        </svg>
+        Nuevo
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true"
+          className={`transition-transform ${abierto ? "rotate-180" : ""}`}>
+          <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {abierto && (
+        <ul role="menu" className="absolute right-0 z-20 mt-2 w-48 overflow-hidden rounded-xl border border-mist-deep bg-white py-1 shadow-lg">
+          {opciones.map((o) => (
+            <li key={o.id} role="none">
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setAbierto(false);
+                  alElegir(o.id);
+                }}
+                className="block w-full px-4 py-2 text-left text-sm font-semibold text-ink-soft hover:bg-mist hover:text-ink"
+              >
+                {o.titulo}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
 function Contenidos({
   filas: todas,
+  contratos,
   edicion,
   mes,
   alCambiarMes,
   actualizando,
 }: {
   filas: EgresoTercero[];
+  contratos: ContratoBreve[];
   edicion: ReturnType<typeof useEdicion<EgresoTercero>>;
   mes: Mes;
   alCambiarMes: (m: Mes) => void;
   actualizando: boolean;
 }) {
   const [filtro, setFiltro] = useState<Filtrado>("todos");
+  const [contrato, setContrato] = useState("todos");
+
+  const opcionesContrato = useMemo(() => {
+    const alias = new Map(contratos.map((c) => [c.id, c.nombreCorto || c.nombre]));
+    return [
+      { id: "todos", titulo: "Todos" },
+      ...[...new Set(todas.map((e) => e.contratoId))]
+        .map((id) => ({ id, titulo: alias.get(id) ?? id }))
+        .sort((a, b) => a.titulo.localeCompare(b.titulo, "es")),
+    ];
+  }, [todas, contratos]);
 
   /* Los meses salen de los datos: solo se ofrece lo que tiene movimientos. */
   const meses = useMemo(
@@ -383,8 +390,11 @@ function Contenidos({
 
   // Todo lo de abajo —tarjetas, filtros y total— mira el mes elegido.
   const filas = useMemo(
-    () => (mes === "todos" ? todas : todas.filter((e) => primeroDelMes(e.periodo) === mes)),
-    [todas, mes],
+    () =>
+      todas.filter(
+        (e) => (mes === "todos" || primeroDelMes(e.periodo) === mes) && (contrato === "todos" || e.contratoId === contrato),
+      ),
+    [todas, mes, contrato],
   );
 
   const visibles = useMemo(() => {
@@ -392,11 +402,7 @@ function Contenidos({
     if (filtro === "servicios") return filas.filter((e) => e.origen === "servicio");
     if (filtro === "reembolsos") return filas.filter((e) => e.rendidoPor);
     if (filtro === "recurrentes") return filas.filter((e) => e.recurrente);
-    if (filtro === "porPagar") return filas.filter((e) => e.origen === "servicio" && e.estadoPago !== "pagada" && !e.rendidoPor);
-    if (filtro === "plazos") return filas.filter((e) => {
-      const dias = diasDeServicio(e);
-      return dias !== null && dias <= 30;
-    });
+    if (filtro === "sinFactura") return filas.filter(sinFactura);
     return filas;
   }, [filas, filtro]);
 
@@ -405,71 +411,83 @@ function Contenidos({
 
   const compras = filas.filter((e) => e.origen === "compra");
   const servicios = filas.filter((e) => e.origen === "servicio");
-  const recurrente = filas.filter((e) => e.recurrente).reduce((t, e) => t + e.neto, 0);
   const porDevolver = filas.filter((e) => e.rendidoPor && e.estadoPago !== "pagada");
-  const porPagar = filas.filter((e) => pagoDe(e) && e.estadoPago !== "pagada");
+  const porPagar = filas.filter(debe);
   const pagoVencido = porPagar.filter((e) => e.vencimiento && diasHastaFecha(e.vencimiento) < 0);
+  const sinDocumento = filas.filter(sinFactura);
+  const suma = (ls: EgresoTercero[], campo: "neto" | "total" = "neto") => ls.reduce((t, e) => t + e[campo], 0);
   const avisosPlazo = filas.filter((e) => {
     const dias = diasDeServicio(e);
     return dias !== null && dias <= 30;
   }).length;
-
-  /* Con todo el período a la vista, la cifra por la que se pregunta es la del
-     mes en curso, porque el resultado del contrato se calcula por mes. Con un
-     mes elegido, es el total de ese mes. */
-  const enCurso = primeroDelMes(new Date().toISOString());
-  const delMes = todas.filter((e) => primeroDelMes(e.periodo) === enCurso).reduce((t, e) => t + e.neto, 0);
 
   return (
     <>
       <Resumen
         datos={[
           {
-            etiqueta: "Compras",
-            valor: formatearMonto(compras.reduce((t, e) => t + e.neto, 0)),
-            nota: `${compras.length} documentos, neto`,
+            etiqueta: "Gasto total",
+            valor: formatearMonto(suma(filas)),
+            nota: `${filas.length} movimientos · compras ${formatearMonto(suma(compras))} · servicios ${formatearMonto(suma(servicios))}. Con o sin OC o factura`,
           },
           {
-            etiqueta: "Servicios",
-            valor: formatearMonto(servicios.reduce((t, e) => t + e.neto, 0)),
-            nota: `${servicios.length} subcontratos, arriendos y fletes`,
+            etiqueta: "Pendiente de pago",
+            valor: formatearMonto(suma(porPagar, "total")),
+            nota: `${porPagar.length} por pagar · compras ${formatearMonto(suma(porPagar.filter((e) => e.origen === "compra"), "total"))} · servicios ${formatearMonto(suma(porPagar.filter((e) => e.origen === "servicio"), "total"))}`,
+            acento: porPagar.length > 0 ? "aviso" : undefined,
           },
           {
-            etiqueta: "Gasto recurrente",
-            valor: formatearMonto(recurrente),
-            nota: "Se repite mientras dure el período",
-            acento: recurrente > 0 ? "aviso" : undefined,
+            etiqueta: "Pendiente de factura",
+            valor: formatearMonto(suma(sinDocumento)),
+            nota: `${sinDocumento.length} ${sinDocumento.length === 1 ? "factura faltante" : "facturas faltantes"} (neto)`,
+            acento: sinDocumento.length > 0 ? "aviso" : undefined,
           },
-          mes === "todos"
-            ? {
-                etiqueta: "Egreso del mes en curso",
-                valor: formatearMonto(delMes),
-                nota: "Neto cargado en el mes actual",
-              }
-            : {
-                etiqueta: `Egreso de ${mesLargo(mes).toLowerCase()}`,
-                valor: formatearMonto(filas.reduce((t, e) => t + e.neto, 0)),
-                nota: `${formatearMonto(filas.reduce((t, e) => t + e.total, 0))} con IVA`,
-              },
+          {
+            etiqueta: "Pagos vencidos",
+            valor: formatearMonto(suma(pagoVencido, "total")),
+            nota: `${pagoVencido.length} ${pagoVencido.length === 1 ? "pago vencido" : "pagos vencidos"}`,
+            acento: pagoVencido.length > 0 ? "critico" : "bueno",
+          },
         ]}
       />
 
       <Panel
         titulo="Detalle"
-        nota={`${actualizando ? "Actualizando… · " : ""}${visibles.length} de ${filas.length} movimientos${avisosPlazo ? ` · ${avisosPlazo} servicios por vencer o vencidos` : ""}${pagoVencido.length ? ` · ${pagoVencido.length} pagos vencidos (${formatearMonto(pagoVencido.reduce((t, e) => t + e.total, 0))})` : ""}${porPagar.length ? ` · ${porPagar.length} servicios por pagar (${formatearMonto(porPagar.reduce((t, e) => t + e.total, 0))})` : ""}${porDevolver.length ? ` · ${porDevolver.length} reembolsos por devolver (${formatearMonto(porDevolver.reduce((t, e) => t + e.total, 0))})` : ""}`}
+        nota={`${actualizando ? "Actualizando… · " : ""}${visibles.length} de ${filas.length} movimientos`}
+        avisos={
+          <>
+            {avisosPlazo > 0 && <Chip tono="aviso">{avisosPlazo} {avisosPlazo === 1 ? "servicio por vencer o vencido" : "servicios por vencer o vencidos"}</Chip>}
+            {pagoVencido.length > 0 && <Chip tono="critico">{pagoVencido.length} {pagoVencido.length === 1 ? "pago vencido" : "pagos vencidos"} · {formatearMonto(pagoVencido.reduce((t, e) => t + e.total, 0))}</Chip>}
+            {porPagar.length > 0 && <Chip tono="info">{porPagar.length} por pagar · {formatearMonto(porPagar.reduce((t, e) => t + e.total, 0))}</Chip>}
+            {porDevolver.length > 0 && <Chip tono="aviso">{porDevolver.length} {porDevolver.length === 1 ? "reembolso por devolver" : "reembolsos por devolver"} · {formatearMonto(porDevolver.reduce((t, e) => t + e.total, 0))}</Chip>}
+          </>
+        }
+        filtrosAbajo
         filtros={
-          <div className="flex flex-wrap items-center gap-2">
-            <Desplegable
-              etiqueta="Mes"
-              valor={mes}
-              alCambiar={alCambiarMes}
-              grupos={[
-                { opciones: [{ id: "todos", titulo: "Todos los meses" }] },
-                { titulo: "Un mes", opciones: meses },
-              ]}
-            />
-            <Filtro etiqueta="Ver" opciones={opciones} valor={filtro} alCambiar={setFiltro} />
-          </div>
+          <>
+            <CampoFiltro etiqueta="Período">
+              <Desplegable
+                etiqueta="Período"
+                valor={mes}
+                alCambiar={alCambiarMes}
+                grupos={[
+                  { opciones: [{ id: "todos", titulo: "Todos los meses" }] },
+                  { titulo: "Un mes", opciones: meses },
+                ]}
+              />
+            </CampoFiltro>
+            <CampoFiltro etiqueta="Contrato">
+              <Desplegable
+                etiqueta="Contrato"
+                valor={contrato}
+                alCambiar={setContrato}
+                grupos={[{ opciones: opcionesContrato.map((o) => ({ ...o, titulo: o.id === "todos" ? "Todos los contratos" : o.titulo })) }]}
+              />
+            </CampoFiltro>
+            <CampoFiltro etiqueta="Estatus">
+              <Filtro etiqueta="Estatus" opciones={opciones} valor={filtro} alCambiar={setFiltro} />
+            </CampoFiltro>
+          </>
         }
       >
         <Tabla
@@ -594,6 +612,9 @@ const columnas = (
         <span className="block text-ink-soft">{formatearMonto(e.neto)}</span>
         {e.tipo === "reembolsable" && (
           <span className="mt-0.5 block text-xs text-ink-soft">reembolsable</span>
+        )}
+        {e.tipo === "activo" && (
+          <span className="mt-0.5 block text-xs font-semibold text-cyan-deep">activo · no resta del margen</span>
         )}
       </>
     ),

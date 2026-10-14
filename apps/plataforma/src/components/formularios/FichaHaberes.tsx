@@ -115,7 +115,7 @@ export function FichaHaberes<T extends Haberes>({
   /** Lo que se agrega al pie del costo total (el código del registro, por ejemplo). */
   nota?: React.ReactNode;
 }) {
-  const { horasExtra, costoHhExtra, otros, liquido, costoBase, costoTotal } = totalesDe(datos);
+  const { horasExtra, costoHhExtra, otros, liquido, liquidoTotal, costoBase, costoTotal } = totalesDe(datos);
   const valorHoraExtra = horasExtra > 0 ? costoHhExtra / horasExtra : 0;
   const porHora = horasHombre > 0 ? costoTotal / horasHombre : 0;
   /* `campo` está tipado sobre T; acá solo se usan las claves de Haberes, que T
@@ -142,6 +142,14 @@ export function FichaHaberes<T extends Haberes>({
         ayuda="Lo que paga la empresa encima del bruto: SIS, cesantía del empleador, mutual."
         {...c("aporte_patronal")}
       />
+      <div>
+        <span className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft">Costo total de las HH extra</span>
+        <div className="mt-2 flex items-center rounded-xl border border-mist-deep bg-mist/30 px-4 py-3 text-ink">
+          <span className="mr-2 text-ink-soft">$</span>
+          <span className="font-semibold tabular-nums">{costoHhExtra.toLocaleString("es-CL")}</span>
+        </div>
+        <p className="mt-1.5 text-xs text-ink-soft">Automático: suma del costo de los 5 motivos de más abajo. No se escribe.</p>
+      </div>
 
       <Ancho>
         <div className="flex flex-col gap-1.5 rounded-xl border border-mist-deep bg-mist/30 px-4 py-3">
@@ -153,13 +161,17 @@ export function FichaHaberes<T extends Haberes>({
               </span>
             </span>
             <span>
-              Costo sin HH extra{" "}
-              <span className="font-display text-lg font-semibold tabular-nums text-ink">{formatearPesos(costoBase)}</span>
+              + Horas extra{" "}
+              <span className="font-display text-lg font-semibold tabular-nums text-ink">{formatearPesos(costoHhExtra)}</span>
+            </span>
+            <span>
+              Sueldo líquido total{" "}
+              <span className="font-display text-lg font-semibold tabular-nums text-ink">{formatearPesos(liquidoTotal)}</span>
             </span>
           </p>
           <p className="text-xs leading-relaxed text-ink-soft">
-            Líquido = bruto + no imponible − descuento − imposiciones. Costo = líquido + imposiciones + descuento + aporte patronal: lo que desembolsa la empresa.
-            No se escriben.
+            Líquido = bruto + no imponible − descuento − imposiciones. Las horas extra salen solas del detalle de más abajo (no se digitan dos veces)
+            y se suman al líquido para cuadrar con el libro de remuneraciones. Costo sin HH extra {formatearPesos(costoBase)}. No se escriben.
           </p>
         </div>
       </Ancho>
@@ -233,7 +245,7 @@ export function FichaHaberes<T extends Haberes>({
             <span className="font-display text-xl font-semibold tabular-nums text-ink">{formatearPesos(costoTotal)}</span>
           </p>
           <p className="text-xs leading-relaxed text-ink-soft">
-            Costo sin HH extra {formatearPesos(costoBase)} + HH extra {formatearPesos(costoHhExtra)}
+            Líquido total {formatearPesos(liquidoTotal)} (ya con las HH extra) + imposiciones + descuento + aporte patronal
             {otros > 0 && <> + otros haberes {formatearPesos(otros)}</>}
             {porHora > 0 && <> · {formatearPesos(Math.round(porHora))} por hora hombre</>}. Los finiquitos van aparte, en su
             propio registro.

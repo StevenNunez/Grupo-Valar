@@ -71,25 +71,47 @@ export function Resumen({ datos }: { datos: Dato[] }) {
 export function Panel({
   titulo,
   nota,
+  avisos,
   filtros,
+  filtrosAbajo = false,
   children,
 }: {
   titulo: string;
   nota?: string;
+  /** Alertas del panel (vencidos, por pagar…), en fichas bajo el título y no apretadas en la nota. */
+  avisos?: React.ReactNode;
   filtros?: React.ReactNode;
+  /** Con varios filtros: van en su propia fila, que se envuelve, y no a la derecha del título. */
+  filtrosAbajo?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <section className="rounded-2xl border border-mist-deep bg-white">
       <div className="flex flex-col gap-4 border-b border-mist px-6 py-5 sm:flex-row sm:items-center sm:justify-between lg:px-8">
-        <div>
+        <div className="min-w-0">
           <h2 className="font-display text-lg font-semibold text-ink">{titulo}</h2>
           {nota && <p className="mt-1 text-sm text-ink-soft">{nota}</p>}
+          {avisos && <div className="mt-3 flex flex-wrap gap-2">{avisos}</div>}
         </div>
-        {filtros && <div className="flex shrink-0 items-center gap-2">{filtros}</div>}
+        {filtros && !filtrosAbajo && <div className="flex shrink-0 items-center gap-2">{filtros}</div>}
       </div>
+      {filtros && filtrosAbajo && (
+        <div className="flex flex-wrap items-end gap-x-6 gap-y-3 border-b border-mist bg-mist/20 px-6 py-4 lg:px-8">
+          {filtros}
+        </div>
+      )}
       {children}
     </section>
+  );
+}
+
+/** Un filtro con su nombre arriba: en una barra con varios, se sabe cuál es cuál. */
+export function CampoFiltro({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
+  return (
+    <div className="flex min-w-0 max-w-full flex-col gap-1.5">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-soft">{etiqueta}</span>
+      {children}
+    </div>
   );
 }
 
@@ -109,7 +131,7 @@ export function Filtro<T extends string>({
     <div
       role="group"
       aria-label={etiqueta}
-      className="flex overflow-x-auto rounded-full border border-mist-deep p-1 sin-barra-scroll"
+      className="flex max-w-full overflow-x-auto rounded-full border border-mist-deep bg-white p-1 sin-barra-scroll"
     >
       {opciones.map((o) => (
         <button
@@ -149,12 +171,12 @@ export function Desplegable<T extends string>({
   alCambiar: (v: T) => void;
 }) {
   return (
-    <label className="relative flex items-center">
+    <label className="relative flex max-w-full items-center">
       <span className="sr-only">{etiqueta}</span>
       <select
         value={valor}
         onChange={(e) => alCambiar(e.target.value as T)}
-        className="appearance-none rounded-full border border-mist-deep bg-white py-2 pl-4 pr-9 text-xs font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink focus:outline-none focus:ring-2 focus:ring-cyan"
+        className="w-full max-w-[18rem] appearance-none truncate rounded-full border border-mist-deep bg-white py-2 pl-4 pr-9 text-xs font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink focus:outline-none focus:ring-2 focus:ring-cyan"
       >
         {grupos.map((g) =>
           g.titulo ? (

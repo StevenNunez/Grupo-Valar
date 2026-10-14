@@ -15,7 +15,7 @@ import {
   useFormulario,
 } from "../ui/Formulario";
 import { claseCelda } from "./LineasDeGasto";
-import { categoriasDe, type Categoria } from "@/lib/categorias";
+import { categoriasDe, tipoSegunCategoria, type Categoria } from "@/lib/categorias";
 import { eliminar } from "@/lib/crud";
 import { opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
 import {
@@ -379,7 +379,10 @@ export function FormularioReembolso({
                           <input aria-label="Detalle" value={l.descripcion} placeholder="Chapa bodega, taxi a planta…" onChange={(e) => cambiar(l.clave, { descripcion: e.target.value })} className={claseCelda} />
                         </td>
                         <td className="py-2 pr-3">
-                          <select aria-label="Categoría" value={l.categoria_id} onChange={(e) => cambiar(l.clave, { categoria_id: e.target.value })} className={claseCelda}>
+                          <select aria-label="Categoría" value={l.categoria_id} onChange={(e) => cambiar(l.clave, {
+                            categoria_id: e.target.value,
+                            tipo: tipoSegunCategoria(l.tipo, propias.find((c) => c.id === l.categoria_id), propias.find((c) => c.id === e.target.value)),
+                          })} className={claseCelda}>
                             <option value="">— Sin categoría —</option>
                             {propias.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                           </select>

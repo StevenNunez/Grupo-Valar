@@ -37,6 +37,7 @@ import { CondicionesContrato, NetoConIva, SelectorCamposEdp } from "./Condicione
 type Borrador = {
   id: string;
   nombre: string;
+  nombre_corto: string;
   cliente: string;
   faena: string;
   presupuesto: number;
@@ -59,6 +60,7 @@ function borradorDe(c: Contrato | null): Borrador {
   return {
     id: c?.id ?? "",
     nombre: c?.nombre ?? "",
+    nombre_corto: c?.nombreCorto ?? "",
     cliente: c?.cliente ?? "",
     faena: c?.faena ?? "",
     presupuesto: c?.presupuesto ?? 0,
@@ -202,6 +204,7 @@ export function FormularioContrato({
     const { id, ...campos } = f.datos;
     const fila = {
       ...campos,
+      nombre_corto: campos.nombre_corto.trim() || null,
       inicio: campos.inicio || null,
       // Sin monto total es válido (contratos recurrentes): cero se guarda como "sin monto".
       // En UF manda monto_uf; presupuesto queda como la foto en pesos al guardar
@@ -263,6 +266,13 @@ export function FormularioContrato({
                 {...f.campo("nombre")}
               />
             </Ancho>
+
+            <CampoTexto
+              etiqueta="Nombre corto / interno"
+              marcador="Torres"
+              ayuda="Con este nombre se elige el contrato en los desplegables y filtros (Torres, Misceláneo, Carpa). Opcional."
+              {...f.campo("nombre_corto")}
+            />
 
             <CampoTexto etiqueta="Faena" requerido marcador="Coya Sur" {...f.campo("faena")} />
 

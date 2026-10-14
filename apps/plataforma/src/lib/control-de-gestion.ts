@@ -47,6 +47,8 @@ export type Contrato = {
   /** Contratos en UF: el total pactado en UF. `presupuesto` es eso en pesos a la UF de hoy (0061). */
   montoUf: number | null;
   nombre: string;
+  /** Alias interno para desplegables y filtros (0074). Vacío si no tiene. */
+  nombreCorto: string;
   cliente: string;
   faena: string;
   /** Avance físico informado, 0–100. */

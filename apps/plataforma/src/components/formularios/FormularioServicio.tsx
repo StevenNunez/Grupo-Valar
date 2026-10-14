@@ -23,7 +23,7 @@ import { CamposDelContrato } from "../ui/CamposDelContrato";
 import { LineasDeServicio } from "./LineasDeServicio";
 import { actualizar, crear } from "@/lib/crud";
 import type { CampoContrato, Datos } from "@/lib/campos";
-import { categoriasDe, opcionesDeCategoria, type Categoria } from "@/lib/categorias";
+import { categoriasDe, opcionesDeCategoria, tipoSegunCategoria, type Categoria } from "@/lib/categorias";
 import { opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
 import { formatearPesos } from "@/lib/formato";
 import {
@@ -276,7 +276,14 @@ export function FormularioServicio({
                   ? "Este contrato todavía no tiene categorías de servicios definidas."
                   : "En qué línea de la planilla entra este gasto."
               }
-              {...f.campo("categoria_id")}
+              valor={f.datos.categoria_id}
+              alCambiar={(id) =>
+                f.setDatos((d) => ({
+                  ...d,
+                  categoria_id: id,
+                  tipo: tipoSegunCategoria(d.tipo, propias.find((c) => c.id === d.categoria_id), propias.find((c) => c.id === id)),
+                }))
+              }
             />
 
             <CampoTexto
@@ -301,7 +308,9 @@ export function FormularioServicio({
               ayuda={
                 f.datos.tipo === "reembolsable"
                   ? "No suma al costo real del contrato: se le cobra al mandante."
-                  : "Suma al costo real del contrato y descuenta del presupuesto."
+                  : f.datos.tipo === "activo"
+                    ? "Es una inversión: no resta de la rentabilidad del contrato."
+                    : "Suma al costo real del contrato y descuenta del presupuesto."
               }
               {...f.campo("tipo")}
             />

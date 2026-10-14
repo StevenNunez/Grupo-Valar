@@ -14,11 +14,11 @@ import { DialogoAdjuntos } from "../ui/Adjuntos";
 import { BotonNuevo } from "../ui/Historial";
 import { Impresion } from "../ui/Impresion";
 import { Chip } from "../ui/Chip";
-import { Contenido, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
+import { CampoFiltro, Contenido, Desplegable, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
 import { cargarCampos, type CampoContrato } from "@/lib/campos";
 import { useConsulta } from "@/lib/consulta";
 import { cargarContratosBreve, type ContratoBreve } from "@/lib/contratos";
-import { formatearMonto } from "@/lib/formato";
+import { formatearMonto, mesLargo } from "@/lib/formato";
 import {
   cargarCiclo,
   facturaDelCiclo,
@@ -39,17 +39,26 @@ import {
  * emite desde acá, que es donde se ve de dónde viene cada cosa.
  */
 
-type Filtrado = "todos" | "pendientes" | Etapa;
+type Filtrado = "todos" | "presentado" | "documento" | "orden" | "factura" | "cobro" | "cerrado";
 
+/* Filtro secundario: lo primario es el período y el contrato. */
 const opciones: { id: Filtrado; titulo: string }[] = [
   { id: "todos", titulo: "Todos" },
-  { id: "pendientes", titulo: "Con algo pendiente" },
-  { id: "edp", titulo: "Por aprobar" },
+  { id: "presentado", titulo: "Presentados" },
+  { id: "documento", titulo: "Con documento pendiente" },
   { id: "orden", titulo: "Sin orden" },
   { id: "factura", titulo: "Sin factura" },
   { id: "cobro", titulo: "Pendiente de pago" },
   { id: "cerrado", titulo: "Pagados" },
 ];
+
+/* El flujo pide la OC antes de la factura, pero la falta de factura se cuenta
+   igual aunque todavía no haya OC: de lo contrario "Sin factura" daba 0 con
+   muchos EP sin facturar. Un EP rechazado no espera documentos. */
+const sinOrden = (c: Ciclo) => c.estado !== "rechazado" && !c.ordenId;
+const sinFactura = (c: Ciclo) => c.estado !== "rechazado" && !c.facturaId;
+const documentoPendiente = (c: Ciclo) => sinOrden(c) || sinFactura(c);
+const pagado = (c: Ciclo) => c.etapa === "cerrado";
 
 type Datos = { ciclos: Ciclo[]; contratos: ContratoBreve[]; campos: CampoContrato[] };
 
@@ -105,6 +114,7 @@ export function VistaEstadosPago() {
           <>
             <Listado
               ciclos={datos.ciclos}
+              contratos={datos.contratos}
               campos={datos.campos}
               abierta={abierta}
               alAbrir={(id) => setAbierta((a) => (a === id ? null : id))}
@@ -218,8 +228,8 @@ function TarjetaDeContrato({ ciclos, children }: { ciclos: Ciclo[]; children: Re
         </span>
         <span className="flex flex-wrap items-center gap-2">
           {cuantos("edp") > 0 && <Chip tono="info">{cuantos("edp")} por aprobar</Chip>}
-          {cuantos("orden") > 0 && <Chip tono="aviso">{cuantos("orden")} sin orden</Chip>}
-          {cuantos("factura") > 0 && <Chip tono="aviso">{cuantos("factura")} sin factura</Chip>}
+          {ciclos.filter(sinOrden).length > 0 && <Chip tono="aviso">{ciclos.filter(sinOrden).length} sin orden</Chip>}
+          {ciclos.filter(sinFactura).length > 0 && <Chip tono="aviso">{ciclos.filter(sinFactura).length} sin factura</Chip>}
           {porCobrar > 0 && <Chip tono="aviso">{formatearMonto(porCobrar)} pendiente de pago</Chip>}
           {pendientes.length === 0 && <Chip tono="bueno">Todo pagado</Chip>}
           <svg
@@ -243,6 +253,7 @@ function TarjetaDeContrato({ ciclos, children }: { ciclos: Ciclo[]; children: Re
 
 function Listado({
   ciclos,
+  contratos,
   campos,
   abierta,
   alAbrir,
@@ -252,6 +263,7 @@ function Listado({
   alImprimir,
 }: {
   ciclos: Ciclo[];
+  contratos: ContratoBreve[];
   campos: CampoContrato[];
   abierta: string | null;
   alAbrir: (id: string) => void;
@@ -261,12 +273,42 @@ function Listado({
   alImprimir: (ciclo: Ciclo, cual: Documento) => void;
 }) {
   const [filtro, setFiltro] = useState<Filtrado>("todos");
+  const [periodo, setPeriodo] = useState("todos");
+  const [contrato, setContrato] = useState("todos");
+
+  const periodos = useMemo(
+    () => [
+      { id: "todos", titulo: "Todos" },
+      ...[...new Set(ciclos.map((c) => c.periodo))].sort().reverse()
+        .map((p) => ({ id: p, titulo: mesLargo(p) })),
+    ],
+    [ciclos],
+  );
+  const opcionesContrato = useMemo(() => {
+    const alias = new Map(contratos.map((c) => [c.id, c.nombreCorto || c.nombre]));
+    const vistos = new Map<string, string>();
+    for (const c of ciclos) vistos.set(c.contratoId, alias.get(c.contratoId) ?? c.contrato);
+    return [
+      { id: "todos", titulo: "Todos" },
+      ...[...vistos].map(([id, titulo]) => ({ id, titulo })).sort((a, b) => a.titulo.localeCompare(b.titulo, "es")),
+    ];
+  }, [ciclos, contratos]);
+
+  /* Período y contrato recortan todo, KPIs incluidos; la barra de estatus
+     solo recorta la lista. */
+  const delRecorte = useMemo(
+    () => ciclos.filter((c) => (periodo === "todos" || c.periodo === periodo) && (contrato === "todos" || c.contratoId === contrato)),
+    [ciclos, periodo, contrato],
+  );
 
   const visibles = useMemo(() => {
-    if (filtro === "todos") return ciclos;
-    if (filtro === "pendientes") return ciclos.filter((c) => c.etapa !== "cerrado");
-    return ciclos.filter((c) => c.etapa === filtro);
-  }, [ciclos, filtro]);
+    if (filtro === "todos") return delRecorte;
+    if (filtro === "presentado") return delRecorte.filter((c) => c.etapa === "edp");
+    if (filtro === "documento") return delRecorte.filter((c) => !pagado(c) && documentoPendiente(c));
+    if (filtro === "orden") return delRecorte.filter(sinOrden);
+    if (filtro === "factura") return delRecorte.filter(sinFactura);
+    return delRecorte.filter((c) => c.etapa === filtro);
+  }, [delRecorte, filtro]);
 
   /* Una tarjeta por contrato: con todos los EDP en una sola lista se
      mezclaban los números (el EP 30 de un contrato junto al EP 30 de otro). */
@@ -276,49 +318,70 @@ function Listado({
     return [...grupos.values()].sort((a, b) => a[0].contrato.localeCompare(b[0].contrato, "es"));
   }, [visibles]);
 
-  /* Los tres números que importan son los cortes de la cadena: dónde se quedó
-     detenido el dinero. */
-  const porAprobar = ciclos.filter((c) => c.etapa === "edp");
-  const sinOrden = ciclos.filter((c) => c.etapa === "orden");
-  const sinFactura = ciclos.filter((c) => c.etapa === "factura");
-  const porCobrar = ciclos.filter((c) => c.etapa === "cobro");
   const suma = (ls: Ciclo[]) => ls.reduce((t, c) => t + c.montoNeto, 0);
+  const presentado = suma(delRecorte);
+  const cobrado = suma(delRecorte.filter(pagado));
+  const pendiente = presentado - cobrado;
+  const conDocumento = delRecorte.filter((c) => !pagado(c) && documentoPendiente(c));
+  const pctPagado = presentado > 0 ? Math.round((cobrado / presentado) * 100) : 0;
 
   return (
     <>
       <Resumen
         datos={[
           {
+            etiqueta: "Total presentado",
+            valor: formatearMonto(presentado),
+            nota: `${delRecorte.length} ${delRecorte.length === 1 ? "estado de pago" : "estados de pago"}`,
+          },
+          {
+            etiqueta: "Total pagado",
+            valor: formatearMonto(cobrado),
+            nota: `${pctPagado}% de lo presentado`,
+            acento: presentado > 0 && cobrado === presentado ? "bueno" : undefined,
+          },
+          {
             etiqueta: "Pendiente de pago",
-            valor: formatearMonto(suma(porCobrar)),
-            nota: `${porCobrar.length} facturados, falta que paguen`,
-            acento: porCobrar.length > 0 ? "aviso" : undefined,
+            valor: formatearMonto(pendiente),
+            nota: `${presentado > 0 ? 100 - pctPagado : 0}% de lo presentado`,
+            acento: pendiente > 0 ? "aviso" : undefined,
           },
           {
-            etiqueta: "Esperando aprobación",
-            valor: formatearMonto(suma(porAprobar)),
-            nota: `${porAprobar.length} en manos del mandante`,
-            acento: porAprobar.length > 0 ? "aviso" : undefined,
-          },
-          {
-            etiqueta: "Aprobado sin orden",
-            valor: formatearMonto(suma(sinOrden)),
-            nota: `${sinOrden.length} esperando la OC del mandante`,
-            acento: sinOrden.length > 0 ? "aviso" : undefined,
-          },
-          {
-            etiqueta: "Con orden, sin facturar",
-            valor: formatearMonto(suma(sinFactura)),
-            nota: `${sinFactura.length} listos para emitir`,
-            acento: sinFactura.length > 0 ? "critico" : "bueno",
+            etiqueta: "Con documento pendiente",
+            valor: String(conDocumento.length),
+            nota: `${conDocumento.length} de ${delRecorte.length} estados de pago afectados · ${conDocumento.filter(sinOrden).length} sin OC · ${conDocumento.filter(sinFactura).length} sin factura`,
+            acento: conDocumento.length > 0 ? "critico" : "bueno",
           },
         ]}
       />
 
       <Panel
         titulo="El ciclo, uno por uno"
-        nota={`${visibles.length} de ${ciclos.length} estados de pago · ${porContrato.length} ${porContrato.length === 1 ? "contrato" : "contratos"}`}
-        filtros={<Filtro etiqueta="Ver" opciones={opciones} valor={filtro} alCambiar={setFiltro} />}
+        nota={`${visibles.length} de ${delRecorte.length} estados de pago · ${porContrato.length} ${porContrato.length === 1 ? "contrato" : "contratos"}`}
+        filtrosAbajo
+        filtros={
+          <>
+            <CampoFiltro etiqueta="Período">
+              <Desplegable
+                etiqueta="Período"
+                valor={periodo}
+                alCambiar={setPeriodo}
+                grupos={[{ opciones: periodos.map((o) => ({ ...o, titulo: o.id === "todos" ? "Todos los meses" : o.titulo })) }]}
+              />
+            </CampoFiltro>
+            <CampoFiltro etiqueta="Contrato">
+              <Desplegable
+                etiqueta="Contrato"
+                valor={contrato}
+                alCambiar={setContrato}
+                grupos={[{ opciones: opcionesContrato.map((o) => ({ ...o, titulo: o.id === "todos" ? "Todos los contratos" : o.titulo })) }]}
+              />
+            </CampoFiltro>
+            <CampoFiltro etiqueta="Estatus">
+              <Filtro etiqueta="Estatus" opciones={opciones} valor={filtro} alCambiar={setFiltro} />
+            </CampoFiltro>
+          </>
+        }
       >
         {visibles.length === 0 ? (
           <p className="px-6 py-12 text-center text-sm text-ink-soft lg:px-8">

@@ -118,7 +118,10 @@ export function totalesDe(h: Haberes) {
   const liquido = h.sueldo_bruto + h.total_no_imponible - h.descuento_trabajador - h.leyes_sociales;
   const costoBase = liquido + h.leyes_sociales + h.descuento_trabajador + h.aporte_patronal;
   const totalHaberes = h.sueldo_bruto + costoHhExtra + h.total_no_imponible + otros;
-  return { horasExtra, costoHhExtra, otros, liquido, costoBase, totalHaberes, costoTotal: costoBase + costoHhExtra + otros };
+  // El líquido total ya trae las HH extra: el costo parte de él y no las suma de nuevo.
+  const liquidoTotal = liquido + costoHhExtra;
+  const costoTotal = liquidoTotal + h.leyes_sociales + h.descuento_trabajador + h.aporte_patronal + otros;
+  return { horasExtra, costoHhExtra, otros, liquido, liquidoTotal, costoBase, totalHaberes, costoTotal };
 }
 
 /** Lo que se guarda: los totales van como la suma de su detalle, y las líneas vacías se descartan. */

@@ -80,7 +80,7 @@ export function VistaOficinaCentral() {
             <>
               <Resumen datos={[
                 { etiqueta: "Egresos netos", valor: formatearMonto(totalOficina(delMes)), nota: "Incluye compra de activos" },
-                { etiqueta: "Gastos operativos", valor: formatearMonto(totalOficina(delMes.filter((fila) => fila.categoria !== "activos"))), nota: "Compras, arriendos e insumos" },
+                { etiqueta: "Gastos operativos", valor: formatearMonto(totalOficina(delMes.filter((fila) => fila.categoria !== "activos"))), nota: "Compras, arriendos, insumos y reembolsos" },
                 { etiqueta: "Compra de activos", valor: formatearMonto(porCategoria.activos), nota: "Inversión identificada aparte" },
                 { etiqueta: "Pendiente de pago", valor: formatearMonto(totalOficina(delMes.filter((fila) => fila.estado === "pendiente"))), nota: "Valor neto registrado" },
               ]} />
@@ -171,7 +171,7 @@ function FormularioOficina({ registro, categoriaInicial, alCerrar, alGuardado }:
         <Campos>
           <CampoSeleccion etiqueta="Categoría" opciones={[...categoriasOficina]} requerido {...formulario.campo("categoria")} />
           <CampoFecha etiqueta="Fecha del egreso" requerido {...formulario.campo("fecha")} />
-          <CampoTexto etiqueta="Proveedor o beneficiario" requerido {...formulario.campo("proveedor")} />
+          <CampoTexto etiqueta={formulario.datos.categoria === "reembolsos" ? "Quién rindió (a quién se le devuelve)" : "Proveedor o beneficiario"} requerido {...formulario.campo("proveedor")} />
           <CampoTexto etiqueta="Nº de documento" valor={formulario.datos.documento ?? ""} alCambiar={(v) => formulario.cambiar("documento", v)} ayuda="Factura, boleta o comprobante, si existe." />
           <Ancho><CampoTexto etiqueta="Detalle" requerido {...formulario.campo("descripcion")} /></Ancho>
           <CampoDinero etiqueta="Neto" requerido {...formulario.campo("neto")} />

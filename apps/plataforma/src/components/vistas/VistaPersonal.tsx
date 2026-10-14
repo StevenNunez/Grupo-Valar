@@ -117,6 +117,7 @@ function Contenidos({
 
   const remuneraciones = visibles.reduce((t, f) => t + f.remuneraciones, 0);
   const aporte = visibles.reduce((t, f) => t + f.aportePatronal, 0);
+  const costoHhExtra = visibles.reduce((t, f) => t + f.horasExtraMonto, 0);
   const costo = visibles.reduce((t, f) => t + f.costoTotal, 0);
   const finiquitosVisibles = mes === "todos" ? datos.finiquitos : datos.finiquitos.filter((f) => f.periodo === mes);
   const finiquitos = finiquitosVisibles.reduce((t, f) => t + f.total, 0);
@@ -174,6 +175,7 @@ function Contenidos({
               <Total derecha>{formatearNumero(horas)}</Total>
               <Total derecha>{formatearMonto(remuneraciones)}</Total>
               <Total derecha>{formatearMonto(aporte)}</Total>
+              <Total derecha>{formatearMonto(costoHhExtra)}</Total>
               <Total derecha>{formatearMonto(costo)}</Total>
               <Total />
             </>
@@ -281,6 +283,12 @@ const columnas = (
     titulo: "Aporte patronal",
     derecha: true,
     celda: (f) => <span className="text-ink-soft">{formatearMonto(f.aportePatronal)}</span>,
+  },
+  {
+    clave: "hhExtra",
+    titulo: "Costo total de las HH extra",
+    derecha: true,
+    celda: (f) => <span className="text-ink-soft">{formatearMonto(f.horasExtraMonto)}</span>,
   },
   {
     clave: "total",

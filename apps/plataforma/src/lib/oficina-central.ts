@@ -8,6 +8,7 @@ export const categoriasOficina = [
   { id: "arriendos", titulo: "Arriendos" },
   { id: "insumos", titulo: "Insumos" },
   { id: "activos", titulo: "Compra de activos" },
+  { id: "reembolsos", titulo: "Reembolsos" },
 ] as const;
 
 export type CategoriaOficina = (typeof categoriasOficina)[number]["id"];

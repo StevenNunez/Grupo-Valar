@@ -1,5 +1,6 @@
 "use client";
 
+import type { TipoCompra } from "./egresos";
 import { supabase } from "./supabase";
 
 /**
@@ -43,7 +44,24 @@ export type Categoria = {
   presupuestoMensual: number;
   orden: number;
   activa: boolean;
+  /** Lo que se compra acá es inversión (equipos, herramientas, mobiliario): sus líneas salen como activo (0075). */
+  esActivo: boolean;
 };
+
+/**
+ * El tipo que corresponde a una línea al cambiarle la categoría: una categoría
+ * de activos la marca como activo, y salir de ella la devuelve a ordinario. Un
+ * activo marcado a mano (un mueble en otra categoría) no se toca.
+ */
+export function tipoSegunCategoria(
+  tipo: TipoCompra,
+  anterior: { esActivo?: boolean } | undefined,
+  nueva: { esActivo?: boolean } | undefined,
+): TipoCompra {
+  if (nueva?.esActivo && tipo === "ordinario") return "activo";
+  if (anterior?.esActivo && !nueva?.esActivo && tipo === "activo") return "ordinario";
+  return tipo;
+}
 
 function mapear(f: Record<string, unknown>): Categoria {
   return {
@@ -55,6 +73,7 @@ function mapear(f: Record<string, unknown>): Categoria {
     presupuestoMensual: Number(f.presupuesto_mensual ?? 0),
     orden: Number(f.orden ?? 0),
     activa: Boolean(f.activa),
+    esActivo: Boolean(f.es_activo),
   };
 }
 

@@ -2,7 +2,7 @@
 
 import { mesCorto } from "./formato";
 import { supabase } from "./supabase";
-import { anexoRaiz, cargarAnexos, etiquetaAnexo, montoConSigno } from "./anexos";
+import { anexoRaiz, cargarAnexos, etiquetaAnexo } from "./anexos";
 import { cargarEgresosOficina, cargarNominasOficina, type EgresoOficina } from "./oficina-central";
 
 /**
@@ -17,9 +17,19 @@ import { cargarEgresosOficina, cargarNominasOficina, type EgresoOficina } from "
  * que hay que corregir está en la vista donde se carga.
  */
 
+/**
+ * Una fila del Dashboard es una "unidad": un contrato (su base) o un anexo.
+ * Un anexo es un contrato más —cobra y gasta aparte—, así que tiene sus propias
+ * filas, con id `<contrato>#<anexo>`. La base de un contrato NO incluye lo de
+ * sus anexos; para ver todo junto se marcan los anexos en el filtro.
+ */
 export type FilaMes = {
   contratoId: string;
+  /** Si es un anexo: el contrato del que cuelga. Nulo en un contrato. */
+  padreId: string | null;
   contrato: string;
+  /** Alias interno del contrato (0074); vacío si no tiene. */
+  contratoCorto: string;
   cliente: string;
   periodo: string;
   etiqueta: string;
@@ -47,25 +57,18 @@ export type FilaCategoria = {
   realOrdinario: number;
 };
 
-/** Venta, costo y margen de la base o de un anexo en un mes (0059). */
-export type FilaAnexo = {
+/** Un anexo con el que se puede armar la vista (aunque todavía no tenga nada cargado). */
+export type AnexoDisponible = {
+  /** Id de unidad: `<contrato>#<anexo>`. */
+  id: string;
   contratoId: string;
-  /** Nulo = contrato base. Lo de una adenda ya viene sumado a su anexo principal. */
-  anexoId: string | null;
   nombre: string;
-  periodo: string;
-  venta: number;
-  costo: number;
-  reembolsable: number;
 };
 
 export type DatosDashboard = {
   meses: FilaMes[];
-  /** Solo de los contratos que tienen anexos: sin ellos, todo es "base". */
-  anexos: FilaAnexo[];
-  /** Los anexos vigentes con lo pactado, adendas incluidas. Salen aunque
-      todavía no tengan nada cargado: es justo lo que hay que ver. */
-  anexosVigentes: { contratoId: string; anexoId: string; nombre: string; monto: number }[];
+  /** Los anexos que se pueden elegir o sumar a su contrato. */
+  anexosDisponibles: AnexoDisponible[];
   categorias: FilaCategoria[];
   oficina: EgresoOficina[];
   /** Costo de la nómina de Oficina Central por mes. Vacío para quien no ve sueldos. */
@@ -100,72 +103,89 @@ type FilaCategoriaSQL = {
   real_ordinario?: number;
 };
 
+type Acum = {
+  venta: number;
+  ordinaria: number;
+  extraordinaria: number;
+  cobrado: number;
+  costo: number;
+  reembolsable: number;
+};
+const acumVacio = (): Acum => ({ venta: 0, ordinaria: 0, extraordinaria: 0, cobrado: 0, costo: 0, reembolsable: 0 });
+
 export async function cargarDashboard(): Promise<DatosDashboard> {
-  const [resumen, categorias, oficina, nominas, porAnexo, anexos] = await Promise.all([
+  const [resumen, categorias, oficina, nominas, anexos, alias, edpsAnexo, costosAnexo] = await Promise.all([
     supabase.from("resumen_mensual").select("*").order("periodo"),
     supabase.from("costos_por_categoria").select("*"),
     cargarEgresosOficina(),
     /* Si la 0048 todavía no está aplicada, el Dashboard sigue sin la nómina.
        Quien no ve sueldos recibe la lista vacía (RLS), no un error. */
     cargarNominasOficina().catch(() => []),
-    /* El desglose por anexo es un extra: si falla, el Dashboard sale igual. */
-    supabase.from("resultado_por_anexo").select("contrato_id, anexo_id, periodo, venta, costo, reembolsable"),
     cargarAnexos().catch(() => []),
+    /* Los alias son un extra (0074): sin la migración, el filtro usa el nombre. */
+    supabase.from("contratos").select("id, nombre_corto"),
+    /* Lo de los anexos se separa del contrato: sus EDP y sus costos. Si falla,
+       el Dashboard sale igual, con todo en el contrato (como antes). */
+    supabase.from("estados_pago").select("contrato_id, anexo_id, periodo, tipo_edp, monto_neto, monto_cobrado").not("anexo_id", "is", null),
+    supabase.from("costos_unificados").select("contrato_id, anexo_id, categoria_id, categoria, familia, periodo, tipo, neto").not("anexo_id", "is", null),
   ]);
 
   const fallo = resumen.error ?? categorias.error;
   if (fallo) throw new Error(fallo.message);
 
-  /* Lo cargado a una adenda suma a su anexo principal: "¿cuánto se ganó en
-     Carpas?" incluye sus adendas. Es la misma regla que la ficha del contrato. */
-  const conAnexos = new Set(anexos.filter((a) => a.estado === "vigente").map((a) => a.contratoId));
-  const filasAnexo: FilaAnexo[] = [];
-  for (const r of (porAnexo.error ? [] : porAnexo.data ?? []) as {
-    contrato_id: string;
-    anexo_id: string | null;
-    periodo: string;
-    venta: number;
-    costo: number;
-    reembolsable: number;
+  const cortos = new Map(
+    (alias.error ? [] : alias.data ?? []).map((f) => [f.id as string, (f.nombre_corto as string | null) ?? ""]),
+  );
+
+  /* Cada anexo es una unidad aparte. Las adendas suman a su anexo principal. */
+  const raizDe = (contratoId: string, anexoId: string) =>
+    anexoRaiz(anexos.filter((a) => a.contratoId === contratoId), anexoId);
+  const unidadDe = (contratoId: string, anexoId: string) => `${contratoId}#${raizDe(contratoId, anexoId)}`;
+  const nombreAnexo = (contratoId: string, raiz: string) => {
+    const a = anexos.find((x) => x.contratoId === contratoId && x.id === raiz);
+    return a ? (a.nombre?.trim() ? `Anexo ${a.nombre.trim()}` : etiquetaAnexo(a)) : "Anexo";
+  };
+
+  /* unidad → período → cifras */
+  const deAnexos = new Map<string, Map<string, Acum>>();
+  const celda = (unidad: string, periodo: string) => {
+    let porPeriodo = deAnexos.get(unidad);
+    if (!porPeriodo) deAnexos.set(unidad, (porPeriodo = new Map()));
+    let a = porPeriodo.get(periodo);
+    if (!a) porPeriodo.set(periodo, (a = acumVacio()));
+    return a;
+  };
+  type MovCosto = { contrato_id: string; anexo_id: string; categoria_id: string | null; categoria: string | null; familia: string | null; periodo: string | null; tipo: string; neto: number };
+  const movimientos = (costosAnexo.error ? [] : costosAnexo.data ?? []) as MovCosto[];
+
+  for (const e of (edpsAnexo.error ? [] : edpsAnexo.data ?? []) as {
+    contrato_id: string; anexo_id: string; periodo: string; tipo_edp: string; monto_neto: number; monto_cobrado: number;
   }[]) {
-    if (!r.periodo) continue;
-    if (!conAnexos.has(r.contrato_id) && !r.anexo_id) continue;
-    const delContrato = anexos.filter((a) => a.contratoId === r.contrato_id);
-    const raiz = r.anexo_id ? anexoRaiz(delContrato, r.anexo_id) : null;
-    const anexo = delContrato.find((a) => a.id === raiz);
-    filasAnexo.push({
-      contratoId: r.contrato_id,
-      anexoId: raiz,
-      nombre: raiz === null ? "Contrato base" : anexo ? etiquetaAnexo(anexo) : raiz,
-      periodo: r.periodo,
-      venta: Number(r.venta),
-      costo: Number(r.costo),
-      reembolsable: Number(r.reembolsable),
-    });
+    if (!e.periodo) continue;
+    const a = celda(unidadDe(e.contrato_id, e.anexo_id), e.periodo);
+    a.venta += Number(e.monto_neto);
+    if (e.tipo_edp === "extraordinario") a.extraordinaria += Number(e.monto_neto);
+    else a.ordinaria += Number(e.monto_neto);
+    a.cobrado += Number(e.monto_cobrado);
+  }
+  for (const m of movimientos) {
+    if (!m.periodo) continue;
+    const a = celda(unidadDe(m.contrato_id, m.anexo_id), m.periodo);
+    // Igual que resumen_mensual: lo ordinario es costo, lo reembolsable va aparte y un activo no cuenta.
+    if (m.tipo === "ordinario") a.costo += Number(m.neto);
+    else if (m.tipo === "reembolsable") a.reembolsable += Number(m.neto);
   }
 
-  const vigentes = anexos.filter((a) => a.estado === "vigente");
-  const anexosVigentes = vigentes
-    .filter((a) => !a.padreId)
-    .map((a) => ({
-      contratoId: a.contratoId,
-      anexoId: a.id,
-      nombre: etiquetaAnexo(a),
-      monto: vigentes
-        .filter((x) => x.contratoId === a.contratoId && anexoRaiz(vigentes, x.id) === a.id)
-        .reduce((t, x) => t + montoConSigno(x.tipo, x.monto), 0),
-    }));
-
-  return {
-    oficina,
-    anexos: filasAnexo,
-    anexosVigentes,
-    personalOficina: nominas.map((n) => ({ periodo: n.periodo, costo: n.costo_total })),
-    /* Un ítem suelto (sin orden ni factura, p. ej. de una OC borrada) llega con
-       periodo nulo: no pertenece a ningún mes y no debe tumbar el Dashboard. */
-    meses: ((resumen.data ?? []) as FilaResumenSQL[]).filter((r) => r.periodo).map((r) => ({
+  /* La base de cada contrato = el resumen menos lo de sus anexos. */
+  const filasResumen = ((resumen.data ?? []) as FilaResumenSQL[]).filter((r) => r.periodo);
+  const meses: FilaMes[] = [];
+  const baseDe = new Map<string, FilaMes>();
+  for (const r of filasResumen) {
+    const fila: FilaMes = {
       contratoId: r.contrato_id,
+      padreId: null,
       contrato: r.contrato,
+      contratoCorto: cortos.get(r.contrato_id) ?? "",
       cliente: r.cliente,
       periodo: r.periodo,
       etiqueta: mesCorto(r.periodo),
@@ -178,20 +198,117 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
       margen: r.margen,
       margenPct: r.margen_pct === null ? null : Number(r.margen_pct),
       metaMargen: Number(r.meta_margen),
-    })),
-    categorias: ((categorias.data ?? []) as FilaCategoriaSQL[]).map((c) => ({
-      categoriaId: c.categoria_id,
-      contratoId: c.contrato_id,
-      categoria: c.categoria,
-      familia: c.familia,
-      presupuestoMensual: c.presupuesto_mensual,
-      periodo: c.periodo,
-      real: c.real,
-      // Si la 0014 no está aplicada, la columna no viene y `real` es lo mejor
-      // que hay. La composición del costo quedará incluyendo reembolsables
-      // hasta que se aplique, pero nada se cae.
-      realOrdinario: c.real_ordinario ?? c.real,
-    })),
+    };
+    baseDe.set(`${r.contrato_id}|${r.periodo}`, fila);
+    meses.push(fila);
+  }
+
+  const recalcular = (f: FilaMes) => {
+    f.margen = f.venta - f.costo;
+    f.margenPct = f.venta > 0 ? Math.round(((f.venta - f.costo) / f.venta) * 10000) / 100 : null;
+  };
+  const anexosConDatos: FilaMes[] = [];
+  for (const [unidad, porPeriodo] of deAnexos) {
+    const [contratoId, raiz] = unidad.split("#");
+    for (const [periodo, a] of porPeriodo) {
+      const base = baseDe.get(`${contratoId}|${periodo}`);
+      if (base) {
+        base.venta -= a.venta;
+        base.ventaOrdinaria -= a.ordinaria;
+        base.ventaExtraordinaria -= a.extraordinaria;
+        base.cobrado -= a.cobrado;
+        base.costo -= a.costo;
+        base.reembolsable -= a.reembolsable;
+        recalcular(base);
+      }
+      const nombre = nombreAnexo(contratoId, raiz);
+      const fila: FilaMes = {
+        contratoId: unidad,
+        padreId: contratoId,
+        contrato: nombre,
+        contratoCorto: nombre,
+        cliente: base?.cliente ?? "",
+        periodo,
+        etiqueta: mesCorto(periodo),
+        venta: a.venta,
+        ventaOrdinaria: a.ordinaria,
+        ventaExtraordinaria: a.extraordinaria,
+        cobrado: a.cobrado,
+        costo: a.costo,
+        reembolsable: a.reembolsable,
+        margen: 0,
+        margenPct: null,
+        metaMargen: base?.metaMargen ?? filasResumen.find((r) => r.contrato_id === contratoId)?.meta_margen ?? 20,
+      };
+      recalcular(fila);
+      anexosConDatos.push(fila);
+    }
+  }
+  // Un mes de la base que solo tenía lo del anexo queda vacío: no se muestra.
+  const vacia = (f: FilaMes) => !f.venta && !f.costo && !f.reembolsable && !f.cobrado;
+  const filasMes = [...meses.filter((f) => !vacia(f)), ...anexosConDatos].sort((a, b) =>
+    a.periodo < b.periodo ? -1 : a.periodo > b.periodo ? 1 : 0,
+  );
+
+  /* Los anexos que se pueden elegir: los principales que no están anulados. */
+  const anexosDisponibles: AnexoDisponible[] = anexos
+    .filter((a) => !a.padreId && a.estado !== "anulado")
+    .map((a) => ({ id: `${a.contratoId}#${a.id}`, contratoId: a.contratoId, nombre: nombreAnexo(a.contratoId, a.id) }));
+
+  /* Las categorías: lo del anexo sale de la categoría del contrato y pasa a una fila propia. */
+  const filasCategoria: FilaCategoria[] = ((categorias.data ?? []) as FilaCategoriaSQL[]).map((c) => ({
+    categoriaId: c.categoria_id,
+    contratoId: c.contrato_id,
+    categoria: c.categoria,
+    familia: c.familia,
+    presupuestoMensual: c.presupuesto_mensual,
+    periodo: c.periodo,
+    real: c.real,
+    // Si la 0014 no está aplicada, la columna no viene y `real` es lo mejor
+    // que hay. La composición del costo quedará incluyendo reembolsables
+    // hasta que se aplique, pero nada se cae.
+    realOrdinario: c.real_ordinario ?? c.real,
+  }));
+  const categoriaBase = new Map(filasCategoria.map((c) => [`${c.contratoId}|${c.categoriaId}|${c.periodo}`, c]));
+  const categoriasDeAnexo = new Map<string, FilaCategoria>();
+  for (const m of movimientos) {
+    if (!m.periodo) continue;
+    const catId = m.categoria_id ?? "sin-categoria";
+    const base = categoriaBase.get(`${m.contrato_id}|${catId}|${m.periodo}`);
+    const neto = Number(m.neto);
+    const ordinario = m.tipo === "ordinario" ? neto : 0;
+    if (base) {
+      base.real = Math.max(0, base.real - neto);
+      base.realOrdinario = Math.max(0, base.realOrdinario - ordinario);
+    }
+    const unidad = unidadDe(m.contrato_id, m.anexo_id);
+    const clave = `${unidad}|${catId}|${m.periodo}`;
+    const actual = categoriasDeAnexo.get(clave);
+    if (actual) {
+      actual.real += neto;
+      actual.realOrdinario += ordinario;
+    } else {
+      categoriasDeAnexo.set(clave, {
+        categoriaId: `${catId}#${unidad.split("#")[1]}`,
+        contratoId: unidad,
+        categoria: m.categoria ?? "Sin categoría",
+        familia: (m.familia as FilaCategoria["familia"] | null) ?? "compras",
+        presupuestoMensual: 0,
+        periodo: m.periodo,
+        real: neto,
+        realOrdinario: ordinario,
+      });
+    }
+  }
+
+  return {
+    oficina,
+    anexosDisponibles,
+    personalOficina: nominas.map((n) => ({ periodo: n.periodo, costo: n.costo_total })),
+    /* Un ítem suelto (sin orden ni factura, p. ej. de una OC borrada) llega con
+       periodo nulo: no pertenece a ningún mes y no debe tumbar el Dashboard. */
+    meses: filasMes,
+    categorias: [...filasCategoria, ...categoriasDeAnexo.values()],
   };
 }
 
@@ -221,6 +338,8 @@ export function sumar(filas: FilaMes[]): Totales {
 
 export type Contrato = {
   id: string;
+  /** Si es un anexo: el contrato del que cuelga. */
+  padreId: string | null;
   nombre: string;
   cliente: string;
   meta: number;
@@ -247,6 +366,7 @@ export function porContrato(filas: FilaMes[]): Contrato[] {
       const totales = sumar(suyas);
       return {
         id,
+        padreId: suyas[0].padreId,
         nombre: suyas[0].contrato,
         cliente: suyas[0].cliente,
         meta: suyas[0].metaMargen,
@@ -347,14 +467,15 @@ export type CategoriaAcumulada = {
  */
 export function acumularCategorias(
   categorias: FilaCategoria[],
-  contratoFiltro: string,
+  contratoFiltro: string | string[],
   meses: number,
   periodosVisibles?: string[],
 ): CategoriaAcumulada[] {
   const acumulado = new Map<string, CategoriaAcumulada>();
+  const unidades = typeof contratoFiltro === "string" ? (contratoFiltro === "todos" ? null : [contratoFiltro]) : contratoFiltro;
 
   for (const c of categorias) {
-    if (contratoFiltro !== "todos" && c.contratoId !== contratoFiltro) continue;
+    if (unidades && !unidades.includes(c.contratoId)) continue;
 
     // Las categorías sin ningún movimiento vienen con el período en nulo. Se
     // dejan pasar: aportan su presupuesto y un real de cero, que es justamente

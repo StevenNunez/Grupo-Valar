@@ -17,12 +17,15 @@ import { supabase } from "./supabase";
 /**
  * Ordinario: costo propio de la obra, va contra el presupuesto.
  * Reembolsable: se le recupera al mandante, así que no castiga el margen.
+ * Activo: inversión (equipos, herramientas, mobiliario); no es consumo, así
+ * que tampoco resta de la rentabilidad del contrato (0075).
  */
-export type TipoCompra = "ordinario" | "reembolsable";
+export type TipoCompra = "ordinario" | "reembolsable" | "activo";
 
 export const tiposCompra: { id: TipoCompra; titulo: string }[] = [
   { id: "ordinario", titulo: "Ordinario" },
   { id: "reembolsable", titulo: "Gasto reembolsable" },
+  { id: "activo", titulo: "Activo (inversión)" },
 ];
 
 export type EstadoPagoCompra = "pendiente" | "pagada";
@@ -209,6 +212,8 @@ export async function guardarCompraDirecta(datos: {
     comercio?: string;
     fecha_documento?: string | null;
   }[];
+  /** Compra hecha por fuera: se ingresa directo como pagada. Omitido = no se toca. */
+  estadoPago?: EstadoPagoCompra;
   /** Una rendición: quién pagó, y si ya se le devolvió. */
   reembolso?: { rendidoPor: string; devuelto: boolean; fechaDevolucion: string };
 }) {
@@ -230,7 +235,9 @@ export async function guardarCompraDirecta(datos: {
           p_estado_pago: datos.reembolso.devuelto ? "pagada" : "pendiente",
           p_fecha_pago: datos.reembolso.devuelto ? datos.reembolso.fechaDevolucion || null : null,
         }
-      : {}),
+      : datos.estadoPago
+        ? { p_estado_pago: datos.estadoPago, p_fecha_pago: datos.estadoPago === "pagada" ? new Date().toISOString().slice(0, 10) : null }
+        : {}),
   });
   if (error) {
     throw new Error(/row-level security|permission denied/i.test(error.message)

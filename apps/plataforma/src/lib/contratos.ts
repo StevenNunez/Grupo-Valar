@@ -27,6 +27,8 @@ export const estadosContrato: { id: EstadoContrato; titulo: string }[] = [
 export type ContratoBreve = {
   id: string;
   nombre: string;
+  /** Alias interno (0074); vacío si no tiene. */
+  nombreCorto: string;
   cliente: string;
   /** Dónde se presta el servicio. El personal del contrato la hereda. */
   faena: string;
@@ -38,13 +40,14 @@ export type ContratoBreve = {
 export async function cargarContratosBreve(): Promise<ContratoBreve[]> {
   const { data, error } = await supabase
     .from("contratos")
-    .select("id, nombre, cliente, faena, plantilla_edp, edp_campos")
+    .select("id, nombre, nombre_corto, cliente, faena, plantilla_edp, edp_campos")
     .order("id");
 
   if (error) throw new Error(error.message);
   return (data ?? []).map((fila) => ({
     id: fila.id,
     nombre: fila.nombre,
+    nombreCorto: (fila.nombre_corto as string | null) ?? "",
     cliente: fila.cliente,
     faena: fila.faena ?? "",
     plantillaEdp: fila.plantilla_edp as PlantillaEdp,
@@ -88,7 +91,8 @@ export async function borrarContratoDemo(id: string, eliminar = false): Promise<
 export function opcionesDeContrato(contratos: ContratoBreve[]) {
   return contratos.map((c) => ({
     id: c.id,
-    titulo: `${c.id} · ${c.nombre}`,
+    // Con alias se elige por el alias; sin él, como siempre.
+    titulo: c.nombreCorto || `${c.id} · ${c.nombre}`,
   }));
 }
 
@@ -102,7 +106,7 @@ export function opcionesDeContrato(contratos: ContratoBreve[]) {
 export async function cargarContratos(): Promise<Contrato[]> {
   const [detalle, configuracion] = await Promise.all([
     supabase.from("contratos_detalle").select("*").order("termino"),
-    supabase.from("contratos").select("id, plantilla_edp, edp_campos, condiciones, moneda, monto_uf"),
+    supabase.from("contratos").select("id, nombre_corto, plantilla_edp, edp_campos, condiciones, moneda, monto_uf"),
   ]);
 
   const error = detalle.error ?? configuracion.error;
@@ -134,6 +138,7 @@ export async function cargarContratos(): Promise<Contrato[]> {
     moneda: ((config.get(c.id)?.moneda as Moneda | null) ?? "CLP"),
     montoUf: config.get(c.id)?.monto_uf == null ? null : Number(config.get(c.id)?.monto_uf),
     nombre: c.nombre,
+    nombreCorto: (config.get(c.id)?.nombre_corto as string | null) ?? "",
     cliente: c.cliente,
     faena: c.faena,
     avance: c.avance,

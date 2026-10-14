@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Etiqueta } from "../ui/Chip";
+import { tipoSegunCategoria } from "@/lib/categorias";
 import { tiposCompra, type TipoCompra } from "@/lib/egresos";
 import { formatearPesos } from "@/lib/formato";
 import { leerPegado } from "@/lib/pegado";
@@ -49,7 +50,7 @@ export function LineasDeGasto({
   lineas: LineaGasto[];
   alCambiar: (lineas: LineaGasto[]) => void;
   /** Las categorías del contrato elegido. */
-  categorias: { id: string; nombre: string }[];
+  categorias: { id: string; nombre: string; esActivo?: boolean }[];
   /** Si la categoría lleva IVA; sin categoría, sí. */
   afectaIva: (categoriaId: string) => boolean;
 }) {
@@ -58,7 +59,21 @@ export function LineasDeGasto({
   const pegadas = leerPegado(texto);
 
   const cambiar = (clave: string, campo: keyof LineaGasto, valor: unknown) =>
-    alCambiar(lineas.map((l) => (l.clave === clave ? { ...l, [campo]: valor } : l)));
+    alCambiar(
+      lineas.map((l) => {
+        if (l.clave !== clave) return l;
+        const nueva = { ...l, [campo]: valor };
+        // Elegir una categoría de activos marca la línea como activo.
+        if (campo === "categoria_id") {
+          nueva.tipo = tipoSegunCategoria(
+            l.tipo,
+            categorias.find((c) => c.id === l.categoria_id),
+            categorias.find((c) => c.id === valor),
+          );
+        }
+        return nueva;
+      }),
+    );
 
   function agregar(filas: ReturnType<typeof leerPegado>) {
     const conAlgo = lineas.filter((l) => l.descripcion.trim());
@@ -125,7 +140,14 @@ export function LineasDeGasto({
         <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-ink-soft">
           <span className="font-semibold uppercase tracking-[0.1em]">A todas las líneas:</span>
           <select aria-label="Categoría para todas las líneas" value=""
-            onChange={(e) => e.target.value && alCambiar(lineas.map((l) => ({ ...l, categoria_id: e.target.value === "-" ? "" : e.target.value })))}
+            onChange={(e) => e.target.value && alCambiar(lineas.map((l) => {
+              const id = e.target.value === "-" ? "" : e.target.value;
+              return {
+                ...l,
+                categoria_id: id,
+                tipo: tipoSegunCategoria(l.tipo, categorias.find((c) => c.id === l.categoria_id), categorias.find((c) => c.id === id)),
+              };
+            }))}
             className="rounded-full border border-mist-deep bg-white px-3 py-1.5 text-xs font-semibold text-ink-soft">
             <option value="">Categoría…</option>
             <option value="-">— Sin categoría —</option>

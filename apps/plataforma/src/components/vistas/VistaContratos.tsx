@@ -11,6 +11,7 @@ import { DialogoAdjuntos } from "../ui/Adjuntos";
 import { AccionesFila, BotonNuevo, DialogoHistorial, useEdicion } from "../ui/Historial";
 import { Contenido, Encabezado, Filtro, Resumen } from "../ui/Vista";
 import { useConsulta } from "@/lib/consulta";
+import { cargarAnexos, montoConSigno, type Anexo } from "@/lib/anexos";
 import { cargarContratos } from "@/lib/contratos";
 import { formatearFecha, formatearMonto, formatearUf } from "@/lib/formato";
 import {
@@ -57,7 +58,7 @@ function consumoPct(c: Contrato): number | null {
 }
 
 export function VistaContratos() {
-  const { estado, recargar } = useConsulta<Contrato[]>(cargarContratos);
+  const { estado, recargar } = useConsulta<{ contratos: Contrato[]; anexos: Anexo[] }>(cargarContratosYAnexos);
   const edicion = useEdicion<Contrato>("contratos");
   const [anexos, setAnexos] = useState<Contrato | null>(null);
   const [plantilla, setPlantilla] = useState<Contrato | null>(null);
@@ -75,7 +76,8 @@ export function VistaContratos() {
         {(datos) => (
           <>
             <Contenidos
-              filas={datos}
+              filas={datos.contratos}
+              anexosTodos={datos.anexos}
               edicion={edicion}
               alVerAnexos={setAnexos}
               alCambiar={recargar}
@@ -133,8 +135,14 @@ export function VistaContratos() {
   );
 }
 
+async function cargarContratosYAnexos() {
+  const [contratos, anexos] = await Promise.all([cargarContratos(), cargarAnexos()]);
+  return { contratos, anexos };
+}
+
 function Contenidos({
   filas,
+  anexosTodos,
   edicion,
   alVerAnexos,
   alCambiar,
@@ -142,6 +150,7 @@ function Contenidos({
   alVerCategorias,
 }: {
   filas: Contrato[];
+  anexosTodos: Anexo[];
   edicion: ReturnType<typeof useEdicion<Contrato>>;
   alVerAnexos: (c: Contrato) => void;
   alCambiar: () => void;
@@ -164,41 +173,42 @@ function Contenidos({
   const vigentes = filas.filter((c) => c.vigencia === "vigente");
   const porVencer = filas.filter((c) => c.vigencia === "por-vencer");
   const cerrados = filas.filter(terminado);
-  const conMonto = filas.filter((c) => c.montoVigente !== null).length;
-  const montoVigente = filas
-    .filter((c) => !terminado(c))
-    .reduce((t, c) => t + (c.montoVigente ?? 0), 0);
-  const montoCerrado = cerrados.reduce((t, c) => t + (c.montoVigente ?? 0), 0);
+  // El anexo es un contrato más: sus cifras van aparte, nunca sumadas a las del contrato.
+  const conMonto = filas.filter((c) => c.presupuesto > 0).length;
+  const montoContratos = filas.reduce((t, c) => t + c.presupuesto, 0);
+  const anexosVigentes = anexosTodos.filter((a) => a.estado === "vigente");
+  const enNegociacion = anexosTodos.filter((a) => a.estado === "borrador").length;
+  const anulados = anexosTodos.filter((a) => a.estado === "anulado").length;
+  const montoAnexos = anexosVigentes.reduce((t, a) => t + montoConSigno(a.tipo, a.monto), 0);
 
   return (
     <>
       <Resumen
         datos={[
           {
-            etiqueta: "Contratos",
+            etiqueta: "N° de contratos",
             valor: String(filas.length),
-            nota: `${vigentes.length} vigentes · ${porVencer.length} por vencer`,
+            nota: `${vigentes.length} vigentes · ${porVencer.length} por vencer · ${cerrados.length} cerrados`,
           },
           {
-            etiqueta: "Monto contratado",
-            valor: montoVigente > 0 ? formatearMonto(montoVigente) : "—",
+            etiqueta: "Monto de contratos",
+            valor: montoContratos > 0 ? formatearMonto(montoContratos) : "—",
             nota:
               conMonto === 0
                 ? "Los recurrentes no llevan monto total"
                 : `${conMonto} de ${filas.length} contratos con monto`,
           },
           {
-            etiqueta: "Cerrados",
-            valor: String(cerrados.length),
-            nota:
-              montoCerrado > 0
-                ? `${formatearMonto(montoCerrado)} contratados`
-                : "Sin monto asociado",
+            etiqueta: "N° de anexos",
+            valor: String(anexosTodos.length),
+            nota: anexosTodos.length === 0
+              ? "Sin anexos"
+              : `${anexosVigentes.length} vigentes · ${enNegociacion} en negociación · ${anulados} anulados`,
           },
           {
-            etiqueta: "Costo comprometido",
-            valor: formatearMonto(filas.reduce((t, c) => t + c.costoReal, 0)),
-            nota: "Compras, servicios y personal cargados",
+            etiqueta: "Monto de anexos",
+            valor: anexosVigentes.length > 0 ? formatearMonto(montoAnexos) : "—",
+            nota: anexosVigentes.length === 0 ? "Sin anexos vigentes" : `${anexosVigentes.length} anexos vigentes`,
           },
         ]}
       />

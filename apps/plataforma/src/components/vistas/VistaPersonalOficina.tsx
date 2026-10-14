@@ -87,7 +87,7 @@ function Contenidos({ filas, finiquitos: todosFiniquitos, edicion, alCambiar }: 
   ], [filas, todosFiniquitos]);
   const visibles = mes === "todos" ? filas : filas.filter((f) => f.periodo === mes);
 
-  const suma = (campo: "total_haberes" | "aporte_patronal" | "costo_total" | "horas_hombre") =>
+  const suma = (campo: "total_haberes" | "aporte_patronal" | "horas_extra_monto" | "costo_total" | "horas_hombre") =>
     visibles.reduce((t, f) => t + f[campo], 0);
   const costo = suma("costo_total");
   const finiquitosVisibles = mes === "todos" ? todosFiniquitos : todosFiniquitos.filter((f) => f.periodo === mes);
@@ -115,6 +115,7 @@ function Contenidos({ filas, finiquitos: todosFiniquitos, edicion, alCambiar }: 
             <Total derecha>{formatearNumero(horas)}</Total>
             <Total derecha>{formatearMonto(suma("total_haberes"))}</Total>
             <Total derecha>{formatearMonto(suma("aporte_patronal"))}</Total>
+            <Total derecha>{formatearMonto(suma("horas_extra_monto"))}</Total>
             <Total derecha>{formatearMonto(costo)}</Total>
             <Total />
           </> : undefined} />
@@ -145,6 +146,7 @@ const columnas = (edicion: ReturnType<typeof useEdicion<NominaOficina>>): Column
   { clave: "hh", titulo: "Horas hombre", derecha: true, celda: (f) => <span className="text-ink-soft">{formatearNumero(f.horas_hombre)}</span> },
   { clave: "haberes", titulo: "Total haberes", derecha: true, celda: (f) => <span className="text-ink-soft">{formatearMonto(f.total_haberes)}</span> },
   { clave: "aporte", titulo: "Aporte patronal", derecha: true, celda: (f) => <span className="text-ink-soft">{formatearMonto(f.aporte_patronal)}</span> },
+  { clave: "hhExtra", titulo: "Costo total de las HH extra", derecha: true, celda: (f) => <span className="text-ink-soft">{formatearMonto(f.horas_extra_monto)}</span> },
   { clave: "costo", titulo: "Costo total", derecha: true, celda: (f) => <span className="font-semibold text-ink">{formatearMonto(f.costo_total)}</span> },
   { clave: "acciones", titulo: "", derecha: true, celda: (f) => (
     <AccionesFila permiso={PERMISO}

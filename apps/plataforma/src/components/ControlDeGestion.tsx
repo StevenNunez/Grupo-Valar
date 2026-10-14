@@ -7,7 +7,7 @@ import { InformeImprimible } from "./InformeImprimible";
 import { Chip } from "./ui/Chip";
 import { BotonImprimir, Impresion } from "./ui/Impresion";
 import { Tabla, Total, type Columna } from "./ui/Tabla";
-import { Contenido, Desplegable, Filtro, Panel, Resumen } from "./ui/Vista";
+import { CampoFiltro, Contenido, Desplegable, Panel, Resumen } from "./ui/Vista";
 import { useConsulta } from "@/lib/consulta";
 import {
   acumularCategorias,
@@ -84,19 +84,55 @@ export function ControlDeGestion() {
 
 function Tablero({ datos }: { datos: DatosDashboard }) {
   const [periodo, setPeriodo] = useState<Periodo>("todo");
-  const [contratoFiltro, setContratoFiltro] = useState<string>("todos");
+  const [contratoFiltro, setContratoFiltroCrudo] = useState<string>("todos");
+  /* Los anexos que se suman al contrato elegido. Por defecto ninguno: el
+     contrato se ve solo, y cada anexo se marca para sumarlo o se elige solo. */
+  const [anexosMarcados, setAnexosMarcados] = useState<string[]>([]);
   const [imprimiendo, setImprimiendo] = useState(false);
   const usuario = useUsuario();
 
-  const contratosDisponibles = useMemo(() => {
-    const vistos = new Map<string, string>();
-    for (const f of datos.meses) vistos.set(f.contratoId, f.contrato);
-    return [
-      { id: "todos", titulo: "Todos los contratos" },
-      ...[...vistos].map(([id, nombre]) => ({ id, titulo: nombre })),
-    ];
-  }, [datos.meses]);
+  const setContratoFiltro = (id: string) => {
+    setContratoFiltroCrudo(id);
+    setAnexosMarcados([]);
+  };
 
+  /* Cada contrato con sus anexos. Un anexo es un contrato más: se puede mirar
+     solo, o sumarlo a su contrato con la casilla. */
+  const grupos = useMemo(() => {
+    const porContrato = new Map<string, { id: string; nombre: string; anexos: { id: string; nombre: string }[] }>();
+    for (const f of datos.meses) {
+      const id = f.padreId ?? f.contratoId;
+      if (!porContrato.has(id)) porContrato.set(id, { id, nombre: id, anexos: [] });
+      if (f.padreId === null) porContrato.get(id)!.nombre = f.contratoCorto || f.contrato;
+    }
+    for (const a of datos.anexosDisponibles) {
+      if (!porContrato.has(a.contratoId)) porContrato.set(a.contratoId, { id: a.contratoId, nombre: a.contratoId, anexos: [] });
+      porContrato.get(a.contratoId)!.anexos.push({ id: a.id, nombre: a.nombre });
+    }
+    // Un anexo con datos pero fuera de la lista (p. ej. un borrador) también se puede elegir.
+    for (const f of datos.meses) {
+      if (f.padreId === null) continue;
+      const g = porContrato.get(f.padreId)!;
+      if (!g.anexos.some((a) => a.id === f.contratoId)) g.anexos.push({ id: f.contratoId, nombre: f.contrato });
+    }
+    return [...porContrato.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+  }, [datos.meses, datos.anexosDisponibles]);
+
+  /* Qué unidades están a la vista: null = todas, cada una por separado. */
+  const unidades = useMemo<string[] | null>(() => {
+    if (contratoFiltro === "todos") return null;
+    if (contratoFiltro.includes("#")) return [contratoFiltro];
+    return [contratoFiltro, ...anexosMarcados];
+  }, [contratoFiltro, anexosMarcados]);
+
+  const nombreDeUnidad = (id: string) => {
+    for (const g of grupos) {
+      if (g.id === id) return g.nombre;
+      const a = g.anexos.find((x) => x.id === id);
+      if (a) return a.nombre;
+    }
+    return id;
+  };
   const periodosDatos = useMemo(
     () => [...new Set([
       ...datos.meses.map((f) => f.periodo),
@@ -108,17 +144,17 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
 
   const filas = useMemo(() => {
     let base = datos.meses;
-    if (contratoFiltro !== "todos") {
-      base = base.filter((f) => f.contratoId === contratoFiltro);
+    if (unidades) {
+      base = base.filter((f) => unidades.includes(f.contratoId));
     }
     if (esMes(periodo)) {
       base = base.filter((f) => f.periodo === mesDe(periodo));
     } else if (periodo !== "todo") {
-      const meses = (contratoFiltro === "todos" ? periodosDatos : [...new Set(base.map((f) => f.periodo))].sort()).slice(-Number(periodo));
+      const meses = (!unidades ? periodosDatos : [...new Set(base.map((f) => f.periodo))].sort()).slice(-Number(periodo));
       base = base.filter((f) => meses.includes(f.periodo));
     }
     return base;
-  }, [datos.meses, periodo, contratoFiltro, periodosDatos]);
+  }, [datos.meses, periodo, unidades, periodosDatos]);
 
   /* Los meses que hay para elegir, del más nuevo al más viejo. Salen de los
      datos, no de un calendario: solo se ofrece lo que tiene movimientos. */
@@ -160,24 +196,23 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
 
   const categoriasVisibles = acumularCategorias(
     datos.categorias,
-    contratoFiltro,
+    unidades ?? "todos",
     evolucion.length,
     periodosVisibles,
   );
 
   const alcance = [
-    contratosDisponibles.find((c) => c.id === contratoFiltro)?.titulo ?? "Todos los contratos",
+    unidades ? unidades.map(nombreDeUnidad).join(" + ") : "Todos los contratos",
     [...rangos, ...mesesDisponibles].find((p) => p.id === periodo)?.titulo ?? "Todo el período",
   ].join(" · ");
 
   if (filas.length === 0) {
     return (
       <>
-      {datos.meses.length > 0 && <div className="mb-6 flex flex-wrap items-center gap-3">
-        <Filtro etiqueta="Contrato" opciones={contratosDisponibles} valor={contratoFiltro} alCambiar={setContratoFiltro} />
-        <Desplegable etiqueta="Período" valor={periodo} alCambiar={setPeriodo}
-          grupos={[{ opciones: rangos }, { titulo: "Un mes en particular", opciones: mesesDisponibles }]} />
-      </div>}
+      {datos.meses.length > 0 && <FiltrosDashboard
+        grupos={grupos} contrato={contratoFiltro} alCambiarContrato={setContratoFiltro}
+        marcados={anexosMarcados} alMarcar={setAnexosMarcados}
+        periodo={periodo} alCambiarPeriodo={setPeriodo} mesesDisponibles={mesesDisponibles} />}
       <div className="rounded-2xl border border-dashed border-mist-deep bg-white p-10 text-center">
         <p className="font-display text-lg font-semibold text-ink">
           Todavía no hay movimientos de contratos cargados
@@ -194,29 +229,13 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
 
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <Filtro
-          etiqueta="Contrato"
-          opciones={contratosDisponibles}
-          valor={contratoFiltro}
-          alCambiar={setContratoFiltro}
-        />
-        <Desplegable
-          etiqueta="Período"
-          valor={periodo}
-          alCambiar={setPeriodo}
-          grupos={[
-            { opciones: rangos },
-            { titulo: "Un mes en particular", opciones: mesesDisponibles },
-          ]}
-        />
-
-        {/* El informe sale con los filtros puestos: lo que se ve es lo que se
-            imprime, y el encabezado de la hoja lo deja dicho. */}
-        <div className="ml-auto">
-          <BotonImprimir onClick={() => setImprimiendo(true)} />
-        </div>
-      </div>
+      <FiltrosDashboard
+        grupos={grupos} contrato={contratoFiltro} alCambiarContrato={setContratoFiltro}
+        marcados={anexosMarcados} alMarcar={setAnexosMarcados}
+        periodo={periodo} alCambiarPeriodo={setPeriodo} mesesDisponibles={mesesDisponibles}
+        /* El informe sale con los filtros puestos: lo que se ve es lo que se
+           imprime, y el encabezado de la hoja lo deja dicho. */
+        acciones={<BotonImprimir onClick={() => setImprimiendo(true)} />} />
 
       {/* ── Consolidado ────────────────────────────────────────────────────── */}
       <Resumen
@@ -260,13 +279,6 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
           </div>
         </section>
       )}
-
-      {/* ── Por anexo ──────────────────────────────────────────────────────── */}
-      <ResultadoPorAnexo
-        datos={datos}
-        contratos={contratos}
-        periodos={periodosVisibles}
-      />
 
       {/* ── Análisis gráfico ───────────────────────────────────────────────── */}
       <AnalisisGrafico
@@ -312,7 +324,7 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
         >
           <TablaCategorias
             categorias={datos.categorias}
-            contratoFiltro={contratoFiltro}
+            contratoFiltro={unidades ?? "todos"}
             meses={evolucion.length}
             periodosVisibles={periodosVisibles}
           />
@@ -378,7 +390,9 @@ function TarjetaContrato({ contrato }: { contrato: Contrato }) {
         <div className="min-w-0">
           <h3 className="font-display text-lg font-semibold text-ink">{contrato.nombre}</h3>
           <p className="mt-0.5 text-sm text-ink-soft">
-            {contrato.cliente} · {contrato.id}
+            {contrato.padreId
+              ? `Anexo · ${contrato.cliente || contrato.padreId}`
+              : `${contrato.cliente} · ${contrato.id}`}
           </p>
         </div>
         <Chip tono={luz}>{textoSemaforo[luz]}</Chip>
@@ -437,136 +451,87 @@ function TarjetaContrato({ contrato }: { contrato: Contrato }) {
   );
 }
 
-/* ── Resultado por anexo ──────────────────────────────────────────────────── */
+/* ── Filtros ──────────────────────────────────────────────────────────────── */
 
-type FilaPorAnexo = {
-  clave: string;
-  contrato: string;
-  nombre: string;
-  esBase: boolean;
-  /** Lo pactado en el anexo y sus adendas. La base no lo muestra acá. */
-  pactado: number | null;
-  venta: number;
-  costo: number;
-  meta: number;
-};
+type GrupoContrato = { id: string; nombre: string; anexos: { id: string; nombre: string }[] };
 
 /**
- * Un anexo puede ser otro negocio dentro del contrato (Carpas dentro de
- * Misceláneos), y la pregunta "¿cuánto se ganó en Carpas?" no la contesta la
- * tarjeta del contrato. Sale solo para los contratos en pantalla que tienen
- * anexos vigentes, con los mismos filtros de contrato y período que el resto.
- * Un anexo sin nada cargado aparece igual, en cero: es la forma de notar que
- * sus EDP y compras se están cargando a la base.
+ * Contrato y período. Un anexo es un contrato más, con sus propios ingresos y
+ * gastos: se elige solo en la lista, o se suma a su contrato con la casilla
+ * (Misceláneos + Carpas). Sin marcar nada, un contrato se ve sin sus anexos.
  */
-function ResultadoPorAnexo({
-  datos,
-  contratos,
-  periodos,
+function FiltrosDashboard({
+  grupos,
+  contrato,
+  alCambiarContrato,
+  marcados,
+  alMarcar,
+  periodo,
+  alCambiarPeriodo,
+  mesesDisponibles,
+  acciones,
 }: {
-  datos: DatosDashboard;
-  contratos: Contrato[];
-  periodos: string[];
+  grupos: GrupoContrato[];
+  contrato: string;
+  alCambiarContrato: (id: string) => void;
+  marcados: string[];
+  alMarcar: (ids: string[]) => void;
+  periodo: Periodo;
+  alCambiarPeriodo: (p: Periodo) => void;
+  mesesDisponibles: { id: Periodo; titulo: string }[];
+  acciones?: React.ReactNode;
 }) {
-  const filas = useMemo(() => {
-    const enPantalla = new Map(contratos.map((c) => [c.id, c]));
-    const visibles = new Set(periodos);
-    const salida = new Map<string, FilaPorAnexo>();
-    const fila = (contratoId: string, anexoId: string | null, nombre: string) => {
-      const clave = `${contratoId}|${anexoId ?? ""}`;
-      let f = salida.get(clave);
-      if (!f) {
-        const c = enPantalla.get(contratoId)!;
-        f = { clave, contrato: c.nombre, nombre, esBase: anexoId === null, pactado: null, venta: 0, costo: 0, meta: c.meta };
-        salida.set(clave, f);
-      }
-      return f;
-    };
-
-    for (const a of datos.anexosVigentes) {
-      if (!enPantalla.has(a.contratoId)) continue;
-      fila(a.contratoId, null, "Contrato base");
-      fila(a.contratoId, a.anexoId, a.nombre).pactado = a.monto;
-    }
-    for (const m of datos.anexos) {
-      if (!enPantalla.has(m.contratoId) || !visibles.has(m.periodo)) continue;
-      const f = fila(m.contratoId, m.anexoId, m.nombre);
-      f.venta += m.venta;
-      f.costo += m.costo;
-    }
-    // Por contrato en el orden de las tarjetas; dentro, la base primero.
-    const orden = contratos.map((c) => c.nombre);
-    return [...salida.values()].sort(
-      (a, b) =>
-        orden.indexOf(a.contrato) - orden.indexOf(b.contrato) ||
-        Number(b.esBase) - Number(a.esBase) ||
-        a.nombre.localeCompare(b.nombre),
-    );
-  }, [datos.anexos, datos.anexosVigentes, contratos, periodos]);
-
-  if (filas.length === 0) return null;
-  const variosContratos = new Set(filas.map((f) => f.contrato)).size > 1;
-
-  const columnas: Columna<FilaPorAnexo>[] = [
-    {
-      clave: "nombre",
-      titulo: "Se carga contra",
-      encabezado: true,
-      celda: (f) => (
-        <>
-          <span className={`block ${f.esBase ? "text-ink-soft" : "font-semibold text-ink"}`}>{f.nombre}</span>
-          {variosContratos && <span className="mt-0.5 block text-xs text-ink-soft">{f.contrato}</span>}
-        </>
-      ),
-    },
-    {
-      clave: "pactado",
-      titulo: "Pactado",
-      derecha: true,
-      celda: (f) => <span className="text-ink-soft">{f.pactado === null ? "—" : formatearMonto(f.pactado)}</span>,
-    },
-    {
-      clave: "venta",
-      titulo: "Ventas",
-      derecha: true,
-      celda: (f) => <span className="text-ink-soft">{formatearMonto(f.venta)}</span>,
-    },
-    {
-      clave: "costo",
-      titulo: "Costos",
-      derecha: true,
-      celda: (f) => <span className="text-ink-soft">{formatearMonto(f.costo)}</span>,
-    },
-    {
-      clave: "margen",
-      titulo: "Resultado",
-      derecha: true,
-      celda: (f) => (
-        <span className={`font-semibold ${f.venta - f.costo < 0 ? "text-[#a52f24]" : "text-ink"}`}>
-          {formatearMonto(f.venta - f.costo)}
-        </span>
-      ),
-    },
-    {
-      clave: "pct",
-      titulo: "Rentabilidad",
-      derecha: true,
-      celda: (f) => {
-        if (f.venta <= 0) return <span className="text-ink-soft">—</span>;
-        const pct = ((f.venta - f.costo) / f.venta) * 100;
-        return <Chip tono={semaforo(pct, f.meta)}>{pct.toFixed(1)}%</Chip>;
-      },
-    },
-  ];
+  const elegido = grupos.find((g) => g.id === contrato);
+  const alternar = (id: string) =>
+    alMarcar(marcados.includes(id) ? marcados.filter((m) => m !== id) : [...marcados, id]);
 
   return (
     <div className="mb-6">
-      <Panel
-        titulo="Resultado por anexo"
-        nota="Lo cargado a cada anexo (sus adendas incluidas) y al contrato base, en el período elegido. Neto de IVA."
-      >
-        <Tabla columnas={columnas} filas={filas} claveDe={(f) => f.clave} vacio="Sin anexos vigentes." />
-      </Panel>
+      <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+        <CampoFiltro etiqueta="Contrato">
+          <Desplegable
+            etiqueta="Contrato"
+            valor={contrato}
+            alCambiar={alCambiarContrato}
+            grupos={[
+              { opciones: [{ id: "todos", titulo: "Todos (cada contrato y anexo por separado)" }] },
+              ...grupos.map((g) => ({
+                titulo: g.nombre,
+                opciones: [{ id: g.id, titulo: g.nombre }, ...g.anexos.map((a) => ({ id: a.id, titulo: `↳ ${a.nombre}` }))],
+              })),
+            ]}
+          />
+        </CampoFiltro>
+        <CampoFiltro etiqueta="Período">
+          <Desplegable
+            etiqueta="Período"
+            valor={periodo}
+            alCambiar={alCambiarPeriodo}
+            grupos={[{ opciones: rangos }, { titulo: "Un mes en particular", opciones: mesesDisponibles }]}
+          />
+        </CampoFiltro>
+        {acciones && <div className="ml-auto">{acciones}</div>}
+      </div>
+
+      {elegido && elegido.anexos.length > 0 && (
+        <fieldset className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-mist-deep bg-white px-4 py-3">
+          <legend className="sr-only">Sumar anexos a {elegido.nombre}</legend>
+          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft">
+            {elegido.nombre} se ve sin sus anexos. Sumar:
+          </span>
+          {elegido.anexos.map((a) => (
+            <label key={a.id} className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-ink">
+              <input
+                type="checkbox"
+                checked={marcados.includes(a.id)}
+                onChange={() => alternar(a.id)}
+                className="h-4 w-4 accent-[#137e9e]"
+              />
+              {a.nombre}
+            </label>
+          ))}
+        </fieldset>
+      )}
     </div>
   );
 }
@@ -665,7 +630,7 @@ function TablaCategorias({
   periodosVisibles,
 }: {
   categorias: FilaCategoria[];
-  contratoFiltro: string;
+  contratoFiltro: string | string[];
   meses: number;
   periodosVisibles: string[];
 }) {
