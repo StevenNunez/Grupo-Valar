@@ -459,6 +459,7 @@ const columnas = (
         <BotonAdjuntos
           cuantos={edicion.cuantosAdjuntos(o.id)}
           onClick={() => edicion.verAdjuntos(o.id, `${o.numero} · ${o.proveedor}`)}
+          alVer={() => edicion.abrirRespaldo(o.id, `${o.numero} · ${o.proveedor}`)}
         />
         <BotonIcono titulo="Ver historial" onClick={() => edicion.verHistorial(o.id, `${o.numero} · ${o.proveedor}`)}>
           <circle cx="12" cy="12" r="8.5" />

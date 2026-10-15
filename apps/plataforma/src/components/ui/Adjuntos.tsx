@@ -86,7 +86,7 @@ export function DialogoAdjuntos({
 
   return (
     <Dialogo titulo="Respaldos del registro" descripcion={titulo} abierto alCerrar={alCerrar}>
-      <Contenido tabla={tabla} registroId={registroId} alCambiar={alCambiar} />
+      <Contenido tabla={tabla} registroId={registroId} alCambiar={alCambiar} alCerrar={alCerrar} />
     </Dialogo>
   );
 }
@@ -95,10 +95,12 @@ function Contenido({
   tabla,
   registroId,
   alCambiar,
+  alCerrar,
 }: {
   tabla: string;
   registroId: string;
   alCambiar?: () => void;
+  alCerrar: () => void;
 }) {
   const { estado, recargar } = useConsulta<Adjunto[]>(() => cargarAdjuntos(tabla, registroId));
   const [subiendo, setSubiendo] = useState(false);
@@ -106,28 +108,48 @@ function Contenido({
   const [porBorrar, setPorBorrar] = useState<Adjunto | null>(null);
   const [borrando, setBorrando] = useState(false);
   const [arrastrando, setArrastrando] = useState(false);
+  /* Lo elegido queda EN ESPERA hasta apretar «Guardar»: se ve qué se va a subir,
+     se puede quitar un archivo equivocado y recién ahí se manda. Antes subía en
+     cuanto se elegía, sin dar chance de revisar ni botón que confirmara. */
+  const [porSubir, setPorSubir] = useState<File[]>([]);
   const entrada = useRef<HTMLInputElement>(null);
   const usuario = useUsuario();
   const puedeEscribir = (permisoParaAdjuntar[tabla] ?? []).some((p) => puede(usuario, p));
 
-  async function subir(archivos: FileList | null) {
+  function agregar(archivos: FileList | null) {
     if (!archivos || archivos.length === 0) return;
+    setError(null);
+    setPorSubir((previos) => {
+      const yaEstan = new Set(previos.map((a) => `${a.name}:${a.size}`));
+      return [...previos, ...Array.from(archivos).filter((a) => !yaEstan.has(`${a.name}:${a.size}`))];
+    });
+    if (entrada.current) entrada.current.value = "";
+  }
+
+  async function guardar() {
+    if (porSubir.length === 0) return;
 
     setError(null);
     setSubiendo(true);
+    const pendientes = [...porSubir];
     try {
       // De a uno y en orden: si el tercero falla, los dos primeros ya están
-      // guardados y el mensaje dice cuál fue el que no entró.
-      for (const archivo of Array.from(archivos)) {
-        await subirAdjunto({ tabla, registroId, archivo });
+      // guardados, salen de la lista y quedan en espera el que falló y los que siguen.
+      while (pendientes.length > 0) {
+        await subirAdjunto({ tabla, registroId, archivo: pendientes[0] });
+        pendientes.shift();
+        setPorSubir([...pendientes]);
       }
       recargar();
       alCambiar?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(
+        `${pendientes[0] ? `No se pudo subir «${pendientes[0].name}»: ` : ""}${e instanceof Error ? e.message : String(e)}`,
+      );
+      recargar();
+      alCambiar?.();
     } finally {
       setSubiendo(false);
-      if (entrada.current) entrada.current.value = "";
     }
   }
 
@@ -177,7 +199,7 @@ function Contenido({
           onDrop={(e) => {
             e.preventDefault();
             setArrastrando(false);
-            void subir(e.dataTransfer.files);
+            agregar(e.dataTransfer.files);
           }}
           className={`rounded-2xl border-2 border-dashed px-6 py-8 text-center transition-colors ${
             arrastrando ? "border-cyan bg-cyan/5" : "border-mist-deep bg-mist/30"
@@ -217,12 +239,39 @@ function Contenido({
             type="file"
             multiple
             accept={TIPOS_ACEPTADOS}
-            onChange={(e) => void subir(e.target.files)}
+            onChange={(e) => agregar(e.target.files)}
             className="hidden"
           />
-
-          {subiendo && <p className="mt-3 text-sm font-semibold text-cyan-deep">Subiendo…</p>}
         </div>
+        )}
+
+        {/* En espera de «Guardar» */}
+        {puedeEscribir && porSubir.length > 0 && (
+          <div className="mt-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft">
+              Por guardar ({porSubir.length})
+            </p>
+            <ul className="mt-2 flex max-h-40 flex-col gap-1.5 overflow-y-auto">
+              {porSubir.map((a, i) => (
+                <li
+                  key={`${a.name}:${a.size}`}
+                  className="flex items-center justify-between gap-3 rounded-xl bg-mist/50 px-3 py-2 text-sm"
+                >
+                  <span className="min-w-0 truncate font-semibold text-ink" title={a.name}>
+                    {a.name} <span className="font-normal text-ink-soft">· {formatearPeso(a.size)}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPorSubir((p) => p.filter((_, j) => j !== i))}
+                    disabled={subiendo}
+                    className="shrink-0 text-xs font-semibold text-[#a52f24] disabled:opacity-40"
+                  >
+                    Quitar
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
 
         {error && (
@@ -300,6 +349,32 @@ function Contenido({
         </div>
       </div>
 
+      {/* El botón que faltaba: sin él, no había forma de confirmar la subida. */}
+      <div className="flex items-center justify-end gap-3 border-t border-mist px-6 py-4">
+        <button
+          type="button"
+          onClick={alCerrar}
+          disabled={subiendo}
+          className="rounded-full border border-mist-deep px-5 py-2.5 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-50"
+        >
+          {porSubir.length > 0 ? "Cancelar" : "Cerrar"}
+        </button>
+        {puedeEscribir && (
+          <button
+            type="button"
+            onClick={() => void guardar()}
+            disabled={subiendo || porSubir.length === 0}
+            className="rounded-full bg-cyan px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {subiendo
+              ? "Guardando…"
+              : porSubir.length > 0
+                ? `Guardar ${porSubir.length === 1 ? "el respaldo" : `${porSubir.length} respaldos`}`
+                : "Guardar"}
+          </button>
+        )}
+      </div>
+
       <Confirmacion
         abierto={porBorrar !== null}
         titulo="Eliminar respaldo"
@@ -338,7 +413,38 @@ function Accion({
 }
 
 /** El clip que abre los respaldos, con la cuenta de los que ya hay. */
-export function BotonAdjuntos({ cuantos, onClick }: { cuantos?: number; onClick: () => void }) {
+export function BotonAdjuntos({
+  cuantos,
+  onClick,
+  alVer,
+}: {
+  cuantos?: number;
+  onClick: () => void;
+  /** El ojo: abre el respaldo sin entrar al diálogo. Solo aparece si hay alguno. */
+  alVer?: () => void;
+}) {
+  return (
+    <>
+      {alVer && !!cuantos && (
+        <button
+          type="button"
+          onClick={alVer}
+          aria-label={cuantos === 1 ? "Ver respaldo" : "Ver respaldos"}
+          title={cuantos === 1 ? "Ver el respaldo" : "Ver los respaldos"}
+          className="rounded-lg p-2 text-ink-soft transition-colors hover:bg-mist hover:text-ink"
+        >
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        </button>
+      )}
+      <ClipDeRespaldos cuantos={cuantos} onClick={onClick} />
+    </>
+  );
+}
+
+function ClipDeRespaldos({ cuantos, onClick }: { cuantos?: number; onClick: () => void }) {
   return (
     <button
       type="button"

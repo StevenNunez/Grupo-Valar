@@ -257,6 +257,7 @@ const columnas = (edicion: ReturnType<typeof useEdicion<Proveedor>>): Columna<Pr
         alEditar={() => edicion.abrirEdicion(p)}
         alVerHistorial={() => edicion.verHistorial(p.id, p.razonSocial)}
         alVerAdjuntos={() => edicion.verAdjuntos(p.id, p.razonSocial)}
+        alVerRespaldo={() => edicion.abrirRespaldo(p.id, p.razonSocial)}
         cuantosAdjuntos={edicion.cuantosAdjuntos(p.id)}
       />
     ),

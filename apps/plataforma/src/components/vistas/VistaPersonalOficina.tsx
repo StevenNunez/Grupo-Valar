@@ -193,6 +193,7 @@ const columnas = (edicion: ReturnType<typeof useEdicion<NominaOficina>>): Column
       alEditar={() => edicion.abrirEdicion(f)}
       alVerHistorial={() => edicion.verHistorial(f.id, `Nómina de ${mesLargo(f.periodo)}`)}
       alVerAdjuntos={() => edicion.verAdjuntos(f.id, `Nómina de ${mesLargo(f.periodo)}`)}
+      alVerRespaldo={() => edicion.abrirRespaldo(f.id, `Nómina de ${mesLargo(f.periodo)}`)}
       cuantosAdjuntos={edicion.cuantosAdjuntos(f.id)} />
   ) },
 ];

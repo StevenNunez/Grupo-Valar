@@ -726,6 +726,7 @@ const columnas = (
           alEditar={() => edicion.abrirEdicion(e)}
           alVerHistorial={() => edicion.verHistorial(e.id, `${e.id} · ${e.tercero}`)}
           alVerAdjuntos={() => edicion.verAdjuntos(e.id, `${e.id} · ${e.tercero}`)}
+          alVerRespaldo={() => edicion.abrirRespaldo(e.id, `${e.id} · ${e.tercero}`)}
         />
       ),
   },

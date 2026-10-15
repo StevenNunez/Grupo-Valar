@@ -416,6 +416,7 @@ function TarjetaContrato({
             alEditar={() => edicion.abrirEdicion(c)}
             alVerHistorial={() => edicion.verHistorial(c.id, `${c.id} · ${c.nombre}`)}
             alVerAdjuntos={() => edicion.verAdjuntos(c.id, `${c.id} · ${c.nombre}`)}
+            alVerRespaldo={() => edicion.abrirRespaldo(c.id, `${c.id} · ${c.nombre}`)}
             cuantosAdjuntos={edicion.cuantosAdjuntos(c.id)}
           />
         </div>

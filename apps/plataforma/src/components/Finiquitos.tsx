@@ -116,6 +116,7 @@ export function PanelFiniquitos({
           alEditar={() => edicion.abrirEdicion(f)}
           alVerHistorial={() => edicion.verHistorial(f.id, titulo(f))}
           alVerAdjuntos={() => edicion.verAdjuntos(f.id, titulo(f))}
+          alVerRespaldo={() => edicion.abrirRespaldo(f.id, titulo(f))}
           cuantosAdjuntos={edicion.cuantosAdjuntos(f.id)}
         />
       ),

@@ -406,6 +406,7 @@ const columnas = (
         alEditar={() => edicion.abrirEdicion(f)}
         alVerHistorial={() => edicion.verHistorial(f.id, `${f.id} · ${f.contrato}`)}
         alVerAdjuntos={() => edicion.verAdjuntos(f.id, `${f.id} · ${f.contrato}`)}
+        alVerRespaldo={() => edicion.abrirRespaldo(f.id, `${f.id} · ${f.contrato}`)}
         cuantosAdjuntos={edicion.cuantosAdjuntos(f.id)}
       />
     ),

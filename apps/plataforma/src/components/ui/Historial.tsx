@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { BotonAdjuntos } from "./Adjuntos";
 import { Dialogo } from "./Formulario";
 import { useConsulta } from "@/lib/consulta";
-import { contarAdjuntos } from "@/lib/adjuntos";
+import { cargarAdjuntos, contarAdjuntos, enlaceDeAdjunto } from "@/lib/adjuntos";
+import { avisar } from "@/lib/avisos";
 import { cargarHistorial, type Accion, type Movimiento } from "@/lib/auditoria";
 import { formatearNumero } from "@/lib/formato";
 import { usePuede } from "@/lib/sesion";
@@ -190,6 +191,7 @@ export function AccionesFila({
   alEditar,
   alVerHistorial,
   alVerAdjuntos,
+  alVerRespaldo,
   cuantosAdjuntos,
   permiso,
 }: {
@@ -200,6 +202,8 @@ export function AccionesFila({
   alVerHistorial: () => void;
   /** Solo aparece el clip en las vistas que pasan esto. */
   alVerAdjuntos?: () => void;
+  /** El ojo: abre el respaldo directo, sin pasar por el diálogo. */
+  alVerRespaldo?: () => void;
   cuantosAdjuntos?: number;
 }) {
   const puedeEditar = usePuede(permiso ?? "");
@@ -207,7 +211,9 @@ export function AccionesFila({
 
   return (
     <div className="flex items-center justify-end gap-1">
-      {alVerAdjuntos && <BotonAdjuntos cuantos={cuantosAdjuntos} onClick={alVerAdjuntos} />}
+      {alVerAdjuntos && (
+        <BotonAdjuntos cuantos={cuantosAdjuntos} onClick={alVerAdjuntos} alVer={alVerRespaldo} />
+      )}
       <button
         type="button"
         onClick={alVerHistorial}
@@ -325,5 +331,28 @@ export function useEdicion<T>(tabla?: string) {
     cerrarAdjuntos: () => setAdjuntos(null),
     cuantosAdjuntos: (id: string) => cuentas.get(id),
     recontarAdjuntos: contar,
+    /**
+     * El ojo de la fila: con un solo respaldo lo abre directo; con varios abre el
+     * diálogo para elegir cuál. La pestaña se abre en el mismo clic y se llena
+     * después, para que el navegador no la bloquee como ventana emergente.
+     */
+    abrirRespaldo: async (id: string, titulo: string) => {
+      if (!tabla) return setAdjuntos({ id, titulo });
+      const ventana = window.open("", "_blank");
+      try {
+        const lista = await cargarAdjuntos(tabla, id);
+        if (lista.length !== 1) {
+          ventana?.close();
+          setAdjuntos({ id, titulo });
+          return;
+        }
+        const url = await enlaceDeAdjunto(lista[0], false);
+        if (ventana) ventana.location.href = url;
+        else window.location.assign(url);
+      } catch (e) {
+        ventana?.close();
+        avisar(`No se pudo abrir el respaldo: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    },
   };
 }
