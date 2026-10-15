@@ -1,5 +1,6 @@
 "use client";
 
+import { SeccionRespaldos, useRespaldos } from "@/components/ui/Respaldos";
 import { DialogoAdjuntos } from "./ui/Adjuntos";
 import {
   Ancho,
@@ -19,7 +20,7 @@ import { AccionesFila, BotonNuevo, DialogoHistorial, useEdicion } from "./ui/His
 import { SelectorAnexo } from "./ui/SelectorAnexo";
 import { Tabla, Total, type Columna } from "./ui/Tabla";
 import { Panel } from "./ui/Vista";
-import { actualizar, crear } from "@/lib/crud";
+import { actualizar, crearConId } from "@/lib/crud";
 import { categoriasDe, type Categoria } from "@/lib/categorias";
 import { opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
 import { causalesFiniquito, type CausalFiniquito, type Finiquito } from "@/lib/finiquitos";
@@ -245,6 +246,7 @@ function FormularioFiniquito({
   const d = f.datos;
   const total = d.indemnizacion_anios + d.indemnizacion_aviso + d.feriado_proporcional + d.otros_montos;
 
+  const respaldos = useRespaldos("finiquitos", editando ? registro.id : null);
   function guardar(e: React.FormEvent) {
     e.preventDefault();
     if (!d.trabajador.trim()) return f.setError("Indica a quién corresponde el finiquito.");
@@ -277,7 +279,10 @@ function FormularioFiniquito({
     };
 
     f.enviar(
-      () => (editando ? actualizar(TABLA, registro.id, fila) : crear(TABLA, fila)),
+      async () => {
+        if (editando) await actualizar(TABLA, registro.id, fila);
+        else void respaldos.subirA(await crearConId(TABLA, fila));
+      },
       () => {
         alGuardado();
         alCerrar();
@@ -373,7 +378,7 @@ function FormularioFiniquito({
             <Ancho><CampoTexto etiqueta="Observaciones" {...f.campo("observaciones")} /></Ancho>
           </Campos>
 
-          <Pie
+          <Pie extra={<SeccionRespaldos respaldos={respaldos} />}
             error={f.error}
             guardando={f.guardando}
             alCancelar={alCerrar}

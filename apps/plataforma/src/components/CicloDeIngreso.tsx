@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Chip, type Tono } from "./ui/Chip";
+import { RespaldosDeFicha } from "./ui/RespaldosDeFicha";
 import { camposDe, mostrarValor, type CampoContrato } from "@/lib/campos";
 import { actualizar } from "@/lib/crud";
 import { formatearFecha, formatearPesos, mesLargo } from "@/lib/formato";
@@ -289,6 +290,9 @@ function PasoEdp({
       )}
 
       {error && <Aviso tono="malo">{error}</Aviso>}
+
+      {/* El respaldo se ve y se descarga acá mismo, sin abrir el diálogo de adjuntos. */}
+      <RespaldosDeFicha tabla="estados_pago" registroId={ciclo.id} />
 
       <div className="mt-3 flex flex-wrap gap-2">
         <BotonChico onClick={() => alImprimir("edp")} icono="hoja">

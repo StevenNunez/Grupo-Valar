@@ -33,7 +33,7 @@ export function mesesDelPeriodo(periodo: Periodo, disponibles: number) {
 }
 
 /** Lo que el calendario no sabe: si se canceló antes de tiempo. Ver la 0047. */
-export type EstadoContrato = "activo" | "cancelado";
+export type EstadoContrato = "activo" | "cancelado" | "cerrado";
 
 export type Contrato = {
   id: string;
@@ -82,6 +82,9 @@ export type Contrato = {
   montoVigente: number | null;
   /** El término después de las extensiones de plazo. */
   terminoVigente: string;
+  /** Cuándo se cerró a mano (0083). Nulo si sigue abierto. */
+  cerradoEn: string | null;
+  cierreObservaciones: string;
 };
 
 /**
@@ -121,11 +124,21 @@ export const formasContrato: { id: FormaContrato; titulo: string; ayuda: string 
 ];
 
 /** La vigencia no se teclea: sale de la fecha de término que rige hoy. */
-export type Vigencia = "vigente" | "por-vencer" | "cerrado" | "cancelado";
+export type Vigencia = "vigente" | "por-vencer" | "por-comenzar" | "vencido" | "cerrado" | "cancelado";
+
+/** Orden de las listas: vigente → por vencer → por comenzar → plazo cumplido → cerrado → cancelado. */
+export const ordenVigencia: Record<Vigencia, number> = {
+  vigente: 0, "por-vencer": 1, "por-comenzar": 2, vencido: 3, cerrado: 4, cancelado: 5,
+};
+
+/** Los que ya salieron de la operación y viven en la vista de cerrados. */
+export const estaCerrado = (v: Vigencia) => v === "cerrado" || v === "cancelado";
 
 export const vigencias: Record<Vigencia, string> = {
   vigente: "Vigente",
   "por-vencer": "Por vencer",
+  "por-comenzar": "Por comenzar",
+  vencido: "Plazo cumplido",
   cerrado: "Cerrado",
   cancelado: "Cancelado",
 };

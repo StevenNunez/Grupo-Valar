@@ -1,5 +1,6 @@
 "use client";
 
+import { SeccionRespaldos, useRespaldos } from "@/components/ui/Respaldos";
 import { SelectorAnexo } from "../ui/SelectorAnexo";
 import { useEffect, useState } from "react";
 
@@ -204,6 +205,7 @@ export function FormularioServicio({
     }
   }
 
+  const respaldos = useRespaldos("servicios", editando ? servicio.id : null);
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (f.datos.desde && f.datos.hasta && f.datos.hasta < f.datos.desde) {
@@ -233,7 +235,10 @@ export function FormularioServicio({
         // El código no se teclea: es el siguiente correlativo del contrato.
         const servicioId = editando ? servicio.id : id.trim() || (await siguienteIdServicio(campos.contrato_id));
         if (editando) await actualizar("servicios", servicio.id, fila);
-        else await crear("servicios", { ...fila, id: servicioId });
+        else {
+          await crear("servicios", { ...fila, id: servicioId });
+          void respaldos.subirA(servicioId);
+        }
         if (lineas.length > 0 || teniaLineas) await guardarLineasDeServicio(servicioId, campos.contrato_id, lineas);
       },
       () => {
@@ -460,6 +465,7 @@ export function FormularioServicio({
           />
 
           <Pie
+            extra={<SeccionRespaldos respaldos={respaldos} />}
             error={f.error}
             guardando={f.guardando}
             alCancelar={alCerrar}

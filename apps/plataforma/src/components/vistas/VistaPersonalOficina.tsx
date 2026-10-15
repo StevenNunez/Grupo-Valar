@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
-import { actualizar, crear } from "@/lib/crud";
+import { SeccionRespaldos, useRespaldos } from "@/components/ui/Respaldos";
+import { useFiltro } from "@/lib/vista-guardada";
+import { useMemo, type FormEvent } from "react";
+import { actualizar, crearConId } from "@/lib/crud";
 import { useConsulta } from "@/lib/consulta";
 import { formatearMonto, formatearNumero, formatearPesos, mesLargo } from "@/lib/formato";
 import { errorDeHaberes, haberesEnCero, haberesParaGuardar, type Haberes } from "@/lib/haberes";
@@ -89,8 +91,8 @@ function Contenidos({ filas: todas, finiquitos: todosFiniquitos, edicion, alCamb
   edicion: ReturnType<typeof useEdicion<NominaOficina>>;
   alCambiar: () => void;
 }) {
-  const [mes, setMes] = useState<string>("todos");
-  const [estatus, setEstatus] = useState<Estatus>("todos");
+  const [mes, setMes] = useFiltro<string>("personal-oficina:mes", "todos");
+  const [estatus, setEstatus] = useFiltro<Estatus>("personal-oficina:estatus", "todos");
 
   const meses = useMemo(
     () => [...new Set([...todas, ...todosFiniquitos].map((f) => delMes(f.periodo)))].sort().reverse()
@@ -229,6 +231,7 @@ function FormularioNominaOficina({ registro, nominas, alCerrar, alGuardado }: {
     : { ...haberesEnCero, periodo: mesActual(), dotacion: 0, horas_hombre: 0, observaciones: "" });
   const borrado = useBorrado(TABLA, registro?.id, () => { alGuardado(); alCerrar(); });
 
+  const respaldos = useRespaldos("costos_personal", registro ? registro.id : null);
   function guardar(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!f.datos.periodo) return f.setError("Elige el mes de la nómina.");
@@ -238,7 +241,10 @@ function FormularioNominaOficina({ registro, nominas, alCerrar, alGuardado }: {
     const problema = errorDeHaberes(f.datos);
     if (problema) return f.setError(problema);
     const fila = { ...haberesParaGuardar(f.datos), observaciones: f.datos.observaciones.trim() || null };
-    f.enviar(() => registro ? actualizar(TABLA, registro.id, fila) : crear(TABLA, fila), () => { alGuardado(); alCerrar(); });
+    f.enviar(async () => {
+      if (registro) await actualizar(TABLA, registro.id, fila);
+      else void respaldos.subirA(await crearConId(TABLA, fila));
+    }, () => { alGuardado(); alCerrar(); });
   }
 
   return (
@@ -255,7 +261,7 @@ function FormularioNominaOficina({ registro, nominas, alCerrar, alGuardado }: {
             </>} />
             <Ancho><CampoTexto etiqueta="Observaciones" {...f.campo("observaciones")} /></Ancho>
           </Campos>
-          <Pie error={f.error} guardando={f.guardando} alCancelar={alCerrar}
+          <Pie extra={<SeccionRespaldos respaldos={respaldos} />} error={f.error} guardando={f.guardando} alCancelar={alCerrar}
             textoGuardar={registro ? "Guardar cambios" : "Crear registro"} alEliminar={registro ? borrado.abrir : undefined} />
         </form>
       </Dialogo>

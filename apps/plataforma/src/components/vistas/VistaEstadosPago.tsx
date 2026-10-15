@@ -1,5 +1,6 @@
 "use client";
 
+import { useFiltro } from "@/lib/vista-guardada";
 import { useMemo, useState } from "react";
 import { FichaDeCiclo, type Documento, type Editable } from "../CicloDeIngreso";
 import {
@@ -276,9 +277,9 @@ function Listado({
   alVerAdjuntos: (tabla: string, id: string, titulo: string) => void;
   alImprimir: (ciclo: Ciclo, cual: Documento) => void;
 }) {
-  const [filtro, setFiltro] = useState<Filtrado>("todos");
-  const [periodo, setPeriodo] = useState("todos");
-  const [contrato, setContrato] = useState("todos");
+  const [filtro, setFiltro] = useFiltro<Filtrado>("estados-de-pago:estado", "todos");
+  const [periodo, setPeriodo] = useFiltro("estados-de-pago:periodo", "todos");
+  const [contrato, setContrato] = useFiltro("estados-de-pago:contrato", "todos");
 
   const periodos = useMemo(
     () => [

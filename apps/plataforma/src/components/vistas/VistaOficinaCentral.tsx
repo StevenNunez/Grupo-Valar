@@ -1,7 +1,9 @@
 "use client";
 
+import { SeccionRespaldos, useRespaldos } from "@/components/ui/Respaldos";
+import { useFiltro } from "@/lib/vista-guardada";
 import { useState, type FormEvent } from "react";
-import { actualizar, crear } from "@/lib/crud";
+import { actualizar, crearConId } from "@/lib/crud";
 import { useConsulta } from "@/lib/consulta";
 import { usePuede } from "@/lib/sesion";
 import { formatearFecha, formatearMonto, formatearPesos, mesLargo } from "@/lib/formato";
@@ -56,9 +58,9 @@ function borradorNuevo(categoria: CategoriaOficina): DatosEgresoOficina {
 
 export function VistaOficinaCentral() {
   const { estado, recargar } = useConsulta(cargarEgresosOficina);
-  const [categoria, setCategoria] = useState<FiltroCategoria>("todos");
-  const [mes, setMes] = useState("todos");
-  const [estatus, setEstatus] = useState<Estatus>("todos");
+  const [categoria, setCategoria] = useFiltro<FiltroCategoria>("oficina-central:categoria", "todos");
+  const [mes, setMes] = useFiltro("oficina-central:mes", "todos");
+  const [estatus, setEstatus] = useFiltro<Estatus>("oficina-central:estatus", "todos");
   const [formulario, setFormulario] = useState<{ registro: EgresoOficina | null; categoria: CategoriaOficina } | null>(null);
   const [historial, setHistorial] = useState<EgresoOficina | null>(null);
   const puedeCargar = usePuede("gestion.editar");
@@ -177,6 +179,7 @@ function FormularioOficina({ registro, categoriaInicial, alCerrar, alGuardado }:
   const [exento, setExento] = useState(registro !== null && registro.neto > 0 && registro.iva === 0);
   const borrado = useBorrado("egresos_oficina_central", registro?.id, () => { alGuardado(); alCerrar(); });
 
+  const respaldos = useRespaldos("egresos_oficina_central", registro ? registro.id : null);
   function guardar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
     const d = formulario.datos;
@@ -186,7 +189,10 @@ function FormularioOficina({ registro, categoriaInicial, alCerrar, alGuardado }:
     }
     const datos = { ...d, iva: ivaDe(d.neto, !exento), proveedor: d.proveedor.trim(), descripcion: d.descripcion.trim(), documento: d.documento?.trim() || null, observaciones: d.observaciones?.trim() || null };
     void formulario.enviar(
-      () => registro ? actualizar("egresos_oficina_central", registro.id, datos) : crear("egresos_oficina_central", datos),
+      async () => {
+        if (registro) await actualizar("egresos_oficina_central", registro.id, datos);
+        else void respaldos.subirA(await crearConId("egresos_oficina_central", datos));
+      },
       () => { alGuardado(); alCerrar(); },
     );
   }
@@ -206,7 +212,7 @@ function FormularioOficina({ registro, categoriaInicial, alCerrar, alGuardado }:
           <ResumenIva neto={formulario.datos.neto} afecto={!exento} alCambiarAfecto={(v) => setExento(!v)} />
           <Ancho><CampoTexto etiqueta="Observaciones" valor={formulario.datos.observaciones ?? ""} alCambiar={(v) => formulario.cambiar("observaciones", v)} /></Ancho>
         </Campos>
-        <Pie error={formulario.error} guardando={formulario.guardando} alCancelar={alCerrar} alEliminar={registro ? borrado.abrir : undefined} />
+        <Pie extra={<SeccionRespaldos respaldos={respaldos} />} error={formulario.error} guardando={formulario.guardando} alCancelar={alCerrar} alEliminar={registro ? borrado.abrir : undefined} />
       </form>
     </Dialogo>
     {registro && <Confirmacion abierto={borrado.confirmando} titulo="Eliminar egreso de Oficina Central"

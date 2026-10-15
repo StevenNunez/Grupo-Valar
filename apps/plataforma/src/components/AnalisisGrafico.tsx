@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import {
-  colorDeContrato,
   costoPorFamilia,
   FAMILIAS,
   nombreFamilia,
+  nivelPorMes,
   SERIES,
+  type Alerta,
   type Contrato,
   type Evolucion,
   type FilaCategoria,
@@ -16,9 +17,11 @@ import { formatearMillones, formatearPesos, mesLargo } from "@/lib/formato";
 /**
  * Análisis gráfico del Dashboard.
  *
- * Cinco lecturas de los mismos datos que ya están en las tarjetas y las tablas:
- * cuánto pesa cada contrato, cuánto rinde, de qué está hecho su costo y cómo se
- * mueve mes a mes. Nada se calcula acá que no esté también en número en la
+ * Cuatro lecturas de los mismos datos que ya están en las tarjetas y las tablas:
+ * cuánto rinde cada contrato, de qué está hecho su costo y cómo se mueven mes a
+ * mes las ventas, los costos y la rentabilidad. Lo que ya dice una tarjeta o una
+ * tabla (el peso de cada contrato en la venta, la rentabilidad mes a mes por
+ * contrato) no se dibuja una segunda vez. Nada se calcula acá que no esté también en número en la
  * misma pantalla —el gráfico es para ver la forma, la tabla para leer la cifra.
  *
  * TODO se dibuja con SVG a mano, sin librería de gráficos. No es purismo: la
@@ -35,8 +38,9 @@ import { formatearMillones, formatearPesos, mesLargo } from "@/lib/formato";
  * - **Tres colores de serie y ni uno más**, y están validados para daltonismo.
  *   Lo que no cabe se agrupa o se separa en otro gráfico.
  * - **Separación de 2px entre segmentos**, no bordes; ejes y grillas en línea
- *   fina; ninguna cifra sobre cada punto: etiqueta selectiva y el resto al
- *   pasar el mouse.
+ *   fina; la evolución mensual lleva escrita la cifra de cada mes
+ *   (porcentaje y utilidad) porque ahí es lo que se pide leer; en los demás
+ *   gráficos la cifra se escribe una vez y el resto va al pasar el mouse.
  */
 
 /*
@@ -51,7 +55,6 @@ const ANCHO_MEDIO = 520;
 const ANCHO_COMPLETO = 1080;
 
 const TINTA = "#1f2124";
-const TINTA_SUAVE = "#3a3d42";
 const GRILLA = "#e3e6e8";
 
 /* ── Herramientas comunes ─────────────────────────────────────────────────── */
@@ -265,7 +268,7 @@ export function RentabilidadPorContrato({
 
   const ancho = ANCHO_MEDIO;
   const filaAlto = 46;
-  const margen = { arriba: 14, derecha: 56, abajo: 30, izquierda: 132 };
+  const margen = { arriba: 14, derecha: 110, abajo: 30, izquierda: 132 };
   const alto = contratos.length * filaAlto + margen.arriba + margen.abajo;
   const anchoUtil = ancho - margen.izquierda - margen.derecha;
 
@@ -313,7 +316,7 @@ export function RentabilidadPorContrato({
                 y={y + 21}
                 className="fill-ink text-[12px] font-semibold tabular-nums"
               >
-                {c.totales.margenPct.toFixed(1)}%
+                {c.totales.margenPct.toFixed(1)}% · {formatearMillones(c.totales.margen)}
               </text>
               <Sensible
                 x={margen.izquierda}
@@ -360,106 +363,7 @@ export function RentabilidadPorContrato({
   );
 }
 
-/* ── 3. Participación en las ventas ───────────────────────────────────────── */
-
-export function ParticipacionEnVentas({ contratos }: { contratos: Contrato[] }) {
-  const [globo, setGlobo] = useState<Globo>(null);
-
-  const ids = contratos.map((c) => c.id);
-  const total = contratos.reduce((t, c) => t + c.totales.venta, 0);
-  if (total <= 0) return null;
-
-  const ancho = ANCHO_MEDIO;
-  const alto = 92;
-  const margen = { izquierda: 0, derecha: 0 };
-  const anchoUtil = ancho - margen.izquierda - margen.derecha;
-  const HUECO = 2; // separación entre segmentos: nunca un borde
-
-  /* Los tramos se calculan antes de dibujar, no acumulando dentro del map: una
-     variable que se va sumando mientras React renderiza es justo lo que rompe
-     cuando el render se repite o se interrumpe. */
-  const tramos: { contrato: Contrato; x: number; ancho: number }[] = [];
-  let recorrido = 0;
-  for (const c of contratos) {
-    const parte = (c.totales.venta / total) * anchoUtil;
-    tramos.push({ contrato: c, x: margen.izquierda + recorrido, ancho: parte });
-    recorrido += parte;
-  }
-
-  return (
-    <Lienzo
-      titulo="Participación en las ventas"
-      descripcion="Cuánto de la venta consolidada pone cada contrato."
-      leyenda={contratos.map((c) => ({
-        color: colorDeContrato(c.id, ids),
-        nombre: `${c.nombre} · ${c.aporteVenta.toFixed(0)}%`,
-      }))}
-      globo={globo}
-    >
-      <svg
-        viewBox={`0 0 ${ancho} ${alto}`}
-        className="w-full"
-        role="img"
-        aria-label="Participación de cada contrato en las ventas consolidadas"
-      >
-        {tramos.map(({ contrato: c, x, ancho: parte }) => {
-          const util = Math.max(parte - HUECO, 2);
-          const cabe = util > 90;
-
-          return (
-            <g key={c.id}>
-              <rect
-                x={x}
-                y={0}
-                width={util}
-                height={34}
-                rx={4}
-                fill={colorDeContrato(c.id, ids)}
-              />
-              {/* La cifra va dentro solo si cabe con aire; si no, a la leyenda. */}
-              {cabe && (
-                <text
-                  x={x + 12}
-                  y={22}
-                  className="fill-white text-[12px] font-semibold tabular-nums"
-                >
-                  {c.aporteVenta.toFixed(0)}%
-                </text>
-              )}
-              <text x={x} y={56} className="fill-ink text-[12px] font-semibold">
-                {corto(c.nombre, Math.max(Math.floor(util / 8), 8))}
-              </text>
-              <text x={x} y={72} className="fill-ink-soft text-[11px] tabular-nums">
-                {formatearMillones(c.totales.venta)}
-              </text>
-              <Sensible
-                x={x}
-                y={0}
-                ancho={util}
-                alto={34}
-                alEntrar={() =>
-                  setGlobo({
-                    x: ((x + util / 2) / ancho) * 100,
-                    y: 0,
-                    titulo: c.nombre,
-                    lineas: [
-                      `${formatearPesos(c.totales.venta)} de venta`,
-                      `${c.aporteVenta.toFixed(1)}% del consolidado`,
-                      `Aporta el ${c.aporteMargen.toFixed(0)}% del margen`,
-                    ],
-                  })
-                }
-                alSalir={() => setGlobo(null)}
-              />
-            </g>
-          );
-        })}
-      </svg>
-    </Lienzo>
-  );
-}
-
-/* ── 4. Composición del costo ─────────────────────────────────────────────── */
+/* ── 3. Composición del costo ─────────────────────────────────────────────── */
 
 export function ComposicionDelCosto({
   contratos,
@@ -496,6 +400,7 @@ export function ComposicionDelCosto({
       >
         {filas.map((c, fila) => {
           const base = margen.arriba + fila * filaAlto;
+          const venta = contratos.find((k) => k.id === c.contratoId)?.totales.venta ?? 0;
 
           let avance = 0;
           const tramos = FAMILIAS.map((f, i) => {
@@ -517,7 +422,7 @@ export function ComposicionDelCosto({
                 textAnchor="end"
                 className="fill-ink-soft text-[12px] tabular-nums"
               >
-                {formatearMillones(c.total)}
+                {formatearMillones(c.total)}{venta > 0 ? ` · ${((c.total / venta) * 100).toFixed(0)}% de la venta` : ""}
               </text>
 
               {tramos.map(({ familia: f, color, monto, x, ancho: parte }) => {
@@ -565,87 +470,102 @@ export function ComposicionDelCosto({
   );
 }
 
-/* ── 5. Evolución mensual: resultado y rentabilidad ───────────────────────── */
+/* ── 4. Evolución mensual: ventas, costos y rentabilidad ──────────────────── */
 
 /**
- * Dos paneles, no un gráfico con dos ejes.
+ * Dos paneles alineados por mes, cada uno con su propia escala.
  *
- * Los pesos y el porcentaje no comparten escala: dibujarlos superpuestos obliga
- * a elegir a mano dónde se cruzan las dos escalas, y esa elección arbitraria
- * inventa una relación que los datos no tienen. Van uno encima del otro,
- * alineados por mes, que es como se comparan de verdad.
+ *   arriba   ventas y costos lado a lado, en pesos: de un vistazo se ve el mes
+ *            en que se vendió menos y se gastó más
+ *   abajo    rentabilidad en %, con el monto de la utilidad bajo cada mes
+ *
+ * Pesos y porcentaje no comparten eje: superponerlos inventaría una relación.
+ * Cada punto lleva su cifra escrita —sin adivinarla del eje— y los meses con
+ * una desviación (ver `detectarAlertas`) se marcan en el propio gráfico.
  */
 export function EvolucionMensual({
   evolucion,
   meta,
+  alertas,
 }: {
   evolucion: Evolucion[];
   meta: number;
+  alertas: Alerta[];
 }) {
   const [globo, setGlobo] = useState<Globo>(null);
 
   if (evolucion.length === 0) return null;
 
+  const niveles = nivelPorMes(alertas);
   const ancho = ANCHO_COMPLETO;
-  const altoBarras = 150;
-  const altoLinea = 104;
+  const altoBarras = 170;
+  const altoLinea = 120;
   const margen = { izquierda: 74, derecha: 20 };
-  const separacion = 30; // banda para las etiquetas de mes, entre los dos paneles
-  const alto = altoBarras + separacion + altoLinea + 8;
+  const bandaMeses = 52; // mes, utilidad y marca de alerta, entre los dos paneles
+  const baseLinea = altoBarras + bandaMeses;
+  const alto = baseLinea + altoLinea + 8;
   const anchoUtil = ancho - margen.izquierda - margen.derecha;
 
   const paso = anchoUtil / evolucion.length;
-  // Marca delgada: una barra gruesa pesa más de lo que informa.
-  const anchoBarra = Math.min(paso * 0.3, 30);
+  const anchoBarra = Math.min(paso * 0.28, 28);
   const centro = (i: number) => margen.izquierda + paso * i + paso / 2;
+  const conCifras = paso >= 64; // con muchos meses las cifras se leen al pasar el mouse
 
-  const topeMonto = Math.max(...evolucion.map((e) => e.consolidado.margen), 1);
-  const yBarra = (v: number) => altoBarras - (Math.max(v, 0) / topeMonto) * (altoBarras - 16);
+  const topeMonto = Math.max(...evolucion.flatMap((e) => [e.consolidado.venta, e.consolidado.costo]), 1);
+  const yMonto = (v: number) => altoBarras - (Math.max(v, 0) / topeMonto) * (altoBarras - 30);
 
-  const baseLinea = altoBarras + separacion;
-  const topePct = Math.max(...evolucion.map((e) => e.consolidado.margenPct), meta) * 1.15;
-  const yLinea = (v: number) => baseLinea + altoLinea - (Math.max(v, 0) / topePct) * (altoLinea - 12);
+  const pcts = evolucion.map((e) => e.consolidado.margenPct);
+  const topePct = Math.max(...pcts, meta, 10) * 1.2;
+  const pisoPct = Math.min(...pcts, 0);
+  const yLinea = (v: number) =>
+    baseLinea + altoLinea - 14 - ((v - pisoPct) / (topePct - pisoPct || 1)) * (altoLinea - 40);
 
-  const linea = evolucion
-    .map((e, i) => `${i === 0 ? "M" : "L"} ${centro(i)} ${yLinea(e.consolidado.margenPct)}`)
-    .join(" ");
+  const linea = evolucion.map((e, i) => `${i === 0 ? "M" : "L"} ${centro(i)} ${yLinea(e.consolidado.margenPct)}`).join(" ");
+  const COSTO = SERIES[1];
+  const ROJO = "#a52f24";
 
   return (
     <Lienzo
-      titulo="Evolución mensual: resultado y rentabilidad"
-      descripcion="Arriba los pesos, abajo el porcentaje. Van en dos escalas separadas a propósito: superponerlas sugiere una relación que los números no tienen."
+      titulo="Evolución mensual: ventas, costos y rentabilidad"
+      descripcion="Arriba, lo vendido contra lo gastado cada mes. Abajo, la rentabilidad y la utilidad en pesos de cada período. Un triángulo marca los meses con una desviación."
+      leyenda={[
+        { color: SERIES[0], nombre: "Ventas" },
+        { color: COSTO, nombre: "Costos" },
+        { color: SERIES[2], nombre: "Rentabilidad" },
+      ]}
       globo={globo}
     >
       <svg
         viewBox={`0 0 ${ancho} ${alto}`}
         className="w-full"
         role="img"
-        aria-label="Resultado en pesos y rentabilidad en porcentaje, mes a mes"
+        aria-label="Ventas, costos y rentabilidad de cada mes, con la utilidad en pesos"
       >
-        {/* Panel de arriba: resultado en pesos */}
-        <text x={0} y={10} className="fill-ink-soft text-[11px] font-semibold uppercase">
-          Resultado
-        </text>
+        {/* Panel de arriba: ventas y costos */}
+        <text x={0} y={10} className="fill-ink-soft text-[11px] font-semibold uppercase">Ventas y costos</text>
         <line x1={margen.izquierda} y1={altoBarras} x2={ancho - margen.derecha} y2={altoBarras} stroke={GRILLA} />
-        <text x={0} y={altoBarras} className="fill-ink-soft text-[10px] tabular-nums">
-          $0
-        </text>
-        <text x={0} y={26} className="fill-ink-soft text-[10px] tabular-nums">
-          {formatearMillones(topeMonto)}
-        </text>
+        <text x={0} y={altoBarras} className="fill-ink-soft text-[10px] tabular-nums">$0</text>
+        <text x={0} y={28} className="fill-ink-soft text-[10px] tabular-nums">{formatearMillones(topeMonto)}</text>
 
         {evolucion.map((e, i) => {
-          const y = yBarra(e.consolidado.margen);
+          const barras = [
+            { v: e.consolidado.venta, color: SERIES[0], x: centro(i) - anchoBarra - 1 },
+            { v: e.consolidado.costo, color: COSTO, x: centro(i) + 1 },
+          ];
+          const nivel = niveles.get(e.periodo);
+          const delMes = alertas.filter((a) => a.periodo === e.periodo);
           return (
             <g key={`b-${e.periodo}`}>
-              <rect
-                x={centro(i) - anchoBarra / 2}
-                y={y}
-                width={anchoBarra}
-                height={Math.max(altoBarras - y, 2)}
-                rx={4}
-                fill={SERIES[0]}
-              />
+              {barras.map((b) => (
+                <g key={b.color}>
+                  <rect x={b.x} y={yMonto(b.v)} width={anchoBarra} height={Math.max(altoBarras - yMonto(b.v), 2)} rx={3} fill={b.color} />
+                  {conCifras && (
+                    <text x={b.x + anchoBarra / 2} y={yMonto(b.v) - 5} textAnchor="middle" className="fill-ink-soft text-[10px] tabular-nums">
+                      {formatearMillones(b.v)}
+                    </text>
+                  )}
+                </g>
+              ))}
               <Sensible
                 x={centro(i) - paso / 2}
                 y={0}
@@ -654,11 +574,93 @@ export function EvolucionMensual({
                 alEntrar={() =>
                   setGlobo({
                     x: (centro(i) / ancho) * 100,
-                    y: (y / alto) * 100,
+                    y: (yMonto(Math.max(e.consolidado.venta, e.consolidado.costo)) / alto) * 100,
                     titulo: mesLargo(e.periodo),
                     lineas: [
-                      `${formatearPesos(e.consolidado.margen)} de resultado`,
-                      `${formatearPesos(e.consolidado.venta)} de venta`,
+                      `Ventas ${formatearPesos(e.consolidado.venta)}`,
+                      `Costos ${formatearPesos(e.consolidado.costo)}`,
+                      ...delMes.map((a) => `⚠ ${a.titulo}`),
+                    ],
+                  })
+                }
+                alSalir={() => setGlobo(null)}
+              />
+              {/* Marca de desviación, entre los dos paneles */}
+              {nivel && (
+                <path
+                  d={`M ${centro(i)} ${altoBarras + 36} l -6 10 h 12 z`}
+                  fill={nivel === "critico" ? ROJO : "#8a5a09"}
+                />
+              )}
+            </g>
+          );
+        })}
+
+        {/* Mes y utilidad del período, una sola vez entre los dos paneles */}
+        {evolucion.map((e, i) => (
+          <g key={`m-${e.periodo}`}>
+            <text x={centro(i)} y={altoBarras + 16} textAnchor="middle" className="fill-ink text-[11px] font-semibold">
+              {e.etiqueta}
+            </text>
+            {conCifras && (
+              <text
+                x={centro(i)}
+                y={altoBarras + 30}
+                textAnchor="middle"
+                className={`text-[10px] font-semibold tabular-nums ${e.consolidado.margen < 0 ? "fill-[#a52f24]" : "fill-ink-soft"}`}
+              >
+                {formatearMillones(e.consolidado.margen)}
+              </text>
+            )}
+          </g>
+        ))}
+        <text x={0} y={altoBarras + 30} className="fill-ink-soft text-[10px]">Utilidad</text>
+
+        {/* Panel de abajo: rentabilidad */}
+        <text x={0} y={baseLinea + 4} className="fill-ink-soft text-[11px] font-semibold uppercase">Rentabilidad</text>
+        <line x1={margen.izquierda} y1={baseLinea + altoLinea} x2={ancho - margen.derecha} y2={baseLinea + altoLinea} stroke={GRILLA} />
+        <line
+          x1={margen.izquierda}
+          y1={yLinea(meta)}
+          x2={ancho - margen.derecha}
+          y2={yLinea(meta)}
+          stroke="#8a5a09"
+          strokeWidth={1.5}
+          strokeDasharray="6 4"
+        />
+        <text x={0} y={yLinea(meta) + 4} className="fill-ink-soft text-[10px] tabular-nums">meta {meta}%</text>
+
+        <path d={linea} fill="none" stroke={SERIES[2]} strokeWidth={2.5} strokeLinejoin="round" />
+
+        {evolucion.map((e, i) => {
+          const pct = e.consolidado.margenPct;
+          const bajo = pct < meta;
+          return (
+            <g key={`p-${e.periodo}`}>
+              <circle cx={centro(i)} cy={yLinea(pct)} r={5} fill={bajo ? ROJO : SERIES[2]} stroke="#fff" strokeWidth={2} />
+              {/* Cada punto lleva su porcentaje; sobre un mes bajo la meta, en rojo. */}
+              <text
+                x={centro(i)}
+                y={yLinea(pct) - 11}
+                textAnchor="middle"
+                className={`text-[12px] font-semibold tabular-nums ${bajo ? "fill-[#a52f24]" : "fill-ink"}`}
+              >
+                {pct.toFixed(1)}%
+              </text>
+              <Sensible
+                x={centro(i) - paso / 2}
+                y={baseLinea}
+                ancho={paso}
+                alto={altoLinea}
+                alEntrar={() =>
+                  setGlobo({
+                    x: (centro(i) / ancho) * 100,
+                    y: (yLinea(pct) / alto) * 100,
+                    titulo: mesLargo(e.periodo),
+                    lineas: [
+                      `${pct.toFixed(1)}% de rentabilidad`,
+                      `${formatearPesos(e.consolidado.margen)} de utilidad`,
+                      `${(pct - meta >= 0 ? "+" : "−") + Math.abs(pct - meta).toFixed(1)} pts contra la meta`,
                     ],
                   })
                 }
@@ -667,89 +669,6 @@ export function EvolucionMensual({
             </g>
           );
         })}
-
-        {/* Los meses, una sola vez, entre los dos paneles */}
-        {evolucion.map((e, i) => (
-          <text
-            key={`m-${e.periodo}`}
-            x={centro(i)}
-            y={altoBarras + 20}
-            textAnchor="middle"
-            className="fill-ink text-[11px] font-semibold"
-          >
-            {e.etiqueta}
-          </text>
-        ))}
-
-        {/* Panel de abajo: rentabilidad en porcentaje */}
-        <text x={0} y={baseLinea + 4} className="fill-ink-soft text-[11px] font-semibold uppercase">
-          Rentabilidad
-        </text>
-        <line
-          x1={margen.izquierda}
-          y1={baseLinea + altoLinea}
-          x2={ancho - margen.derecha}
-          y2={baseLinea + altoLinea}
-          stroke={GRILLA}
-        />
-        <line
-          x1={margen.izquierda}
-          y1={yLinea(meta)}
-          x2={ancho - margen.derecha}
-          y2={yLinea(meta)}
-          stroke={TINTA_SUAVE}
-          strokeWidth={1}
-        />
-        <text
-          x={0}
-          y={yLinea(meta) + 4}
-          className="fill-ink-soft text-[10px] tabular-nums"
-        >
-          meta {meta}%
-        </text>
-
-        <path d={linea} fill="none" stroke={SERIES[0]} strokeWidth={2} strokeLinejoin="round" />
-
-        {evolucion.map((e, i) => (
-          <g key={`p-${e.periodo}`}>
-            <circle
-              cx={centro(i)}
-              cy={yLinea(e.consolidado.margenPct)}
-              r={4.5}
-              fill={SERIES[0]}
-              stroke="#fff"
-              strokeWidth={2}
-            />
-            <Sensible
-              x={centro(i) - paso / 2}
-              y={baseLinea}
-              ancho={paso}
-              alto={altoLinea}
-              alEntrar={() =>
-                setGlobo({
-                  x: (centro(i) / ancho) * 100,
-                  y: (yLinea(e.consolidado.margenPct) / alto) * 100,
-                  titulo: mesLargo(e.periodo),
-                  lineas: [
-                    `${e.consolidado.margenPct.toFixed(1)}% de rentabilidad`,
-                    `${(e.consolidado.margenPct - meta >= 0 ? "+" : "−") + Math.abs(e.consolidado.margenPct - meta).toFixed(1)} pts contra la meta`,
-                  ],
-                })
-              }
-              alSalir={() => setGlobo(null)}
-            />
-          </g>
-        ))}
-
-        {/* Etiqueta selectiva: solo el último mes lleva su cifra escrita. */}
-        <text
-          x={centro(evolucion.length - 1)}
-          y={yLinea(evolucion[evolucion.length - 1].consolidado.margenPct) - 12}
-          textAnchor="middle"
-          className="fill-ink text-[12px] font-semibold tabular-nums"
-        >
-          {evolucion[evolucion.length - 1].consolidado.margenPct.toFixed(1)}%
-        </text>
       </svg>
     </Lienzo>
   );
@@ -763,12 +682,14 @@ export function AnalisisGrafico({
   categorias,
   periodosVisibles,
   meta,
+  alertas,
 }: {
   contratos: Contrato[];
   evolucion: Evolucion[];
   categorias: FilaCategoria[];
   periodosVisibles: string[];
   meta: number;
+  alertas: Alerta[];
 }) {
   if (contratos.length === 0) return null;
 
@@ -779,22 +700,19 @@ export function AnalisisGrafico({
       </h2>
 
       <div className="grid gap-4">
+        {/* Con un mes solo no hay evolución que mostrar. */}
+        {evolucion.length > 1 && <EvolucionMensual evolucion={evolucion} meta={meta} alertas={alertas} />}
+
         <div className="grid gap-4 xl:grid-cols-2">
           <BarrasPorContrato contratos={contratos} />
           <RentabilidadPorContrato contratos={contratos} meta={meta} />
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-2">
-          <ParticipacionEnVentas contratos={contratos} />
-          <ComposicionDelCosto
-            contratos={contratos}
-            categorias={categorias}
-            periodosVisibles={periodosVisibles}
-          />
-        </div>
-
-        {/* Con un mes solo no hay evolución que mostrar. */}
-        {evolucion.length > 1 && <EvolucionMensual evolucion={evolucion} meta={meta} />}
+        <ComposicionDelCosto
+          contratos={contratos}
+          categorias={categorias}
+          periodosVisibles={periodosVisibles}
+        />
       </div>
     </section>
   );

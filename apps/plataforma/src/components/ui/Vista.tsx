@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import type { EstadoConsulta } from "@/lib/consulta";
 
 /**
@@ -41,7 +42,7 @@ export type Dato = {
 /** Tira de totales sobre la tabla: lo que se responde sin leer fila por fila. */
 export function Resumen({ datos }: { datos: Dato[] }) {
   return (
-    <dl className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <dl className={`mb-6 grid gap-4 sm:grid-cols-2 ${datos.length === 5 ? "xl:grid-cols-5" : "xl:grid-cols-4"}`}>
       {datos.map((d) => (
         <div key={d.etiqueta} className="rounded-2xl border border-mist-deep bg-white p-5">
           <dt className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-soft">
@@ -170,6 +171,16 @@ export function Desplegable<T extends string>({
   valor: T;
   alCambiar: (v: T) => void;
 }) {
+  /* Un valor recordado de otra vez puede ya no existir —un mes sin movimientos,
+     un contrato cerrado—: se vuelve a la primera opción en vez de filtrar a
+     ciegas con un select que muestra otra cosa. */
+  const ids = grupos.flatMap((g) => g.opciones.map((o) => o.id));
+  const existe = ids.includes(valor);
+  useEffect(() => {
+    if (ids.length > 0 && !existe) alCambiar(ids[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existe, ids.length]);
+
   return (
     <label className="relative flex max-w-full items-center">
       <span className="sr-only">{etiqueta}</span>

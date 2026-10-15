@@ -1,5 +1,6 @@
 "use client";
 
+import { useFiltro } from "@/lib/vista-guardada";
 import { useMemo, useState } from "react";
 import { Chip, type Tono } from "../ui/Chip";
 import {
@@ -103,7 +104,7 @@ export function VistaPagos() {
 }
 
 function Tablero({ datos, recargar }: { datos: Datos; recargar: () => void }) {
-  const [pestana, setPestana] = useState<Pestana>("vencimiento");
+  const [pestana, setPestana] = useFiltro<Pestana>("pagos:pestana", "vencimiento");
   const [facturando, setFacturando] = useState<CuentaPorPagar | null>(null);
   const [imprimiendo, setImprimiendo] = useState(false);
 
@@ -311,7 +312,7 @@ function PorVencimiento({
   alFacturar: (linea: CuentaPorPagar) => void;
   recargar: () => void;
 }) {
-  const [filtro, setFiltro] = useState<FiltroEstado>("abiertas");
+  const [filtro, setFiltro] = useFiltro<FiltroEstado>("pagos:estado", "abiertas");
   const puedeProgramar = usePuede("pagos.programar");
   const puedeMarcar = usePuede("pagos.marcar");
   const [trabajando, setTrabajando] = useState<string | null>(null);

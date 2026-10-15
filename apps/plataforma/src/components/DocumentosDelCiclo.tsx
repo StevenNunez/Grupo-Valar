@@ -39,7 +39,7 @@ import { camposEdp, clavesEdp, comportamientoEdp } from "@/lib/plantillas-edp";
 
 export function EstadoPagoImprimible({ ciclo, campos }: { ciclo: Ciclo; campos: CampoContrato[] }) {
   const plantilla = ciclo.plantillaEdp;
-  const particulares = camposEdp(plantilla, ciclo.tipoEdp, ciclo.camposEdp);
+  const particulares = camposEdp(plantilla, ciclo.tipoEdp, ciclo.camposEdp, ciclo.datos);
   const clavesParticulares = clavesEdp(plantilla, ciclo.camposEdp);
   const comportamiento = comportamientoEdp(plantilla, ciclo.camposEdp);
   const propios = camposDe(campos, ciclo.contratoId, "estado_pago")
@@ -122,7 +122,11 @@ export function EstadoPagoImprimible({ ciclo, campos }: { ciclo: Ciclo; campos: 
                   valor={campo.tipo === "moneda"
                     ? formatearPesos(Number(ciclo.datos[campo.clave]) || 0)
                     : campo.tipo === "numero"
-                      ? `${Number(ciclo.datos[campo.clave]).toLocaleString("es-CL")}${campo.unidad ? ` ${campo.unidad}` : ""}`
+                      ? `${Number(ciclo.datos[campo.clave]).toLocaleString("es-CL")}${campo.unidad ? ` ${campo.unidad}` : ""}${
+                          campo.unidad === "UF" && comportamiento.usaUf && typeof ciclo.datos.valor_uf_periodo === "number"
+                            ? ` = ${formatearPesos(Math.round(Number(ciclo.datos[campo.clave]) * ciclo.datos.valor_uf_periodo))}`
+                            : ""
+                        }`
                       : String(ciclo.datos[campo.clave])}
                 />
               ))}

@@ -1,5 +1,6 @@
 "use client";
 
+import { SeccionRespaldos, useRespaldos } from "@/components/ui/Respaldos";
 import {
   CampoDinero,
   CampoFecha,
@@ -81,6 +82,7 @@ export function FormularioOrdenCompra({
     alCerrar();
   });
 
+  const respaldos = useRespaldos("ordenes_compra", editando ? orden.id : null);
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const fila = { ...f.datos, numero: f.datos.numero.trim(), fecha_cobro: f.datos.fecha_cobro || null };
@@ -96,6 +98,7 @@ export function FormularioOrdenCompra({
               fecha_emision: hoy(),
             }),
       () => {
+        if (!editando) void respaldos.subirA(`OC-${fila.contrato_id.replace(/^C-/, "")}-${fila.numero.replace(/\s+/g, "")}`);
         alGuardado();
         alCerrar();
       },
@@ -152,6 +155,7 @@ export function FormularioOrdenCompra({
           </Campos>
 
           <Pie
+            extra={<SeccionRespaldos respaldos={respaldos} />}
             error={f.error}
             guardando={f.guardando}
             alCancelar={alCerrar}

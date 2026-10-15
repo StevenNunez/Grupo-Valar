@@ -1,5 +1,6 @@
 "use client";
 
+import { useFiltro } from "@/lib/vista-guardada";
 import { useMemo, useState } from "react";
 import { Chip, type Tono } from "../ui/Chip";
 import { Tabla, Total, type Columna } from "../ui/Tabla";
@@ -132,9 +133,9 @@ function Contenidos({
   contratos: ContratoBreve[];
   edicion: ReturnType<typeof useEdicion<OrdenCompra>>;
 }) {
-  const [filtro, setFiltro] = useState<Filtrado>("todas");
-  const [periodo, setPeriodo] = useState("todos");
-  const [contrato, setContrato] = useState("todos");
+  const [filtro, setFiltro] = useFiltro<Filtrado>("ordenes-de-compra:estado", "todas");
+  const [periodo, setPeriodo] = useFiltro("ordenes-de-compra:periodo", "todos");
+  const [contrato, setContrato] = useFiltro("ordenes-de-compra:contrato", "todos");
   const [texto, setTexto] = useState("");
 
   const cobranzas = useMemo(() => cobranzaPorOrden(ciclos), [ciclos]);

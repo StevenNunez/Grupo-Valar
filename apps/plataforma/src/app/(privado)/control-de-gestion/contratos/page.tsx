@@ -1,8 +1,6 @@
-import type { Metadata } from "next";
-import { VistaContratos } from "@/components/vistas/VistaContratos";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Contratos" };
-
+/** Los enlaces viejos a /contratos caen en la vista de vigentes. */
 export default function Pagina() {
-  return <VistaContratos />;
+  redirect("/control-de-gestion/contratos/vigentes/");
 }

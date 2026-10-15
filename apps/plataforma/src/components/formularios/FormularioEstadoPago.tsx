@@ -1,6 +1,10 @@
 "use client";
 
 import { SelectorAnexo } from "../ui/SelectorAnexo";
+import { DialogoAdjuntos } from "../ui/Adjuntos";
+import { RespaldosDeFicha } from "../ui/RespaldosDeFicha";
+import { avisar } from "@/lib/avisos";
+import { subirAdjunto, TIPOS_ACEPTADOS } from "@/lib/adjuntos";
 import { useEffect, useState } from "react";
 import {
   Ancho,
@@ -111,6 +115,10 @@ export function FormularioEstadoPago({
   const [propios, setPropios] = useState<Datos>(estadoPago?.datos ?? {});
   const [ufConsultada, setUfConsultada] = useState<{ clave: string; valor: number | null } | null>(null);
   const [errorUf, setErrorUf] = useState<string | null>(null);
+  /* Respaldos: en un EP nuevo se eligen ahora y suben al crearlo; en uno existente
+     se adjuntan al instante, y el formulario sigue abierto para guardar. */
+  const [porSubir, setPorSubir] = useState<File[]>([]);
+  const [adjuntando, setAdjuntando] = useState(false);
   const editando = estadoPago !== null;
   const contrato = contratos.find((c) => c.id === f.datos.contrato_id);
   const plantilla = resolverPlantillaEdp(
@@ -130,7 +138,7 @@ export function FormularioEstadoPago({
     typeof estadoPago.datos.valor_uf_periodo === "number"
     ? estadoPago.datos.valor_uf_periodo : null;
   const valorUf = ufGuardada ?? (ufConsultada?.clave === claveUf ? ufConsultada.valor : null);
-  const camposPlantilla = camposEdp(plantilla, f.datos.tipo_edp, seleccion);
+  const camposPlantilla = camposEdp(plantilla, f.datos.tipo_edp, seleccion, propios);
   const ufConceptos = comportamiento.usaUf ? montoUfTorres(propios) : 0;
   // La planilla histórica trae el total en UF, pero no el desglose. Al cargar
   // conceptos nuevos, su suma pasa a ser el total y evita contarlo dos veces.
@@ -232,10 +240,19 @@ export function FormularioEstadoPago({
     };
 
     f.enviar(
-      () =>
-        editando
-          ? actualizar("estados_pago", estadoPago.id, fila)
-          : crear("estados_pago", { ...fila, id: idEdp(resto.contrato_id, resto.anexo_id || null, resto.tipo_edp, resto.numero) }),
+      async () => {
+        if (editando) return actualizar("estados_pago", estadoPago.id, fila);
+        const id = idEdp(resto.contrato_id, resto.anexo_id || null, resto.tipo_edp, resto.numero);
+        await crear("estados_pago", { ...fila, id });
+        /* El EP ya quedó creado: si un respaldo no sube, no se pierde el registro. */
+        for (const archivo of porSubir) {
+          try {
+            await subirAdjunto({ tabla: "estados_pago", registroId: id, archivo });
+          } catch (e) {
+            avisar(`Guardado, pero no se pudo adjuntar ${archivo.name}: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+      },
       () => {
         alGuardado();
         alCerrar();
@@ -312,7 +329,7 @@ export function FormularioEstadoPago({
                 requerido
                 min={0}
                 sufijo="UF"
-                ayuda="Úsalo si aún no tienes el desglose por equipos, traslados y mantenciones."
+                ayuda="Úsalo si aún no tienes el desglose por concepto."
                 {...f.campo("monto_uf")}
               />}
               <Ancho><p className="rounded-xl bg-mist/50 px-4 py-3 text-sm text-ink-soft">
@@ -393,8 +410,36 @@ export function FormularioEstadoPago({
               const cambiar = (v: string | number) => setPropios((previo) => ({ ...previo, [campo.clave]: v }));
               if (campo.tipo === "texto") return <CampoTexto key={campo.clave} etiqueta={campo.etiqueta} valor={typeof valor === "string" ? valor : ""} alCambiar={cambiar} />;
               if (campo.tipo === "moneda") return <CampoDinero key={campo.clave} etiqueta={campo.etiqueta} valor={Number(valor) || 0} alCambiar={cambiar} />;
-              return <CampoNumero key={campo.clave} etiqueta={campo.etiqueta} sufijo={campo.unidad} min={0} valor={Number(valor) || 0} alCambiar={cambiar} />;
+              /* Un concepto en UF muestra al lado cuánto es en pesos con la UF del período. */
+              const enPesos = campo.unidad === "UF" && comportamiento.usaUf && valorUf !== null && Number(valor) > 0
+                ? `= ${formatearPesos(Math.round(Number(valor) * valorUf))} (UF ${formatearUf(valorUf)})`
+                : campo.unidad === "UF" && comportamiento.usaUf && valorUf === null ? "Falta la UF del período para convertir a pesos." : undefined;
+              return <CampoNumero key={campo.clave} etiqueta={campo.etiqueta} sufijo={campo.unidad} min={0} ayuda={enPesos} valor={Number(valor) || 0} alCambiar={cambiar} />;
             })}
+
+            <Ancho>
+              <div className="border-t border-mist pt-5">
+                <h3 className="font-display text-sm font-semibold text-ink">Respaldos</h3>
+                {editando ? <>
+                  <RespaldosDeFicha tabla="estados_pago" registroId={estadoPago.id} />
+                  <button type="button" onClick={() => setAdjuntando(true)} className="mt-3 rounded-full border border-mist-deep px-4 py-2 text-xs font-semibold text-ink hover:border-ink">
+                    Adjuntar respaldo
+                  </button>
+                  <p className="mt-1.5 text-xs text-ink-soft">El archivo se guarda al subirlo. Los cambios del formulario se guardan con el botón de abajo.</p>
+                </> : <>
+                  <input type="file" multiple accept={TIPOS_ACEPTADOS} aria-label="Adjuntar respaldo"
+                    onChange={(e) => setPorSubir((previos) => [...previos, ...Array.from(e.target.files ?? [])])}
+                    className="mt-2 block w-full text-xs text-ink-soft file:mr-3 file:rounded-full file:border file:border-mist-deep file:bg-white file:px-4 file:py-2 file:text-xs file:font-semibold file:text-ink" />
+                  {porSubir.length > 0 && <ul className="mt-2 flex flex-col gap-1 text-xs text-ink-soft">
+                    {porSubir.map((a, i) => <li key={a.name + i} className="flex items-center justify-between rounded-lg bg-mist/50 px-3 py-1.5">
+                      <span className="truncate">{a.name}</span>
+                      <button type="button" onClick={() => setPorSubir((p) => p.filter((_, j) => j !== i))} className="ml-3 font-semibold text-[#a52f24]">Quitar</button>
+                    </li>)}
+                  </ul>}
+                  <p className="mt-1.5 text-xs text-ink-soft">Se adjuntan al crear el estado de pago.</p>
+                </>}
+              </div>
+            </Ancho>
 
             {errorUf && <Ancho><p role="alert" className="text-sm text-[#a52f24]">{errorUf}</p></Ancho>}
 
@@ -417,6 +462,11 @@ export function FormularioEstadoPago({
           />
         </form>
       </Dialogo>
+
+      {editando && adjuntando && (
+        <DialogoAdjuntos tabla="estados_pago" registroId={estadoPago.id} titulo={estadoPago.id}
+          abierto alCerrar={() => setAdjuntando(false)} />
+      )}
 
       <Confirmacion
         abierto={borrado.confirmando}

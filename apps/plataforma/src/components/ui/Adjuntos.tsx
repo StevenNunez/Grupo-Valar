@@ -19,6 +19,8 @@ const permisoParaAdjuntar: Record<string, string[]> = {
   servicios: ["gestion.editar"],
   costos_personal: ["personal.editar"],
   egresos_oficina_central: ["gestion.editar"],
+  garantias: ["gestion.editar"],
+  finiquitos: ["personal.editar"],
   solped: ["solped.crear", "solped.aprobar", "cotizacion.gestionar"],
   ordenes_compra_proveedor: ["ordenes.emitir", "recepcion.registrar"],
   proveedores: ["proveedores.editar"],

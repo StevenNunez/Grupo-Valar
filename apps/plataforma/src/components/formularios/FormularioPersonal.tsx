@@ -1,5 +1,6 @@
 "use client";
 
+import { SeccionRespaldos, useRespaldos } from "@/components/ui/Respaldos";
 import { SelectorAnexo } from "../ui/SelectorAnexo";
 import { useState } from "react";
 
@@ -128,6 +129,7 @@ export function FormularioPersonal({
     ? registro.id
     : siguienteIdPersonal(registros, f.datos.contrato_id, f.datos.periodo);
 
+  const respaldos = useRespaldos("costos_personal", editando ? registro.id : null);
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const problema = errorDeHaberes(f.datos);
@@ -150,6 +152,7 @@ export function FormularioPersonal({
           ? actualizar("costos_personal", registro.id, fila)
           : crear("costos_personal", { ...fila, id: codigo }),
       () => {
+        if (!editando) void respaldos.subirA(codigo);
         alGuardado();
         alCerrar();
       },
@@ -238,6 +241,7 @@ export function FormularioPersonal({
           </Campos>
 
           <Pie
+            extra={<SeccionRespaldos respaldos={respaldos} />}
             error={f.error}
             guardando={f.guardando}
             alCancelar={alCerrar}

@@ -1,5 +1,6 @@
 "use client";
 
+import { SeccionRespaldos, useRespaldos } from "@/components/ui/Respaldos";
 import { useState } from "react";
 import { BuscadorProveedorPagnol } from "../ui/BuscadorProveedorPagnol";
 import type { ProveedorPagnol } from "@/lib/pagnol/tipos";
@@ -156,6 +157,7 @@ export function FormularioProveedor({
       ? "El dígito verificador no calza. Revísalo antes de guardar."
       : undefined;
 
+  const respaldos = useRespaldos("proveedores", editando ? proveedor.id : null);
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const { id, rubros, ...campos } = f.datos;
@@ -203,6 +205,7 @@ export function FormularioProveedor({
         await crear("proveedores", { ...fila, id: creado });
       },
       () => {
+        if (!editando) void respaldos.subirA(creado);
         alGuardado(editando ? proveedor.id : creado);
         alCerrar();
       },
@@ -345,6 +348,7 @@ export function FormularioProveedor({
           </Campos>
 
           <Pie
+            extra={<SeccionRespaldos respaldos={respaldos} />}
             error={f.error}
             guardando={f.guardando}
             alCancelar={alCerrar}

@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useFiltro } from "@/lib/vista-guardada";
+import { useMemo } from "react";
 import { FormularioProveedor } from "../formularios/FormularioProveedor";
 import { DialogoAdjuntos } from "../ui/Adjuntos";
 import { Chip, type Tono } from "../ui/Chip";
@@ -109,7 +110,7 @@ function Contenidos({
   filas: Proveedor[];
   edicion: ReturnType<typeof useEdicion<Proveedor>>;
 }) {
-  const [filtro, setFiltro] = useState<Filtrado>("todos");
+  const [filtro, setFiltro] = useFiltro<Filtrado>("proveedores:estado", "todos");
 
   const visibles = useMemo(() => {
     if (filtro === "activos") return filas.filter((p) => p.estado === "activo");

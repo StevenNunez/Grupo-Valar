@@ -20,6 +20,13 @@ export async function crear(tabla: string, datos: Fila) {
   if (error) throw new Error(traducir(error.message, error.details, tabla));
 }
 
+/** Crea y devuelve el id que le puso la base (las tablas cuyo código se genera solo). */
+export async function crearConId(tabla: string, datos: Fila): Promise<string> {
+  const { data, error } = await supabase.from(tabla).insert(datos).select("id").single();
+  if (error) throw new Error(traducir(error.message, error.details, tabla));
+  return String((data as { id: string }).id);
+}
+
 export async function actualizar(tabla: string, id: string, datos: Fila) {
   const { error } = await supabase.from(tabla).update(datos).eq("id", id);
   if (error) throw new Error(traducir(error.message, error.details, tabla));

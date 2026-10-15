@@ -17,6 +17,10 @@ import { supabase } from "./supabase";
 
 export const BUCKET = "respaldos";
 
+/** Se emite al subir o borrar un respaldo: las fichas que lo muestran se refrescan solas. */
+export const EVENTO_RESPALDOS = "plataforma:respaldos";
+const avisarCambio = () => typeof window !== "undefined" && window.dispatchEvent(new Event(EVENTO_RESPALDOS));
+
 /** Lo que Storage acepta, igual que la lista del bucket en la migración. */
 export const TIPOS_ACEPTADOS = [
   "application/pdf",
@@ -167,6 +171,7 @@ export async function subirAdjunto({
     await supabase.storage.from(BUCKET).remove([ruta]);
     throw new Error(traducir(error.message));
   }
+  avisarCambio();
 }
 
 export async function borrarAdjunto(adjunto: Adjunto) {
@@ -177,6 +182,7 @@ export async function borrarAdjunto(adjunto: Adjunto) {
   // huérfano ocupando espacio, que es mucho menos grave que una ficha que
   // apunta a un archivo borrado.
   await supabase.storage.from(BUCKET).remove([adjunto.ruta]);
+  avisarCambio();
 }
 
 /**

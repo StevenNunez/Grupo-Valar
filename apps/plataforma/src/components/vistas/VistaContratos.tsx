@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { AnexosDelContrato } from "../AnexosDelContrato";
+import { FichaCierre } from "../FichaCierre";
 import { CategoriasDelContrato } from "../CategoriasDelContrato";
 import { PlantillaDelContrato } from "../PlantillaDelContrato";
 import { FormularioContrato } from "../formularios/FormularioContrato";
@@ -9,14 +10,17 @@ import { AnexosDesplegados, DetalleContrato } from "../FichaContrato";
 import { Chip, type Tono } from "../ui/Chip";
 import { DialogoAdjuntos } from "../ui/Adjuntos";
 import { AccionesFila, BotonNuevo, DialogoHistorial, useEdicion } from "../ui/Historial";
-import { Contenido, Encabezado, Filtro, Resumen } from "../ui/Vista";
+import { Contenido, Encabezado, Resumen } from "../ui/Vista";
 import { useConsulta } from "@/lib/consulta";
 import { cargarAnexos, montoConSigno, type Anexo } from "@/lib/anexos";
 import { cargarContratos } from "@/lib/contratos";
-import { formatearFecha, formatearMonto, formatearUf } from "@/lib/formato";
+import { usePuede } from "@/lib/sesion";
+import { diasHastaFecha, formatearFecha, formatearMonto, formatearUf } from "@/lib/formato";
 import {
+  estaCerrado,
   formasContrato,
   modalidades,
+  ordenVigencia,
   vigencias,
   type Contrato,
   type Vigencia,
@@ -25,21 +29,20 @@ import {
 const tonoVigencia: Record<Vigencia, Tono> = {
   vigente: "bueno",
   "por-vencer": "aviso",
+  "por-comenzar": "info",
+  vencido: "aviso",
   cerrado: "neutro",
   cancelado: "critico",
 };
 
-/** Cerrado por calendario o cancelado antes: ya no corre. */
-const terminado = (c: Contrato) => c.vigencia === "cerrado" || c.vigencia === "cancelado";
+/** Cerrado a mano o cancelado: ya no corre y vive en la vista de cerrados. */
+const terminado = (c: Contrato) => estaCerrado(c.vigencia);
 
-type Filtrado = "todos" | "vigentes" | "por-vencer" | "cerrados";
+type Vista = "vigentes" | "cerrados";
 
-const opciones: { id: Filtrado; titulo: string }[] = [
-  { id: "todos", titulo: "Todos" },
-  { id: "vigentes", titulo: "Vigentes" },
-  { id: "por-vencer", titulo: "Por vencer" },
-  { id: "cerrados", titulo: "Cerrados" },
-];
+/** Vigente → por vencer → por comenzar → plazo cumplido → cerrado; dentro de cada uno, por nombre. */
+const porEstado = (a: Contrato, b: Contrato) =>
+  ordenVigencia[a.vigencia] - ordenVigencia[b.vigencia] || a.nombre.localeCompare(b.nombre, "es");
 
 /**
  * Cuánto del monto contratado se lleva gastado.
@@ -57,7 +60,7 @@ function consumoPct(c: Contrato): number | null {
   return (c.costoReal / c.montoVigente) * 100;
 }
 
-export function VistaContratos() {
+export function VistaContratos({ vista }: { vista: Vista }) {
   const { estado, recargar } = useConsulta<{ contratos: Contrato[]; anexos: Anexo[] }>(cargarContratosYAnexos);
   const edicion = useEdicion<Contrato>("contratos");
   const [anexos, setAnexos] = useState<Contrato | null>(null);
@@ -67,15 +70,16 @@ export function VistaContratos() {
   return (
     <>
       <Encabezado
-        titulo="Contratos"
-        descripcion="La base del módulo: todo lo demás —estados de pago, facturas, compras y personal— cuelga de un contrato. El costo real no se escribe acá, se deduce de sus egresos."
-        acciones={<BotonNuevo permiso="contratos.editar" onClick={edicion.abrirNuevo}>Nuevo contrato</BotonNuevo>}
+        titulo={vista === "cerrados" ? "Contratos cerrados" : "Contratos vigentes"}
+        descripcion={vista === "cerrados" ? "Cierre económico: ingresos, costos acumulados y finiquitos de cada contrato que terminó. Cerrar no borra nada; la venta histórica sigue en los informes." : "La base del módulo: todo lo demás —estados de pago, facturas, compras y personal— cuelga de un contrato. El costo real no se escribe acá, se deduce de sus egresos."}
+        acciones={vista === "cerrados" ? undefined : <BotonNuevo permiso="contratos.editar" onClick={edicion.abrirNuevo}>Nuevo contrato</BotonNuevo>}
       />
 
       <Contenido consulta={estado}>
         {(datos) => (
           <>
             <Contenidos
+              vista={vista}
               filas={datos.contratos}
               anexosTodos={datos.anexos}
               edicion={edicion}
@@ -141,6 +145,7 @@ async function cargarContratosYAnexos() {
 }
 
 function Contenidos({
+  vista,
   filas,
   anexosTodos,
   edicion,
@@ -149,6 +154,7 @@ function Contenidos({
   alVerPlantilla,
   alVerCategorias,
 }: {
+  vista: Vista;
   filas: Contrato[];
   anexosTodos: Anexo[];
   edicion: ReturnType<typeof useEdicion<Contrato>>;
@@ -157,14 +163,12 @@ function Contenidos({
   alVerPlantilla: (c: Contrato) => void;
   alVerCategorias: (c: Contrato) => void;
 }) {
-  const [filtro, setFiltro] = useState<Filtrado>("todos");
+  const [cierre, setCierre] = useState<Contrato | null>(null);
 
-  const visibles = useMemo(() => {
-    if (filtro === "vigentes") return filas.filter((c) => !terminado(c));
-    if (filtro === "cerrados") return filas.filter(terminado);
-    if (filtro === "por-vencer") return filas.filter((c) => c.vigencia === "por-vencer");
-    return filas;
-  }, [filas, filtro]);
+  const visibles = useMemo(
+    () => filas.filter((c) => (vista === "cerrados" ? terminado(c) : !terminado(c))).sort(porEstado),
+    [filas, vista],
+  );
 
   const presupuesto = visibles.reduce((t, c) => t + (c.montoVigente ?? 0), 0);
   const costo = visibles.reduce((t, c) => t + c.costoReal, 0);
@@ -172,6 +176,8 @@ function Contenidos({
 
   const vigentes = filas.filter((c) => c.vigencia === "vigente");
   const porVencer = filas.filter((c) => c.vigencia === "por-vencer");
+  const porComenzar = filas.filter((c) => c.vigencia === "por-comenzar");
+  const vencidos = filas.filter((c) => c.vigencia === "vencido");
   const cerrados = filas.filter(terminado);
   // El anexo es un contrato más: sus cifras van aparte, nunca sumadas a las del contrato.
   const conMonto = filas.filter((c) => c.presupuesto > 0).length;
@@ -188,7 +194,13 @@ function Contenidos({
           {
             etiqueta: "N° de contratos",
             valor: String(filas.length),
-            nota: `${vigentes.length} vigentes · ${porVencer.length} por vencer · ${cerrados.length} cerrados`,
+            nota: [
+              `${vigentes.length} vigentes`,
+              `${porVencer.length} por vencer`,
+              porComenzar.length > 0 && `${porComenzar.length} por comenzar`,
+              vencidos.length > 0 && `${vencidos.length} con plazo cumplido`,
+              `${cerrados.length} cerrados`,
+            ].filter(Boolean).join(" · "),
           },
           {
             etiqueta: "Monto de contratos",
@@ -218,14 +230,15 @@ function Contenidos({
           {visibles.length} de {filas.length} contratos · monto {formatearMonto(presupuesto)} · costo{" "}
           {formatearMonto(costo)} · facturado {formatearMonto(facturado)}
         </p>
-        <Filtro etiqueta="Estado" opciones={opciones} valor={filtro} alCambiar={setFiltro} />
       </div>
 
       {visibles.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-mist-deep bg-white px-6 py-14 text-center text-sm text-ink-soft">
           {filas.length === 0
             ? "Todavía no hay contratos. Crea el primero para poder cargar movimientos."
-            : "Ningún contrato en este filtro."}
+            : vista === "cerrados"
+              ? "Ningún contrato cerrado todavía."
+              : "No hay contratos vigentes."}
         </p>
       ) : (
         /* Tarjetas y no tabla: un nombre de contrato largo («Obras Civiles
@@ -233,10 +246,13 @@ function Contenidos({
            columnas. En la tarjeta el nombre ocupa lo que necesita y las cifras
            siguen alineadas debajo. */
         <div className="grid items-start gap-4 lg:grid-cols-2">
-          {visibles.map((c) => (
+          {visibles.map((c) => vista === "cerrados" ? (
+            <TarjetaCierre key={c.id} c={c} alAbrir={() => setCierre(c)} />
+          ) : (
             <TarjetaContrato
               key={c.id}
               c={c}
+              alCerrarContrato={() => setCierre(c)}
               edicion={edicion}
               alGestionarAnexos={() => alVerAnexos(c)}
               alCambiar={alCambiar}
@@ -246,7 +262,54 @@ function Contenidos({
           ))}
         </div>
       )}
+
+      {cierre && <FichaCierre contrato={cierre} alCerrar={() => setCierre(null)} alCambiar={alCambiar} />}
     </>
+  );
+}
+
+/** Contrato que ya salió de la operación: no mide el mes, abre su cierre económico. */
+function TarjetaCierre({ c, alAbrir }: { c: Contrato; alAbrir: () => void }) {
+  return (
+    <article className="flex flex-col rounded-2xl border border-mist-deep bg-mist/30 p-5 lg:p-6">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="font-display text-base font-semibold leading-snug text-ink">{c.nombre}</h3>
+          <p className="mt-1 text-xs text-ink-soft">
+            {c.id} · {c.cliente} · {c.faena}
+          </p>
+        </div>
+        <Chip tono={tonoVigencia[c.vigencia]}>{vigencias[c.vigencia]}</Chip>
+      </div>
+      <p className="mt-3 text-xs text-ink-soft">
+        {c.inicio ? `Inicio ${formatearFecha(c.inicio)} · ` : ""}término {formatearFecha(c.terminoVigente)}
+        {c.cerradoEn ? ` · cerrado el ${formatearFecha(c.cerradoEn)}` : ""}
+      </p>
+      {c.cierreObservaciones && <p className="mt-2 line-clamp-2 text-sm text-ink-soft">{c.cierreObservaciones}</p>}
+      <div className="mt-4 flex items-center justify-end border-t border-mist pt-3">
+        <button
+          type="button"
+          onClick={alAbrir}
+          className="rounded-full bg-cyan px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-cyan-deep"
+        >
+          Abrir ficha de cierre
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function BotonCerrar({ onClick }: { onClick: () => void }) {
+  const puede = usePuede("contratos.editar");
+  if (!puede) return null;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-full border border-mist-deep px-3 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink"
+    >
+      Cerrar contrato
+    </button>
   );
 }
 
@@ -257,8 +320,10 @@ function TarjetaContrato({
   alCambiar,
   alVerPlantilla,
   alVerCategorias,
+  alCerrarContrato,
 }: {
   c: Contrato;
+  alCerrarContrato: () => void;
   edicion: ReturnType<typeof useEdicion<Contrato>>;
   alGestionarAnexos: () => void;
   alCambiar: () => void;
@@ -291,9 +356,11 @@ function TarjetaContrato({
         <span>
           {c.vigencia === "cancelado"
             ? "terminado antes de plazo"
-            : c.vigencia === "cerrado"
-              ? `terminó hace ${Math.abs(c.diasRestantes)} días`
-              : `${c.diasRestantes} días restantes`}{" "}
+            : c.vigencia === "vencido"
+              ? `plazo cumplido hace ${Math.abs(c.diasRestantes)} días`
+              : c.vigencia === "por-comenzar" && c.inicio
+                ? `empieza en ${Math.max(0, diasHastaFecha(c.inicio))} días`
+                : `${c.diasRestantes} días restantes`}{" "}
           · {c.inicio ? `inicio ${formatearFecha(c.inicio)} · ` : ""}término {formatearFecha(c.terminoVigente)}
           {c.diasPlazoTotal !== null && ` · ${c.diasPlazoTotal} días de plazo`}
         </span>
@@ -333,6 +400,7 @@ function TarjetaContrato({
           <Desplegar abierto={abierto === "anexos"} onClick={() => alternar("anexos")}>
             Anexos{c.anexos > 0 ? ` (${c.anexos})` : ""}
           </Desplegar>
+          <BotonCerrar onClick={alCerrarContrato} />
         </div>
         <div className="flex items-center gap-1">
           <BotonIcono titulo="Categorías de costo: de qué se compone el costo de este contrato" onClick={alVerCategorias}>

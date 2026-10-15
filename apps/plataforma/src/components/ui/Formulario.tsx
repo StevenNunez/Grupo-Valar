@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useId, useRef, useState } from "react";
+import { avisar } from "@/lib/avisos";
 import { eliminar } from "@/lib/crud";
 import { formatearPesos } from "@/lib/formato";
 
@@ -12,6 +13,9 @@ import { formatearPesos } from "@/lib/formato";
  */
 
 /* ── Diálogo ──────────────────────────────────────────────────────────────── */
+
+/** Cerrar el diálogo pasando por la advertencia de cambios sin guardar. */
+const CierreDelDialogo = createContext<(() => void) | null>(null);
 
 export function Dialogo({
   titulo,
@@ -29,9 +33,8 @@ export function Dialogo({
   ancho?: string;
 }) {
   const caja = useRef<HTMLDivElement>(null);
-  /* Si ya se escribió algo, un clic fuera, Escape o la X no cierran de golpe:
-     preguntan. Antes un clic de más en el fondo borraba una OC entera. El
-     botón "Cancelar" del pie sí cierra directo: ese es a propósito. */
+  /* Si ya se escribió algo, un clic fuera, Escape, la X o "Cancelar" no cierran
+     de golpe: preguntan. Antes un clic de más en el fondo borraba una OC entera. */
   const tocado = useRef(false);
   const [confirmando, setConfirmando] = useState(false);
   const intentarCerrar = useRef(() => {});
@@ -157,7 +160,7 @@ export function Dialogo({
           </div>
         )}
 
-        {children}
+        <CierreDelDialogo.Provider value={() => intentarCerrar.current()}>{children}</CierreDelDialogo.Provider>
       </div>
     </div>
   );
@@ -508,15 +511,20 @@ export function Pie({
   alCancelar,
   textoGuardar = "Guardar",
   alEliminar,
+  extra,
 }: {
   error: string | null;
   guardando: boolean;
   alCancelar: () => void;
   textoGuardar?: string;
   alEliminar?: () => void;
+  /** Contenido sobre los botones: los respaldos del registro. */
+  extra?: React.ReactNode;
 }) {
+  const intentarCerrar = useContext(CierreDelDialogo);
   return (
     <div className="border-t border-mist px-6 py-5">
+      {extra}
       {error && (
         <p
           role="alert"
@@ -539,7 +547,7 @@ export function Pie({
         )}
         <button
           type="button"
-          onClick={alCancelar}
+          onClick={intentarCerrar ?? alCancelar}
           disabled={guardando}
           className="rounded-full border border-mist-deep px-5 py-2.5 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-50"
         >
@@ -642,6 +650,7 @@ export function useFormulario<T extends object>(inicial: T) {
     setGuardando(true);
     try {
       await accion();
+      avisar("Cambios guardados");
       alTerminar();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

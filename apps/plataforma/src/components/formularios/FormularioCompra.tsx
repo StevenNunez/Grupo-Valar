@@ -1,5 +1,6 @@
 "use client";
 
+import { SeccionRespaldos, useRespaldos } from "@/components/ui/Respaldos";
 import { SelectorAnexo } from "../ui/SelectorAnexo";
 import { useEffect, useState } from "react";
 import {
@@ -194,6 +195,7 @@ export function FormularioCompra({
     if (p) f.cambiar("proveedor", p.razonSocial);
   }
 
+  const respaldos = useRespaldos("compras", editando ? compra.id : null);
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const conDescripcion = lineas.filter((l) => l.descripcion.trim());
@@ -220,6 +222,7 @@ export function FormularioCompra({
           })),
         }),
       () => {
+        if (!editando) void respaldos.subirA(codigo);
         alGuardado();
         alCerrar();
       },
@@ -424,6 +427,7 @@ export function FormularioCompra({
           </Campos>
 
           <Pie
+            extra={<SeccionRespaldos respaldos={respaldos} />}
             error={f.error}
             guardando={f.guardando}
             alCancelar={alCerrar}

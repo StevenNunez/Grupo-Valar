@@ -1,5 +1,6 @@
 "use client";
 
+import { useFiltro } from "@/lib/vista-guardada";
 import { useMemo, useState } from "react";
 import { CotizacionesDeSolped } from "../CotizacionesDeSolped";
 import { ExpedienteSolped } from "../ExpedienteSolped";
@@ -181,7 +182,7 @@ function Contenidos({
   alVerExpediente: (s: Solped) => void;
   alCotizar: (s: Solped) => void;
 }) {
-  const [filtro, setFiltro] = useState<Filtrado>("todas");
+  const [filtro, setFiltro] = useFiltro<Filtrado>("solped:estado", "todas");
   // Mandar a aprobar es de quien crea solicitudes; firmar, de quien aprueba.
   const permisos = { enviar: usePuede("solped.crear"), aprobar: usePuede("solped.aprobar") };
 

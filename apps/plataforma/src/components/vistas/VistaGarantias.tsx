@@ -1,5 +1,7 @@
 "use client";
 
+import { SeccionRespaldos, useRespaldos } from "@/components/ui/Respaldos";
+import { useFiltro } from "@/lib/vista-guardada";
 import { useMemo, useState } from "react";
 import { DialogoAdjuntos } from "../ui/Adjuntos";
 import { Chip } from "../ui/Chip";
@@ -13,7 +15,7 @@ import { Tabla, Total, type Columna } from "../ui/Tabla";
 import { CampoFiltro, Contenido, Desplegable, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
 import { cargarProveedores, type Proveedor } from "@/lib/abastecimiento";
 import { anexoRaiz, cargarAnexos, type Anexo } from "@/lib/anexos";
-import { actualizar, crear } from "@/lib/crud";
+import { actualizar, crearConId } from "@/lib/crud";
 import { useConsulta } from "@/lib/consulta";
 import { cargarContratosBreve, opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
 import { formatearFecha, formatearMonto, formatearPesos, mesLargo } from "@/lib/formato";
@@ -68,7 +70,7 @@ export function VistaGarantias() {
     <>
       <Encabezado
         titulo="Garantías"
-        descripcion="Los depósitos en garantía que se pagan a proveedores (arriendos de equipos, cilindros). No son un gasto: se devuelven. Cada una pasa de pagada a pendiente de devolución y a devuelta, y el comprobante se adjunta con el clip."
+        descripcion="Los depósitos en garantía que se pagan a proveedores (arriendos de equipos, cilindros). Se controlan desde Oficina Central: son saldo por recuperar, no un gasto ni costo de un contrato, y no entran a la rentabilidad. Cada una pasa de pagada a pendiente de devolución y a devuelta, y el comprobante se adjunta con el clip."
         acciones={<BotonNuevo permiso={PERMISO} onClick={edicion.abrirNuevo}>Nueva garantía</BotonNuevo>}
       />
 
@@ -103,9 +105,9 @@ export function VistaGarantias() {
 
 function Contenidos({ datos, edicion }: { datos: Datos; edicion: ReturnType<typeof useEdicion<Garantia>> }) {
   const { garantias: todas, contratos, anexos } = datos;
-  const [periodo, setPeriodo] = useState("todos");
-  const [contrato, setContrato] = useState("todos");
-  const [filtro, setFiltro] = useState<Estatus>("todas");
+  const [periodo, setPeriodo] = useFiltro("garantias:periodo", "todos");
+  const [contrato, setContrato] = useFiltro("garantias:contrato", "todos");
+  const [filtro, setFiltro] = useFiltro<Estatus>("garantias:estado", "todas");
   const [texto, setTexto] = useState("");
 
   /* Un anexo se controla como un contrato aparte; Oficina Central, como una unidad más. */
@@ -135,7 +137,6 @@ function Contenidos({ datos, edicion }: { datos: Datos; edicion: ReturnType<type
 
   const suma = (ls: Garantia[], campo: "monto" | "montoDevuelto" = "monto") => ls.reduce((t, g) => t + g[campo], 0);
   const abiertas = visibles.filter(abierta);
-  const porDevolver = visibles.filter((g) => g.estado === "por_devolver");
   const devueltas = visibles.filter((g) => g.estado === "devuelta");
   const vencidas = visibles.filter(vencida);
   const retenido = devueltas.reduce((t, g) => t + (g.monto - g.montoDevuelto), 0);
@@ -145,15 +146,14 @@ function Contenidos({ datos, edicion }: { datos: Datos; edicion: ReturnType<type
       <Resumen
         datos={[
           {
-            etiqueta: "En garantía",
-            valor: formatearMonto(suma(abiertas)),
-            nota: `${abiertas.length} ${abiertas.length === 1 ? "garantía abierta" : "garantías abiertas"} · total pagado ${formatearMonto(suma(visibles))}`,
+            etiqueta: "Total pagado",
+            valor: formatearMonto(suma(visibles)),
+            nota: `${visibles.length} ${visibles.length === 1 ? "garantía" : "garantías"} registradas`,
           },
           {
-            etiqueta: "Pendiente de devolución",
-            valor: formatearMonto(suma(porDevolver)),
-            nota: `${porDevolver.length} ${porDevolver.length === 1 ? "garantía" : "garantías"} por devolver`,
-            acento: porDevolver.length > 0 ? "aviso" : undefined,
+            etiqueta: "Saldo pendiente",
+            valor: formatearMonto(suma(abiertas)),
+            nota: `${abiertas.length} ${abiertas.length === 1 ? "abierta" : "abiertas"} · aún en poder del proveedor`,
           },
           {
             etiqueta: "Devuelto",
@@ -348,7 +348,7 @@ function FormularioGarantia({
           observaciones: registro.observaciones ?? "",
         }
       : {
-          contrato_id: contratos[0]?.id ?? "",
+          contrato_id: "",  // Oficina Central: una garantía no es costo de un contrato
           anexo_id: "",
           proveedor_id: "",
           proveedor: "",
@@ -384,6 +384,7 @@ function FormularioGarantia({
     }));
   }
 
+  const respaldos = useRespaldos("garantias", editando ? registro.id : null);
   function guardar(e: React.FormEvent) {
     e.preventDefault();
     if (!d.proveedor.trim()) return f.setError("Indica a qué proveedor se le pagó la garantía.");
@@ -412,7 +413,10 @@ function FormularioGarantia({
     };
 
     f.enviar(
-      () => (editando ? actualizar(TABLA, registro.id, fila) : crear(TABLA, fila)),
+      async () => {
+        if (editando) await actualizar(TABLA, registro.id, fila);
+        else void respaldos.subirA(await crearConId(TABLA, fila));
+      },
       () => {
         alGuardado();
         alCerrar();
@@ -475,7 +479,7 @@ function FormularioGarantia({
             <Ancho><CampoTexto etiqueta="Observaciones" {...f.campo("observaciones")} /></Ancho>
           </Campos>
 
-          <Pie
+          <Pie extra={<SeccionRespaldos respaldos={respaldos} />}
             error={f.error}
             guardando={f.guardando}
             alCancelar={alCerrar}

@@ -1,8 +1,6 @@
-import type { Metadata } from "next";
-import { VistaGarantias } from "@/components/vistas/VistaGarantias";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Garantías" };
-
+/** Las garantías viven en Oficina Central; los enlaces viejos caen ahí. */
 export default function Pagina() {
-  return <VistaGarantias />;
+  redirect("/control-de-gestion/egresos/oficina-central/garantias/");
 }

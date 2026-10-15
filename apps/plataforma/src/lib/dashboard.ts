@@ -3,6 +3,7 @@
 import { mesCorto } from "./formato";
 import { supabase } from "./supabase";
 import { anexoRaiz, cargarAnexos, etiquetaAnexo } from "./anexos";
+import { cargarFiniquitos } from "./finiquitos";
 import { cargarEgresosOficina, cargarNominasOficina, type EgresoOficina } from "./oficina-central";
 
 /**
@@ -69,8 +70,15 @@ export type DatosDashboard = {
   meses: FilaMes[];
   /** Los anexos que se pueden elegir o sumar a su contrato. */
   anexosDisponibles: AnexoDisponible[];
+  /** Ids de los contratos cerrados a mano: no se miden mes a mes, pero se pueden incluir. */
+  cerrados: string[];
   categorias: FilaCategoria[];
   oficina: EgresoOficina[];
+  /**
+   * Finiquitos pagados de los contratos. Son informativos (0082): NO entran al
+   * costo ni al resultado mensual; se muestran aparte y se imputan al cerrar el contrato.
+   */
+  finiquitos: { contratoId: string; anexoId: string | null; periodo: string; total: number }[];
   /** Costo de la nómina de Oficina Central por mes. Vacío para quien no ve sueldos. */
   personalOficina: { periodo: string; costo: number }[];
 };
@@ -145,7 +153,7 @@ function unirResumenPorMes(filas: FilaResumenSQL[]): FilaResumenSQL[] {
 }
 
 export async function cargarDashboard(): Promise<DatosDashboard> {
-  const [resumen, categorias, oficina, nominas, anexos, alias, edpsAnexo, costosAnexo] = await Promise.all([
+  const [resumen, categorias, oficina, nominas, anexos, alias, edpsAnexo, costosAnexo, finiquitos] = await Promise.all([
     supabase.from("resumen_mensual").select("*").order("periodo"),
     supabase.from("costos_por_categoria").select("*"),
     cargarEgresosOficina(),
@@ -154,15 +162,20 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
     cargarNominasOficina().catch(() => []),
     cargarAnexos().catch(() => []),
     /* Los alias son un extra (0074): sin la migración, el filtro usa el nombre. */
-    supabase.from("contratos").select("id, nombre_corto"),
+    supabase.from("contratos").select("id, nombre_corto, estado"),
     /* Lo de los anexos se separa del contrato: sus EDP y sus costos. Si falla,
        el Dashboard sale igual, con todo en el contrato (como antes). */
     supabase.from("estados_pago").select("contrato_id, anexo_id, periodo, tipo_edp, monto_neto, monto_cobrado").not("anexo_id", "is", null),
     supabase.from("costos_unificados").select("contrato_id, anexo_id, categoria_id, categoria, familia, periodo, tipo, neto").not("anexo_id", "is", null),
+    /* Quien no ve personal recibe la lista vacía; si la tabla falla, el Dashboard sale igual. */
+    cargarFiniquitos("contratos").catch(() => []),
   ]);
 
   const fallo = resumen.error ?? categorias.error;
   if (fallo) throw new Error(fallo.message);
+
+  /* Los contratos cerrados (0083) salen del tablero operativo; su historia sigue acá. */
+  const cerrados = (alias.error ? [] : alias.data ?? []).filter((f) => f.estado === "cerrado").map((f) => f.id as string);
 
   const cortos = new Map(
     (alias.error ? [] : alias.data ?? []).map((f) => [f.id as string, (f.nombre_corto as string | null) ?? ""]),
@@ -348,6 +361,10 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
   return {
     oficina,
     anexosDisponibles,
+    cerrados,
+    finiquitos: finiquitos.flatMap((f) =>
+      f.contratoId ? [{ contratoId: f.contratoId, anexoId: f.anexoId, periodo: primeroDelMes(f.periodo), total: f.total }] : [],
+    ),
     personalOficina: nominas.map((n) => ({ periodo: primeroDelMes(n.periodo), costo: n.costo_total })),
     /* Un ítem suelto (sin orden ni factura, p. ej. de una OC borrada) llega con
        periodo nulo: no pertenece a ningún mes y no debe tumbar el Dashboard. */
@@ -653,3 +670,92 @@ export const textoSemaforo: Record<Semaforo, string> = {
   aviso: "Bajo la meta",
   critico: "Requiere atención",
 };
+
+/* ── Alertas de desviación ────────────────────────────────────────────────── */
+
+export type Alerta = {
+  periodo: string;
+  nivel: "critico" | "aviso";
+  titulo: string;
+  detalle: string;
+  /** Unidad (contrato o anexo) que más explica la desviación, si se distingue. */
+  contratoId: string | null;
+  contrato: string | null;
+  /** A qué pantalla ir para ver los movimientos detrás de la cifra. */
+  destino: "ingresos" | "egresos";
+};
+
+const variacion = (ahora: number, antes: number) => (antes > 0 ? ((ahora - antes) / antes) * 100 : null);
+
+/**
+ * Compara cada mes contra el anterior y avisa de lo que no conviene dejar pasar:
+ *
+ *   crítico  vende menos y gasta más (ventas −10% o peor con costos +10% o más)
+ *   crítico  la rentabilidad cae 8 puntos o más de un mes a otro
+ *   aviso    el costo sube 25% o más y lo hace muy por encima de la venta
+ *
+ * Son umbrales de lectura, no de contabilidad: señalan dónde mirar. Cada alerta
+ * trae el contrato que más pesa en el cambio para pasar directo a su detalle.
+ */
+export function detectarAlertas(evol: Evolucion[]): Alerta[] {
+  const alertas: Alerta[] = [];
+
+  for (let i = 1; i < evol.length; i++) {
+    const hoy = evol[i];
+    const antes = evol[i - 1];
+    const dVenta = variacion(hoy.consolidado.venta, antes.consolidado.venta);
+    const dCosto = variacion(hoy.consolidado.costo, antes.consolidado.costo);
+    const dPuntos = hoy.consolidado.margenPct - antes.consolidado.margenPct;
+
+    // El contrato cuyo costo (o venta) más se movió explica la alerta.
+    const mayor = (clave: "costo" | "venta", signo: 1 | -1) => {
+      let mejor: { id: string; delta: number } | null = null;
+      for (const [id, t] of hoy.porContrato) {
+        const delta = (t[clave] - (antes.porContrato.get(id)?.[clave] ?? 0)) * signo;
+        if (delta > 0 && (!mejor || delta > mejor.delta)) mejor = { id, delta };
+      }
+      return mejor?.id ?? null;
+    };
+
+    const caso = (nivel: Alerta["nivel"], titulo: string, detalle: string, contratoId: string | null, destino: Alerta["destino"]) =>
+      alertas.push({ periodo: hoy.periodo, nivel, titulo, detalle, contratoId, contrato: null, destino });
+
+    const antesTxt = mesCorto(antes.periodo);
+    if (dVenta !== null && dCosto !== null && dVenta <= -10 && dCosto >= 10) {
+      caso(
+        "critico",
+        "Vende menos y gasta más",
+        `Las ventas cayeron ${Math.abs(dVenta).toFixed(0)}% y los costos subieron ${dCosto.toFixed(0)}% respecto de ${antesTxt}.`,
+        mayor("costo", 1),
+        "egresos",
+      );
+    } else if (dCosto !== null && dCosto >= 25 && dCosto - (dVenta ?? 0) >= 15) {
+      caso(
+        "aviso",
+        "Costos por sobre la venta",
+        `Los costos subieron ${dCosto.toFixed(0)}% contra ${antesTxt}${dVenta === null ? "" : `, con ventas ${dVenta >= 0 ? "+" : "−"}${Math.abs(dVenta).toFixed(0)}%`}.`,
+        mayor("costo", 1),
+        "egresos",
+      );
+    }
+    if (dPuntos <= -8) {
+      caso(
+        "critico",
+        "Cae la rentabilidad",
+        `Bajó ${Math.abs(dPuntos).toFixed(1)} puntos: de ${antes.consolidado.margenPct.toFixed(1)}% en ${antesTxt} a ${hoy.consolidado.margenPct.toFixed(1)}%.`,
+        mayor("costo", 1) ?? mayor("venta", -1),
+        dVenta !== null && dVenta < 0 ? "ingresos" : "egresos",
+      );
+    }
+  }
+  return alertas;
+}
+
+/** Los meses con alguna alerta, y la más grave de cada uno. */
+export function nivelPorMes(alertas: Alerta[]) {
+  const porMes = new Map<string, Alerta["nivel"]>();
+  for (const a of alertas) {
+    if (porMes.get(a.periodo) !== "critico") porMes.set(a.periodo, a.nivel);
+  }
+  return porMes;
+}

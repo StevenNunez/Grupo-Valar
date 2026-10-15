@@ -1,5 +1,6 @@
 "use client";
 
+import { SeccionRespaldos, useRespaldos } from "@/components/ui/Respaldos";
 import { useState } from "react";
 import {
   Ancho,
@@ -199,6 +200,7 @@ export function FormularioContrato({
       : "Solo afecta a demo."}`;
   })();
 
+  const respaldos = useRespaldos("contratos", editando ? contrato.id : null);
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const { id, ...campos } = f.datos;
@@ -225,6 +227,7 @@ export function FormularioContrato({
           ? actualizar("contratos", contrato.id, fila)
           : crear("contratos", { ...fila, id: id.trim() }),
       () => {
+        if (!editando) void respaldos.subirA(id.trim());
         alGuardado();
         alCerrar();
       },
@@ -409,6 +412,7 @@ export function FormularioContrato({
           </Campos>
 
           <Pie
+            extra={<SeccionRespaldos respaldos={respaldos} />}
             error={f.error}
             guardando={f.guardando}
             alCancelar={alCerrar}

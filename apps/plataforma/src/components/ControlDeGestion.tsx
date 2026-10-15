@@ -1,29 +1,31 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnalisisGrafico } from "./AnalisisGrafico";
-import { GraficoRentabilidad } from "./GraficoRentabilidad";
 import { InformeImprimible } from "./InformeImprimible";
 import { Chip } from "./ui/Chip";
 import { BotonImprimir, Impresion } from "./ui/Impresion";
 import { Tabla, Total, type Columna } from "./ui/Tabla";
-import { CampoFiltro, Contenido, Desplegable, Panel, Resumen } from "./ui/Vista";
+import { CampoFiltro, Contenido, Desplegable, Filtro, Panel, Resumen } from "./ui/Vista";
 import { useConsulta } from "@/lib/consulta";
 import {
   acumularCategorias,
   cargarDashboard,
   cargarEstadoUf,
+  detectarAlertas,
   evolucion as calcularEvolucion,
   porContrato as agruparPorContrato,
   semaforo,
   sumar,
   textoSemaforo,
+  type Alerta,
   type CategoriaAcumulada,
   type Contrato,
   type DatosDashboard,
   type EstadoUf,
   type Evolucion,
   type FilaCategoria,
+  type FilaMes,
 } from "@/lib/dashboard";
 import {
   diasDesde,
@@ -33,6 +35,7 @@ import {
   mesLargo,
 } from "@/lib/formato";
 import { useUsuario } from "@/lib/sesion";
+import { useVistaGuardada } from "@/lib/vista-guardada";
 import { categoriasOficina, totalOficina, type EgresoOficina } from "@/lib/oficina-central";
 import Link from "next/link";
 
@@ -90,7 +93,7 @@ export function ControlDeGestion() {
   const usuario = useUsuario();
   /* Con clave, el Dashboard abre al instante con lo último que se vio y se
      actualiza por detrás: las vistas de las que sale son pesadas. */
-  const { estado } = useConsulta<DatosDashboard>(cargarDashboard, `${usuario.id}:${usuario.empresa}:dashboard-v2`);
+  const { estado } = useConsulta<DatosDashboard>(cargarDashboard, `${usuario.id}:${usuario.empresa}:dashboard-v4`);
 
   return (
     <>
@@ -110,47 +113,67 @@ export function ControlDeGestion() {
 }
 
 function Tablero({ datos }: { datos: DatosDashboard }) {
-  const [periodo, setPeriodo] = useState<Periodo>(() => periodoInicial(datos));
-  const [contratoFiltro, setContratoFiltroCrudo] = useState<string>("todos");
-  /* Los anexos que se suman al contrato elegido. Por defecto ninguno: el
-     contrato se ve solo, y cada anexo se marca para sumarlo o se elige solo. */
-  const [anexosMarcados, setAnexosMarcados] = useState<string[]>([]);
+  /* Período, estado y contratos elegidos se recuerdan en la pestaña: ir a
+     Ingresos, Egresos o al detalle de un movimiento y volver no reinicia el
+     análisis. Cada contrato y cada anexo es una unidad que se marca por
+     separado (vacío = todos). Se parte de "Todos los contratos vigentes". */
+  const [vista, cambiarVista] = useVistaGuardada<{ periodo: Periodo | null; alcance: Alcance; seleccion: string[] }>(
+    "dashboard",
+    { periodo: null, alcance: "vigentes", seleccion: [] },
+  );
+  const { alcance, seleccion } = vista;
+  const setPeriodo = (p: Periodo) => cambiarVista({ periodo: p });
+  const setAlcance = (a: Alcance) => cambiarVista({ alcance: a });
+  const setSeleccion = (ids: string[]) => cambiarVista({ seleccion: ids });
   const [imprimiendo, setImprimiendo] = useState(false);
   const usuario = useUsuario();
 
-  const setContratoFiltro = (id: string) => {
-    setContratoFiltroCrudo(id);
-    setAnexosMarcados([]);
-  };
+  /* Los contratos cerrados (0083) no se miden mes a mes en el tablero
+     operativo; "Todos" o "Cerrados" los trae de vuelta, con su historia. */
+  const cerradosIds = useMemo(() => new Set(datos.cerrados ?? []), [datos.cerrados]);
+  const entraEnAlcance = (id: string) =>
+    alcance === "todos" || (cerradosIds.has(id) ? alcance === "cerrados" : alcance === "vigentes");
+
+  const mesesAlcance = useMemo(
+    () => datos.meses.filter((f) => entraEnAlcance(f.padreId ?? f.contratoId)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [datos.meses, alcance, cerradosIds],
+  );
+  const categoriasAlcance = useMemo(
+    () => datos.categorias.filter((c) => entraEnAlcance(c.contratoId.split("#")[0])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [datos.categorias, alcance, cerradosIds],
+  );
 
   /* Cada contrato con sus anexos. Un anexo es un contrato más: se puede mirar
-     solo, o sumarlo a su contrato con la casilla. */
+     solo o junto a otros marcándolo en el selector. */
   const grupos = useMemo(() => {
     const porContrato = new Map<string, { id: string; nombre: string; anexos: { id: string; nombre: string }[] }>();
-    for (const f of datos.meses) {
+    for (const f of mesesAlcance) {
       const id = f.padreId ?? f.contratoId;
       if (!porContrato.has(id)) porContrato.set(id, { id, nombre: id, anexos: [] });
       if (f.padreId === null) porContrato.get(id)!.nombre = f.contratoCorto || f.contrato;
     }
     for (const a of datos.anexosDisponibles) {
+      if (!entraEnAlcance(a.contratoId)) continue;
       if (!porContrato.has(a.contratoId)) porContrato.set(a.contratoId, { id: a.contratoId, nombre: a.contratoId, anexos: [] });
       porContrato.get(a.contratoId)!.anexos.push({ id: a.id, nombre: a.nombre });
     }
     // Un anexo con datos pero fuera de la lista (p. ej. un borrador) también se puede elegir.
-    for (const f of datos.meses) {
+    for (const f of mesesAlcance) {
       if (f.padreId === null) continue;
       const g = porContrato.get(f.padreId)!;
       if (!g.anexos.some((a) => a.id === f.contratoId)) g.anexos.push({ id: f.contratoId, nombre: f.contrato });
     }
     return [...porContrato.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
-  }, [datos.meses, datos.anexosDisponibles]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mesesAlcance, datos.anexosDisponibles, alcance, cerradosIds]);
 
   /* Qué unidades están a la vista: null = todas, cada una por separado. */
   const unidades = useMemo<string[] | null>(() => {
-    if (contratoFiltro === "todos") return null;
-    if (contratoFiltro.includes("#")) return [contratoFiltro];
-    return [contratoFiltro, ...anexosMarcados];
-  }, [contratoFiltro, anexosMarcados]);
+    const validas = seleccion.filter((id) => grupos.some((g) => g.id === id || g.anexos.some((a) => a.id === id)));
+    return validas.length > 0 ? validas : null;
+  }, [seleccion, grupos]);
 
   const nombreDeUnidad = (id: string) => {
     for (const g of grupos) {
@@ -162,18 +185,24 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
   };
   const periodosDatos = useMemo(() => periodosDe(datos), [datos]);
 
-  /* "Todos los meses" y los últimos N cuentan solo meses CERRADOS: el que está
-     corriendo viene a medias y distorsiona el análisis. Un mes en particular,
-     el corriente incluido, sí se puede elegir. Si aún no hay ninguno cerrado,
-     se usa lo que haya. */
+  /* El análisis de utilidad trabaja solo con meses CERRADOS: el que está corriendo
+     viene a medias y distorsiona los márgenes. Se oculta del selector y de los
+     rangos, pero sus registros siguen en Ingresos y Egresos para el trabajo
+     operativo. Si aún no hay ninguno cerrado, se usa lo que haya. */
   const periodosCerrados = useMemo(() => {
     const cerrados = periodosDatos.filter((p) => p < mesEnCurso());
     return cerrados.length > 0 ? cerrados : periodosDatos;
   }, [periodosDatos]);
 
-  const filas = useMemo(() => {
-    let base = datos.meses;
-    if (unidades) {
+  /* Un mes guardado que ya no se puede elegir vuelve al período inicial. */
+  const periodo: Periodo =
+    vista.periodo && (!esMes(vista.periodo) || periodosCerrados.includes(mesDe(vista.periodo)))
+      ? vista.periodo
+      : periodoInicial(datos);
+
+  const recortarPeriodo = (origen: FilaMes[], porUnidades: boolean) => {
+    let base = origen;
+    if (porUnidades && unidades) {
       base = base.filter((f) => unidades.includes(f.contratoId));
     }
     if (esMes(periodo)) {
@@ -182,21 +211,33 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
       base = base.filter((f) => periodosCerrados.includes(f.periodo));
     } else {
       const meses = (
-        !unidades ? periodosCerrados : [...new Set(base.map((f) => f.periodo).filter((p) => periodosCerrados.includes(p)))].sort()
+        !(porUnidades && unidades) ? periodosCerrados : [...new Set(base.map((f) => f.periodo).filter((p) => periodosCerrados.includes(p)))].sort()
       ).slice(-Number(periodo));
       base = base.filter((f) => meses.includes(f.periodo));
     }
     return base;
-  }, [datos.meses, periodo, unidades, periodosCerrados]);
+  };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const filas = useMemo(() => recortarPeriodo(mesesAlcance, true), [mesesAlcance, periodo, unidades, periodosCerrados]);
+
+  /* Los contratos cerrados salen de la vista por contrato, pero su venta sigue
+     siendo venta del año: se suma aparte, en el mismo período, y se avisa. */
+  const ventaCerrados = useMemo(() => {
+    if (alcance !== "vigentes" || unidades || cerradosIds.size === 0) return 0;
+    const cerradas = datos.meses.filter((f) => cerradosIds.has(f.padreId ?? f.contratoId));
+    return sumar(recortarPeriodo(cerradas, false)).venta;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datos.meses, alcance, unidades, cerradosIds, periodo, periodosCerrados]);
 
   /* Los meses que hay para elegir, del más nuevo al más viejo. Salen de los
      datos, no de un calendario: solo se ofrece lo que tiene movimientos. */
   const mesesDisponibles = useMemo(() => {
-    return [...periodosDatos].reverse().map((periodo) => ({
+    return [...periodosCerrados].reverse().map((periodo) => ({
       id: `mes:${periodo}` as Periodo,
-      titulo: mesLargo(periodo) + (periodo === mesEnCurso() ? " · en curso" : ""),
+      titulo: mesLargo(periodo),
     }));
-  }, [periodosDatos]);
+  }, [periodosCerrados]);
 
   const oficinaVisible = useMemo(() => {
     if (esMes(periodo)) return datos.oficina.filter((f) => f.fecha.startsWith(mesDe(periodo).slice(0, 7)));
@@ -215,6 +256,14 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
   }, [datos.personalOficina, periodo, periodosCerrados]);
 
   const total = sumar(filas);
+  const finiquitos = useMemo(() => {
+    const elegidos = esMes(periodo) ? [mesDe(periodo)] : periodo === "todo" ? periodosCerrados : periodosCerrados.slice(-Number(periodo));
+    return (datos.finiquitos ?? [])
+      .filter((f) => entraEnAlcance(f.contratoId) && elegidos.includes(f.periodo))
+      .filter((f) => !unidades || unidades.includes(f.contratoId) || (f.anexoId !== null && unidades.some((u) => u.startsWith(`${f.contratoId}#`))))
+      .reduce((t, f) => t + f.total, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datos.finiquitos, periodo, periodosCerrados, unidades, alcance, cerradosIds]);
   const contratos = agruparPorContrato(filas);
   const evolucion = calcularEvolucion(filas);
 
@@ -222,19 +271,20 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
   // pide 25%, no sirve declarar sano un consolidado de 21%.
   const meta = contratos.length > 0 ? Math.max(...contratos.map((c) => c.meta)) : 20;
   const luz = semaforo(total.margenPct, meta);
+  const alertas = useMemo(() => detectarAlertas(evolucion), [evolucion]);
 
   // El informe imprime lo mismo que está en pantalla, filtros incluidos.
   const periodosVisibles = evolucion.map((e) => e.periodo);
 
   const categoriasVisibles = acumularCategorias(
-    datos.categorias,
+    categoriasAlcance,
     unidades ?? "todos",
     evolucion.length,
     periodosVisibles,
   );
 
-  const alcance = [
-    unidades ? unidades.map(nombreDeUnidad).join(" + ") : "Todos los contratos",
+  const textoAlcance = [
+    unidades ? unidades.map(nombreDeUnidad).join(" + ") : alcance === "cerrados" ? "Contratos cerrados" : alcance === "todos" ? "Todos los contratos, cerrados incluidos" : "Todos los contratos vigentes",
     [...rangos, ...mesesDisponibles].find((p) => p.id === periodo)?.titulo ?? "Todos los meses cerrados",
   ].join(" · ");
 
@@ -242,8 +292,8 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
     return (
       <>
       {datos.meses.length > 0 && <FiltrosDashboard
-        grupos={grupos} contrato={contratoFiltro} alCambiarContrato={setContratoFiltro}
-        marcados={anexosMarcados} alMarcar={setAnexosMarcados}
+        grupos={grupos} seleccion={unidades ?? []} alCambiarSeleccion={setSeleccion}
+        alcance={alcance} alCambiarAlcance={setAlcance} hayCerrados={cerradosIds.size > 0}
         periodo={periodo} alCambiarPeriodo={setPeriodo} mesesDisponibles={mesesDisponibles} />}
       <div className="rounded-2xl border border-dashed border-mist-deep bg-white p-10 text-center">
         <p className="font-display text-lg font-semibold text-ink">
@@ -254,7 +304,7 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
           su rentabilidad. Los egresos de Oficina Central aparecen debajo.
         </p>
       </div>
-      {contratoFiltro === "todos" && <ResumenOficina filas={oficinaVisible} personal={personalOficina} margenContratos={0} />}
+      {!unidades && <ResumenOficina filas={oficinaVisible} personal={personalOficina} margenContratos={0} />}
       </>
     );
   }
@@ -262,8 +312,8 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
   return (
     <>
       <FiltrosDashboard
-        grupos={grupos} contrato={contratoFiltro} alCambiarContrato={setContratoFiltro}
-        marcados={anexosMarcados} alMarcar={setAnexosMarcados}
+        grupos={grupos} seleccion={unidades ?? []} alCambiarSeleccion={setSeleccion}
+        alcance={alcance} alCambiarAlcance={setAlcance} hayCerrados={cerradosIds.size > 0}
         periodo={periodo} alCambiarPeriodo={setPeriodo} mesesDisponibles={mesesDisponibles}
         /* El informe sale con los filtros puestos: lo que se ve es lo que se
            imprime, y el encabezado de la hoja lo deja dicho. */
@@ -275,7 +325,9 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
           {
             etiqueta: "Ventas netas",
             valor: formatearMonto(total.venta),
-            nota: `${evolucion.length} ${evolucion.length === 1 ? "mes" : "meses"} · neto de IVA`,
+            nota: ventaCerrados > 0
+              ? `+ ${formatearMonto(ventaCerrados)} de contratos cerrados · ${formatearMonto(total.venta + ventaCerrados)} en total`
+              : `${evolucion.length} ${evolucion.length === 1 ? "mes" : "meses"} · neto de IVA`,
           },
           {
             etiqueta: "Costos totales",
@@ -293,10 +345,15 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
             nota: `${textoSemaforo[luz]} · meta ${meta}%`,
             acento: luz,
           },
+          {
+            etiqueta: "Finiquitos pagados",
+            valor: formatearMonto(finiquitos),
+            nota: "Aparte: no restan del resultado mensual; se imputan al cerrar el contrato",
+          },
         ]}
       />
 
-      {contratoFiltro === "todos" && <ResumenOficina filas={oficinaVisible} personal={personalOficina} margenContratos={total.margen} />}
+      {!unidades && <ResumenOficina filas={oficinaVisible} personal={personalOficina} margenContratos={total.margen} />}
 
       {/* ── Por contrato ───────────────────────────────────────────────────── */}
       {contratos.length > 1 && (
@@ -316,29 +373,13 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
       <AnalisisGrafico
         contratos={contratos}
         evolucion={evolucion}
-        categorias={datos.categorias}
+        categorias={categoriasAlcance}
         periodosVisibles={periodosVisibles}
         meta={meta}
+        alertas={alertas}
       />
 
-      {/* ── Evolución ──────────────────────────────────────────────────────── */}
-      {/* Con un solo mes elegido no hay evolución que dibujar: serían tres
-          puntos sueltos en media pantalla en blanco. El dato está igual en la
-          tabla de abajo. */}
-      {evolucion.length > 1 && (
-        <section
-          aria-labelledby="evolucion"
-          className="mb-6 rounded-2xl border border-mist-deep bg-white p-6 lg:p-8"
-        >
-          <h2 id="evolucion" className="font-display text-lg font-semibold text-ink">
-            Rentabilidad mes a mes
-          </h2>
-          <p className="mb-6 mt-1 text-sm text-ink-soft">
-            Margen sobre ventas de cada contrato y del consolidado, contra la meta.
-          </p>
-          <GraficoRentabilidad evolucion={evolucion} contratos={contratos} meta={meta} />
-        </section>
-      )}
+      <PanelAlertas alertas={alertas} nombreDe={nombreDeUnidad} />
 
       {/* ── Tabla mensual ──────────────────────────────────────────────────── */}
       <Panel
@@ -355,7 +396,7 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
           nota="Acumulado del período contra el presupuesto mensual del contrato."
         >
           <TablaCategorias
-            categorias={datos.categorias}
+            categorias={categoriasAlcance}
             contratoFiltro={unidades ?? "todos"}
             meses={evolucion.length}
             periodosVisibles={periodosVisibles}
@@ -373,7 +414,7 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
             evolucion={evolucion}
             categorias={categoriasVisibles}
             meta={meta}
-            alcance={alcance}
+            alcance={textoAlcance}
             emitidoPor={usuario.nombre}
           />
         </Impresion>
@@ -405,6 +446,36 @@ function ResumenOficina({ filas, personal, margenContratos }: { filas: EgresoOfi
         {categoriasOficina.map((c) => <span key={c.id}>{c.titulo}: <strong className="text-ink">{formatearMonto(totalOficina(filas.filter((f) => f.categoria === c.id)))}</strong></span>)}
         {personal > 0 && <span>Personal: <strong className="text-ink">{formatearMonto(personal)}</strong></span>}
       </div>}
+    </section>
+  );
+}
+
+/* ── Alertas de desviación ────────────────────────────────────────────────── */
+
+function PanelAlertas({ alertas, nombreDe }: { alertas: Alerta[]; nombreDe: (id: string) => string }) {
+  if (alertas.length === 0) return null;
+  return (
+    <section aria-labelledby="alertas" className="mb-6 rounded-2xl border border-mist-deep bg-white p-6 lg:p-7">
+      <h2 id="alertas" className="font-display text-lg font-semibold text-ink">
+        Desviaciones detectadas
+      </h2>
+      <p className="mb-4 mt-1 text-sm text-ink-soft">
+        Informativo: meses que se mueven distinto del anterior. Es una señal de dónde mirar, no un error.
+      </p>
+      <ul className="flex flex-col gap-3">
+        {alertas.map((a) => (
+          <li key={a.periodo + a.titulo} className="rounded-xl bg-mist/50 p-4">
+            <p className="text-sm font-semibold text-ink">
+              <Chip tono={a.nivel === "critico" ? "critico" : "aviso"}>{mesLargo(a.periodo)}</Chip>{" "}
+              <span className="ml-1">{a.titulo}</span>
+            </p>
+            <p className="mt-1.5 text-sm text-ink-soft">
+              {a.detalle}
+              {a.contratoId && <> Mayor peso: <strong className="text-ink">{nombreDe(a.contratoId)}</strong>.</>}
+            </p>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -487,53 +558,64 @@ function TarjetaContrato({ contrato }: { contrato: Contrato }) {
 
 type GrupoContrato = { id: string; nombre: string; anexos: { id: string; nombre: string }[] };
 
+/** Qué contratos entran al tablero: los que operan, los cerrados o todos. */
+type Alcance = "vigentes" | "cerrados" | "todos";
+
+const alcances: { id: Alcance; titulo: string }[] = [
+  { id: "vigentes", titulo: "Vigentes" },
+  { id: "cerrados", titulo: "Cerrados" },
+  { id: "todos", titulo: "Todos" },
+];
+
 /**
- * Contrato y período. Un anexo es un contrato más, con sus propios ingresos y
- * gastos: se elige solo en la lista, o se suma a su contrato con la casilla
- * (Misceláneos + Carpas). Sin marcar nada, un contrato se ve sin sus anexos.
+ * Contratos y período. Los contratos se eligen con casillas, como un filtro de
+ * planilla: se marcan uno o varios (Torres + Misceláneos) y quedan como
+ * etiquetas que se quitan de a una. Un anexo es un contrato más y se marca por
+ * separado. Sin marcar nada se ven todos, cada uno por su lado.
  */
 function FiltrosDashboard({
   grupos,
-  contrato,
-  alCambiarContrato,
-  marcados,
-  alMarcar,
+  seleccion,
+  alCambiarSeleccion,
+  alcance,
+  alCambiarAlcance,
+  hayCerrados,
   periodo,
   alCambiarPeriodo,
   mesesDisponibles,
   acciones,
 }: {
   grupos: GrupoContrato[];
-  contrato: string;
-  alCambiarContrato: (id: string) => void;
-  marcados: string[];
-  alMarcar: (ids: string[]) => void;
+  seleccion: string[];
+  alCambiarSeleccion: (ids: string[]) => void;
+  alcance: Alcance;
+  alCambiarAlcance: (a: Alcance) => void;
+  hayCerrados: boolean;
   periodo: Periodo;
   alCambiarPeriodo: (p: Periodo) => void;
   mesesDisponibles: { id: Periodo; titulo: string }[];
   acciones?: React.ReactNode;
 }) {
-  const elegido = grupos.find((g) => g.id === contrato);
-  const alternar = (id: string) =>
-    alMarcar(marcados.includes(id) ? marcados.filter((m) => m !== id) : [...marcados, id]);
+  const nombre = (id: string) => {
+    for (const g of grupos) {
+      if (g.id === id) return g.nombre;
+      const a = g.anexos.find((x) => x.id === id);
+      if (a) return `${g.nombre} › ${a.nombre}`;
+    }
+    return id;
+  };
 
   return (
     <div className="mb-6">
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
-        <CampoFiltro etiqueta="Contrato">
-          <Desplegable
-            etiqueta="Contrato"
-            valor={contrato}
-            alCambiar={alCambiarContrato}
-            grupos={[
-              { opciones: [{ id: "todos", titulo: "Todos (cada contrato y anexo por separado)" }] },
-              ...grupos.map((g) => ({
-                titulo: g.nombre,
-                opciones: [{ id: g.id, titulo: g.nombre }, ...g.anexos.map((a) => ({ id: a.id, titulo: `↳ ${a.nombre}` }))],
-              })),
-            ]}
-          />
+        <CampoFiltro etiqueta="Contratos">
+          <SelectorContratos grupos={grupos} seleccion={seleccion} alCambiar={alCambiarSeleccion} />
         </CampoFiltro>
+        {hayCerrados && (
+          <CampoFiltro etiqueta="Estado">
+            <Filtro etiqueta="Estado del contrato" opciones={alcances} valor={alcance} alCambiar={alCambiarAlcance} />
+          </CampoFiltro>
+        )}
         <CampoFiltro etiqueta="Período">
           <Desplegable
             etiqueta="Período"
@@ -545,26 +627,151 @@ function FiltrosDashboard({
         {acciones && <div className="ml-auto">{acciones}</div>}
       </div>
 
-      {elegido && elegido.anexos.length > 0 && (
-        <fieldset className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-mist-deep bg-white px-4 py-3">
-          <legend className="sr-only">Sumar anexos a {elegido.nombre}</legend>
-          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft">
-            {elegido.nombre} se ve sin sus anexos. Sumar:
-          </span>
-          {elegido.anexos.map((a) => (
-            <label key={a.id} className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-ink">
-              <input
-                type="checkbox"
-                checked={marcados.includes(a.id)}
-                onChange={() => alternar(a.id)}
-                className="h-4 w-4 accent-[#137e9e]"
-              />
-              {a.nombre}
-            </label>
+      {seleccion.length > 0 && (
+        <ul className="mt-3 flex flex-wrap items-center gap-2" aria-label="Contratos seleccionados">
+          {seleccion.map((id) => (
+            <li key={id}>
+              <button
+                type="button"
+                onClick={() => alCambiarSeleccion(seleccion.filter((x) => x !== id))}
+                title="Quitar de la selección"
+                className="inline-flex items-center gap-1.5 rounded-full border border-cyan/40 bg-cyan/10 py-1 pl-3 pr-2 text-xs font-semibold text-cyan-deep transition-colors hover:bg-cyan/20"
+              >
+                {nombre(id)}
+                <span aria-hidden="true" className="text-sm leading-none">×</span>
+                <span className="sr-only">Quitar {nombre(id)}</span>
+              </button>
+            </li>
           ))}
-        </fieldset>
+          <li>
+            <button
+              type="button"
+              onClick={() => alCambiarSeleccion([])}
+              className="px-2 py-1 text-xs font-semibold text-ink-soft underline-offset-2 hover:text-ink hover:underline"
+            >
+              Quitar todos
+            </button>
+          </li>
+        </ul>
       )}
     </div>
+  );
+}
+
+/** Lista desplegable con casillas: contratos y, debajo de cada uno, sus anexos. */
+function SelectorContratos({
+  grupos,
+  seleccion,
+  alCambiar,
+}: {
+  grupos: GrupoContrato[];
+  seleccion: string[];
+  alCambiar: (ids: string[]) => void;
+}) {
+  const [abierto, setAbierto] = useState(false);
+  const [busqueda, setBusqueda] = useState("");
+  const caja = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!abierto) return;
+    const fuera = (e: MouseEvent) => {
+      if (caja.current && !caja.current.contains(e.target as Node)) setAbierto(false);
+    };
+    const tecla = (e: KeyboardEvent) => e.key === "Escape" && setAbierto(false);
+    document.addEventListener("mousedown", fuera);
+    document.addEventListener("keydown", tecla);
+    return () => {
+      document.removeEventListener("mousedown", fuera);
+      document.removeEventListener("keydown", tecla);
+    };
+  }, [abierto]);
+
+  const alternar = (id: string) =>
+    alCambiar(seleccion.includes(id) ? seleccion.filter((x) => x !== id) : [...seleccion, id]);
+
+  const q = busqueda.trim().toLowerCase();
+  const visibles = grupos.filter(
+    (g) => !q || g.nombre.toLowerCase().includes(q) || g.anexos.some((a) => a.nombre.toLowerCase().includes(q)),
+  );
+  const resumen =
+    seleccion.length === 0 ? "Todos los contratos" : seleccion.length === 1 ? "1 seleccionado" : `${seleccion.length} seleccionados`;
+
+  return (
+    <div ref={caja} className="relative">
+      <button
+        type="button"
+        onClick={() => setAbierto((a) => !a)}
+        aria-expanded={abierto}
+        aria-haspopup="listbox"
+        className="flex w-full min-w-[14rem] max-w-[18rem] items-center justify-between gap-3 rounded-full border border-mist-deep bg-white py-2 pl-4 pr-3.5 text-xs font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink focus:outline-none focus:ring-2 focus:ring-cyan"
+      >
+        <span className="truncate">{resumen}</span>
+        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+          <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {abierto && (
+        <div className="absolute left-0 z-30 mt-2 w-[min(22rem,90vw)] rounded-2xl border border-mist-deep bg-white p-3 shadow-lg">
+          <input
+            type="search"
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Buscar contrato…"
+            aria-label="Buscar contrato"
+            className="mb-2 w-full rounded-xl border border-mist-deep px-3 py-2 text-sm text-ink outline-none focus:border-cyan"
+          />
+          <div className="mb-2 flex items-center justify-between px-1 text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => alCambiar(grupos.flatMap((g) => [g.id, ...g.anexos.map((a) => a.id)]))}
+              className="text-cyan-deep hover:underline"
+            >
+              Seleccionar todo
+            </button>
+            <button type="button" onClick={() => alCambiar([])} className="text-ink-soft hover:text-ink hover:underline">
+              Limpiar
+            </button>
+          </div>
+          <ul className="max-h-72 overflow-y-auto" role="listbox" aria-multiselectable="true">
+            {visibles.length === 0 && <li className="px-2 py-3 text-sm text-ink-soft">Ningún contrato coincide.</li>}
+            {visibles.map((g) => (
+              <li key={g.id}>
+                <Casilla marcada={seleccion.includes(g.id)} alCambiar={() => alternar(g.id)} fuerte>
+                  {g.nombre}
+                </Casilla>
+                {g.anexos.map((a) => (
+                  <div key={a.id} className="pl-6">
+                    <Casilla marcada={seleccion.includes(a.id)} alCambiar={() => alternar(a.id)}>
+                      ↳ {a.nombre}
+                    </Casilla>
+                  </div>
+                ))}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Casilla({
+  marcada,
+  alCambiar,
+  fuerte = false,
+  children,
+}: {
+  marcada: boolean;
+  alCambiar: () => void;
+  fuerte?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm hover:bg-mist/60">
+      <input type="checkbox" checked={marcada} onChange={alCambiar} className="h-4 w-4 shrink-0 accent-[#137e9e]" />
+      <span className={`min-w-0 truncate ${fuerte ? "font-semibold text-ink" : "text-ink-soft"}`}>{children}</span>
+    </label>
   );
 }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { SeccionRespaldos, useRespaldos } from "@/components/ui/Respaldos";
 import { SelectorAnexo } from "../ui/SelectorAnexo";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -239,6 +240,7 @@ export function FormularioSolped({
     setLineas((ls) => ls.filter((l) => l.id !== linea.id));
   }
 
+  const respaldos = useRespaldos("solped", editando ? solped.id : null);
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const { id, ...campos } = f.datos;
@@ -291,6 +293,7 @@ export function FormularioSolped({
         }
       },
       () => {
+        if (!editando) void respaldos.subirA(solpedId);
         alGuardado();
         alCerrar();
       },
@@ -527,6 +530,7 @@ export function FormularioSolped({
         </datalist>
 
         <Pie
+            extra={<SeccionRespaldos respaldos={respaldos} />}
             error={f.error}
             guardando={f.guardando}
             alCancelar={alCerrar}

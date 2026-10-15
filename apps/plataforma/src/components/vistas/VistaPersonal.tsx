@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useFiltro } from "@/lib/vista-guardada";
+import { useMemo } from "react";
 import { Tabla, Total, type Columna } from "../ui/Tabla";
 import { CampoFiltro, Contenido, Desplegable, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
 import { FormularioPersonal } from "../formularios/FormularioPersonal";
@@ -115,9 +116,9 @@ function Contenidos({
   alCambiar: () => void;
 }) {
   const { anexos } = datos;
-  const [mes, setMes] = useState<string>("todos");
-  const [contrato, setContrato] = useState("todos");
-  const [estatus, setEstatus] = useState<Estatus>("todos");
+  const [mes, setMes] = useFiltro<string>("personal:mes", "todos");
+  const [contrato, setContrato] = useFiltro("personal:contrato", "todos");
+  const [estatus, setEstatus] = useFiltro<Estatus>("personal:estatus", "todos");
 
   const meses = useMemo(() => {
     const unicos = [...new Set([...datos.personal, ...datos.finiquitos].map((f) => delMes(f.periodo)))].sort().reverse();

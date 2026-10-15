@@ -1,5 +1,6 @@
 "use client";
 
+import { SeccionRespaldos, useRespaldos } from "@/components/ui/Respaldos";
 import { useEffect, useState } from "react";
 import {
   Ancho,
@@ -438,6 +439,7 @@ export function FormularioOrden({
     setLineas((ls) => ls.map((l) => ({ ...l, [campo]: valor })));
   }
 
+  const respaldos = useRespaldos("ordenes_compra_proveedor", editando ? orden.id : null);
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const ordenId = editando ? orden.id : codigoInterno;
@@ -460,7 +462,10 @@ export function FormularioOrden({
 
     f.enviar(async () => {
       if (editando) await actualizar("ordenes_compra_proveedor", orden.id, cabecera);
-      else await crear("ordenes_compra_proveedor", cabecera);
+      else {
+        await crear("ordenes_compra_proveedor", cabecera);
+        void respaldos.subirA(cabecera.id);
+      }
 
       for (const borrada of eliminadas) await eliminar("items_compra", borrada);
 
@@ -949,6 +954,7 @@ export function FormularioOrden({
           </section>
 
           <Pie
+            extra={<SeccionRespaldos respaldos={respaldos} />}
             error={f.error}
             guardando={f.guardando}
             alCancelar={alCerrar}

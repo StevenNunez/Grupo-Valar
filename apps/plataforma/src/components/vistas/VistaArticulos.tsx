@@ -1,5 +1,6 @@
 "use client";
 
+import { useFiltro } from "@/lib/vista-guardada";
 import { useMemo, useState } from "react";
 import { Chip } from "../ui/Chip";
 import {
@@ -94,7 +95,7 @@ function Contenidos({
   filas: Articulo[];
   edicion: ReturnType<typeof useEdicion<Articulo>>;
 }) {
-  const [filtro, setFiltro] = useState<Filtrado>("todos");
+  const [filtro, setFiltro] = useFiltro<Filtrado>("articulos:estado", "todos");
   const [busqueda, setBusqueda] = useState("");
 
   const visibles = useMemo(() => {

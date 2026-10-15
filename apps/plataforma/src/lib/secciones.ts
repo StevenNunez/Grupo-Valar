@@ -69,9 +69,12 @@ export const seccionesGestion: Seccion[] = [
     id: "contratos",
     titulo: "Contratos",
     icono: "contratos",
-    href: `${RAIZ_GESTION}/contratos/`,
+    href: `${RAIZ_GESTION}/contratos/vigentes/`,
     base: `${RAIZ_GESTION}/contratos`,
-    permiso: "contratos.ver",
+    subsecciones: [
+      { titulo: "Vigentes", href: `${RAIZ_GESTION}/contratos/vigentes/`, permiso: "contratos.ver" },
+      { titulo: "Cerrados", href: `${RAIZ_GESTION}/contratos/cerrados/`, permiso: "contratos.ver" },
+    ],
   },
   {
     id: "ingresos",
@@ -96,8 +99,6 @@ export const seccionesGestion: Seccion[] = [
          gastó con terceros— y en dos pantallas había que sumar de cabeza. */
       { titulo: "Compras y Servicios", href: `${RAIZ_GESTION}/egresos/terceros/`, permiso: "egresos.ver" },
       { titulo: "Personal", href: `${RAIZ_GESTION}/egresos/personal/`, permiso: "personal.ver" },
-      /* Depósitos que se pagan y se devuelven: no son gasto, pero salen de caja. */
-      { titulo: "Garantías", href: `${RAIZ_GESTION}/egresos/garantias/`, permiso: "egresos.ver" },
       /* Los sueldos de la casa matriz no son un egreso más: piden además
          "Ver costos de personal", igual que los de cada contrato. */
       {
@@ -107,6 +108,8 @@ export const seccionesGestion: Seccion[] = [
         hijas: [
           { titulo: "Gastos generales", href: `${RAIZ_GESTION}/egresos/oficina-central/` },
           { titulo: "Personal", href: `${RAIZ_GESTION}/egresos/oficina-central/personal/`, permiso: "personal.ver" },
+          /* Depósitos que se pagan y se devuelven: saldo por controlar, no costo de un contrato. */
+          { titulo: "Garantías", href: `${RAIZ_GESTION}/egresos/oficina-central/garantias/` },
         ],
       },
     ],

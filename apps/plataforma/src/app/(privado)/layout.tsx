@@ -1,4 +1,5 @@
 import { Guardia } from "@/components/Guardia";
+import { Avisos } from "@/components/ui/Avisos";
 
 /**
  * Grupo de rutas `(privado)`: los paréntesis no aparecen en la URL. Acá vive
@@ -10,5 +11,10 @@ export default function LayoutPrivado({
 }: {
   children: React.ReactNode;
 }) {
-  return <Guardia>{children}</Guardia>;
+  return (
+    <Guardia>
+      {children}
+      <Avisos />
+    </Guardia>
+  );
 }

@@ -21,6 +21,7 @@ import type {
 export const estadosContrato: { id: EstadoContrato; titulo: string }[] = [
   { id: "activo", titulo: "Activo" },
   { id: "cancelado", titulo: "Cancelado" },
+  { id: "cerrado", titulo: "Cerrado" },
 ];
 
 /** Lo mínimo para llenar un selector de contrato en los formularios. */
@@ -128,6 +129,7 @@ export async function cargarContratos(): Promise<Contrato[]> {
     dias_plazo_total: number | null;
     anexos: number; monto_anexos: number; dias_anexos: number;
     monto_vigente: number | null; termino_vigente: string;
+    cerrado_en: string | null; cierre_observaciones: string | null;
   };
 
   return ((detalle.data ?? []) as Fila[]).map((c) => ({
@@ -162,5 +164,7 @@ export async function cargarContratos(): Promise<Contrato[]> {
     diasAnexos: Number(c.dias_anexos ?? 0),
     montoVigente: c.monto_vigente === null ? null : Number(c.monto_vigente),
     terminoVigente: c.termino_vigente ?? c.termino,
+    cerradoEn: c.cerrado_en ?? null,
+    cierreObservaciones: c.cierre_observaciones ?? "",
   }));
 }

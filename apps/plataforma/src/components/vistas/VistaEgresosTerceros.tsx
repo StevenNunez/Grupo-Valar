@@ -1,5 +1,6 @@
 "use client";
 
+import { useFiltro } from "@/lib/vista-guardada";
 import { useMemo, useState } from "react";
 import { FormularioCompra } from "../formularios/FormularioCompra";
 import { FormularioReembolso } from "../formularios/FormularioReembolso";
@@ -189,7 +190,7 @@ export function VistaEgresosTerceros() {
   };
   /* Nulo = todavía no se eligió: se abre en el último mes con movimientos.
      Mostrar todo de una vez eran cientos de filas para mirar un mes. */
-  const [mesElegido, setMes] = useState<Mes | null>(null);
+  const [mesElegido, setMes] = useFiltro<Mes | null>("egresos-terceros:mes", null);
   const edicion = useEdicion<EgresoTercero>();
   /* La OC cuyo ciclo (recibir, facturar, NC, cerrar) está abierto: se abre desde su fila o desde el panel. */
   const [ordenAbierta, setOrdenAbierta] = useState<string | null>(null);
@@ -421,8 +422,8 @@ function Contenidos({
   actualizando: boolean;
   abrirOrden: (id: string) => void;
 }) {
-  const [filtro, setFiltro] = useState<Filtrado>("todos");
-  const [contrato, setContrato] = useState("todos");
+  const [filtro, setFiltro] = useFiltro<Filtrado>("egresos-terceros:estado", "todos");
+  const [contrato, setContrato] = useFiltro("egresos-terceros:contrato", "todos");
 
   /* Un anexo se controla como un contrato aparte: Carpas tiene su propia opción. */
   const unidadDeFila = (e: EgresoTercero) => unidadDe(anexos, e.contratoId, e.anexoId);
@@ -753,7 +754,7 @@ function estadoCiclo(o: Orden): EstadoCiclo {
  * cerrar el saldo.
  */
 function OrdenesDeCompra({ ordenes, mes, abrir }: { ordenes: Orden[]; mes: Mes; abrir: (id: string) => void }) {
-  const [filtro, setFiltro] = useState<"abiertas" | "todas">("abiertas");
+  const [filtro, setFiltro] = useFiltro<"abiertas" | "todas">("egresos-terceros:ordenes", "abiertas");
   const vigentes = ordenes.filter((o) => o.estado !== "anulada" && o.estado !== "borrador");
   const abiertas = vigentes.filter((o) => estadoCiclo(o) !== "pagada");
   /* Las abiertas salen todas, sean del mes que sean: son trabajo pendiente, y

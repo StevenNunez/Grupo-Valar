@@ -1,5 +1,6 @@
 "use client";
 
+import { useFiltro } from "@/lib/vista-guardada";
 import { useMemo, useState } from "react";
 import { FormularioOrden } from "../formularios/FormularioOrden";
 import { CicloOrden } from "../CicloOrden";
@@ -232,11 +233,11 @@ function Contenidos({
   alEnviar: (o: Orden) => void;
   envios: Map<string, Envio[]>;
 }) {
-  const [filtro, setFiltro] = useState<Filtrado>("todas");
+  const [filtro, setFiltro] = useFiltro<Filtrado>("ordenes:estado", "todas");
   const puedeEmitir = usePuede("ordenes.emitir");
 
   const [texto, setTexto] = useState("");
-  const [mes, setMes] = useState("");
+  const [mes, setMes] = useFiltro("ordenes:mes", "");
   const [orden, setOrden] = useState<Orden_>("numero-desc");
 
   // Los meses que tienen órdenes, del más reciente al más antiguo.

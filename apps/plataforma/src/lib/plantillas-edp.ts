@@ -16,7 +16,7 @@ export type PlantillaEdp = "miscelaneos" | "carpas" | "torres" | "general" | "co
 export const plantillasEdp: { id: PlantillaEdp; titulo: string; ayuda: string }[] = [
   { id: "general", titulo: "General", ayuda: "Para contratos que no necesitan un detalle especial en su EDP." },
   { id: "miscelaneos", titulo: "Uso de recursos", ayuda: "Se cobra lo que se usó: EDP ordinarios y extraordinarios, con horas hombre y monto GR." },
-  { id: "torres", titulo: "Arriendos", ayuda: "Equipos arrendados en el período, conceptos en UF y conversión con la UF del período." },
+  { id: "torres", titulo: "Arriendos", ayuda: "Alcance del período y lo cobrado por mantenimiento, logística y adicionales, en UF, con su valor en pesos según la UF del período." },
   { id: "carpas", titulo: "Avance de actividades", ayuda: "Se cobra el avance: real y programado, con retenciones desglosadas." },
   { id: "configurable", titulo: "Configurable", ayuda: "Todos los campos disponibles: en el contrato se marcan los que lleva su EDP." },
 ];
@@ -70,6 +70,20 @@ const arriendo: CampoEdp[] = [
 ];
 
 /**
+ * La planilla de Torres: el alcance del período y lo cobrado por concepto, todo
+ * en UF. El neto sale de la suma de los conceptos por la UF del período.
+ */
+const conceptosServicio = [
+  ["mantenimiento", "Mantenimiento"],
+  ["logistica", "Logística"],
+  ["adicionales", "Adicionales (servicios o trabajos)"],
+] as const;
+const servicioTorres: CampoEdp[] = [
+  { clave: "alcance", etiqueta: "Alcance", tipo: "texto" },
+  ...conceptosServicio.map(([clave, etiqueta]): CampoEdp => ({ clave: `uf_${clave}`, etiqueta, tipo: "numero", unidad: "UF" })),
+];
+
+/**
  * Todos los campos que puede llevar un EDP, en el orden en que se muestran.
  * La plantilla "configurable" se arma eligiendo de esta lista.
  */
@@ -82,13 +96,18 @@ export const catalogoCamposEdp: { grupo: string; campos: CampoEdp[] }[] = [
 ];
 const todos = catalogoCamposEdp.flatMap((g) => g.campos);
 
-export function camposEdp(plantilla: PlantillaEdp, tipo: TipoEdp, seleccion: string[] = []): CampoEdp[] {
+export function camposEdp(plantilla: PlantillaEdp, tipo: TipoEdp, seleccion: string[] = [], datos?: Datos): CampoEdp[] {
   if (plantilla === "general") return [];
   if (plantilla === "configurable") {
     const marcadas = new Set(seleccion);
     return todos.filter((c) => marcadas.has(c.clave) && (!c.soloExtraordinario || tipo === "extraordinario"));
   }
-  if (plantilla === "torres") return [descripcion, ...arriendo, observaciones];
+  if (plantilla === "torres") {
+    /* Los EDP emitidos con la planilla anterior (equipos, traslados, mantenciones)
+       conservan esos conceptos mientras tengan valores. */
+    const historico = datos && arriendo.some((c) => Number(datos[c.clave]) > 0);
+    return [...servicioTorres, ...(historico ? [descripcion, ...arriendo] : []), observaciones];
+  }
   const campos = [descripcion, hh, ...(tipo === "extraordinario" ? [gr] : [])];
   if (plantilla === "carpas") campos.push(...avance, ...retenciones);
   return [...campos, observaciones];
@@ -114,7 +133,7 @@ export function comportamientoEdp(plantilla: PlantillaEdp, seleccion: string[] =
 export const clavesRetencion = CLAVES_RETENCION;
 
 export function montoUfTorres(datos: Datos): number {
-  return conceptosTorres.reduce((total, [clave]) => total + (Number(datos[`uf_${clave}`]) || 0), 0);
+  return [...conceptosTorres, ...conceptosServicio].reduce((total, [clave]) => total + (Number(datos[`uf_${clave}`]) || 0), 0);
 }
 
 export function clavesEdp(plantilla: PlantillaEdp, seleccion: string[] = []): string[] {

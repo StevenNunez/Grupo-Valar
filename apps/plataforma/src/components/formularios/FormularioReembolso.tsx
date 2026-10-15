@@ -1,5 +1,6 @@
 "use client";
 
+import { SeccionRespaldos, useRespaldos } from "@/components/ui/Respaldos";
 import { SelectorAnexo } from "../ui/SelectorAnexo";
 import { useEffect, useState } from "react";
 import {
@@ -186,6 +187,7 @@ export function FormularioReembolso({
     setLineas((ls) => ls.map((l) => (delNuevo.has(l.categoria_id) ? l : { ...l, categoria_id: "" })));
   }
 
+  const respaldos = useRespaldos("compras", editando ? compra.id : null);
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const persona = f.datos.rendido_por.trim();
@@ -224,6 +226,7 @@ export function FormularioReembolso({
           reembolso: { rendidoPor: persona, devuelto: f.datos.devuelto, fechaDevolucion: f.datos.fecha_devolucion },
         }),
       () => {
+        if (!editando) void respaldos.subirA(codigo);
         alGuardado(codigo);
         alCerrar();
       },
@@ -426,6 +429,7 @@ export function FormularioReembolso({
           </section>
 
           <Pie
+            extra={<SeccionRespaldos respaldos={respaldos} />}
             error={f.error}
             guardando={f.guardando}
             alCancelar={alCerrar}

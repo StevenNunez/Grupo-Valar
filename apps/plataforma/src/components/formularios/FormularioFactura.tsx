@@ -1,5 +1,6 @@
 "use client";
 
+import { SeccionRespaldos, useRespaldos } from "@/components/ui/Respaldos";
 import {
   CampoDinero,
   CampoFecha,
@@ -78,6 +79,7 @@ export function FormularioFactura({
     alCerrar();
   });
 
+  const respaldos = useRespaldos("facturas", editando ? factura.id : null);
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const { id, ...campos } = f.datos;
@@ -94,6 +96,7 @@ export function FormularioFactura({
           ? actualizar("facturas", factura.id, fila)
           : crear("facturas", { ...fila, id: id.trim() }),
       () => {
+        if (!editando) void respaldos.subirA(id.trim());
         alGuardado();
         alCerrar();
       },
@@ -153,6 +156,7 @@ export function FormularioFactura({
           </Campos>
 
           <Pie
+            extra={<SeccionRespaldos respaldos={respaldos} />}
             error={f.error}
             guardando={f.guardando}
             alCancelar={alCerrar}
