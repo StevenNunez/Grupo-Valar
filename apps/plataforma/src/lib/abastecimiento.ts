@@ -1314,7 +1314,23 @@ export async function generarOrdenDesdeCotizacion({
   const pedidos = await cargarItemsDeSolped(solped.id);
   const porId = new Map(pedidos.map((p) => [p.id, p]));
 
-  const ordenId = `OCP-${solped.contratoId.replace(/^C-/, "")}-${numero.replace(/\D/g, "").slice(-6)}`;
+  /* El código interno sale del contrato y de los últimos 6 dígitos del número,
+     así que dos números distintos pueden dar el mismo código ("OC22-001128" y
+     "OC23-001128"). Si el código ya está ocupado por OTRO número se le agrega un
+     sufijo; si está ocupado por el MISMO número, es una OC repetida y se avisa. */
+  const baseId = `OCP-${solped.contratoId.replace(/^C-/, "")}-${numero.replace(/\D/g, "").slice(-6)}`;
+  const { data: ocupados, error: falloBusqueda } = await supabase
+    .from("ordenes_compra_proveedor")
+    .select("id, numero")
+    .or(`id.eq.${baseId},id.like.${baseId}-%`);
+  if (falloBusqueda) throw new Error(falloBusqueda.message);
+  const filasOcupadas = (ocupados ?? []) as { id: string; numero: string }[];
+  const repetida = filasOcupadas.find((o) => o.numero === numero);
+  if (repetida) {
+    throw new Error(`Ya existe la orden ${numero} (${repetida.id}). Si quedó a medias de un intento anterior, ábrela en Órdenes de compra; si no, usa otro número.`);
+  }
+  let ordenId = baseId;
+  for (let sufijo = 2; filasOcupadas.some((o) => o.id === ordenId); sufijo += 1) ordenId = `${baseId}-${sufijo}`;
 
   const cabecera = {
     id: ordenId,
