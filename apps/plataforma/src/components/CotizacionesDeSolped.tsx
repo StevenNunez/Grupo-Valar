@@ -123,6 +123,7 @@ export function CotizacionesDeSolped({
      entra por el botón de una solicitud concreta. */
   const [cotizando, setCotizando] = useState<{ proveedorId: string | null } | null>(null);
   const [eligiendo, setEligiendo] = useState<Cotizacion | null>(null);
+  const [corrigiendo, setCorrigiendo] = useState<Cotizacion | null>(null);
 
   return (
     <>
@@ -149,6 +150,7 @@ export function CotizacionesDeSolped({
             datos={estado.datos}
             alAgregar={(proveedorId) => setCotizando({ proveedorId: proveedorId ?? null })}
             alElegir={setEligiendo}
+            alCorregir={setCorrigiendo}
             alCambiar={() => {
               recargar();
               alCambiar();
@@ -168,6 +170,19 @@ export function CotizacionesDeSolped({
           cotizaciones={estado.datos.cotizaciones}
           proveedorInicial={cotizando.proveedorId}
           alCerrar={() => setCotizando(null)}
+          alGuardado={() => {
+            recargar();
+            alCambiar();
+          }}
+        />
+      )}
+
+      {corrigiendo && estado.estado === "listo" && (
+        <CorregirPrecios
+          solped={solped}
+          cotizacion={corrigiendo}
+          datos={estado.datos}
+          alCerrar={() => setCorrigiendo(null)}
           alGuardado={() => {
             recargar();
             alCambiar();
@@ -202,6 +217,7 @@ function Comparativo({
   datos,
   alAgregar,
   alElegir,
+  alCorregir,
   alCambiar,
 }: {
   solped: Solped;
@@ -209,6 +225,8 @@ function Comparativo({
   /** Cargar precios; con el proveedor, cuando se entra desde su solicitud. */
   alAgregar: (proveedorId?: string) => void;
   alElegir: (c: Cotizacion) => void;
+  /** Editar los precios de una cotización ya cargada. */
+  alCorregir: (c: Cotizacion) => void;
   alCambiar: () => void;
 }) {
   const usuario = useUsuario();
@@ -332,16 +350,32 @@ function Comparativo({
                       {c.plazoEntregaDias === null ? "—" : `${c.plazoEntregaDias} d`}
                     </td>
                     <td className="py-3 text-right">
-                      {c.seleccionada ? (
-                        <Chip tono="bueno">Elegido</Chip>
-                      ) : c.recibidaEn !== null ? (
-                        !puedeCotizar ? null : <button
-                          type="button"
-                          onClick={() => alElegir(c)}
-                          className="rounded-full border border-mist-deep px-3 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink"
-                        >
-                          Elegir
-                        </button>
+                      {c.recibidaEn !== null ? (
+                        <div className="flex items-center justify-end gap-2">
+                          {/* Si se equivocó un precio, se corrige acá: se actualiza esta misma cotización. */}
+                          {puedeCotizar && (
+                            <button
+                              type="button"
+                              onClick={() => alCorregir(c)}
+                              className="rounded-full border border-mist-deep px-3 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink"
+                            >
+                              Editar precios
+                            </button>
+                          )}
+                          {c.seleccionada ? (
+                            <Chip tono="bueno">Elegido</Chip>
+                          ) : (
+                            puedeCotizar && (
+                              <button
+                                type="button"
+                                onClick={() => alElegir(c)}
+                                className="rounded-full border border-mist-deep px-3 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink"
+                              >
+                                Elegir
+                              </button>
+                            )
+                          )}
+                        </div>
                       ) : (
                         /* Todavía no responde: se le manda, o se vuelve a mandar. */
                         <div className="flex items-center justify-end gap-2">
@@ -474,6 +508,53 @@ function Comparativo({
   );
 }
 
+/**
+ * Corregir los precios de una cotización que ya se cargó: trae sus ítems y abre
+ * el mismo formulario con los valores puestos. Se actualiza esa misma fila (no
+ * se crea otra) y se conserva su estado, así que un proveedor elegido sigue elegido.
+ */
+function CorregirPrecios({
+  solped,
+  cotizacion,
+  datos,
+  alCerrar,
+  alGuardado,
+}: {
+  solped: Solped;
+  cotizacion: Cotizacion;
+  datos: Datos;
+  alCerrar: () => void;
+  alGuardado: () => void;
+}) {
+  const { estado } = useConsulta(() => cargarItemsDeCotizacion(cotizacion.id));
+
+  if (estado.estado !== "listo") {
+    return (
+      <Dialogo titulo={`Editar precios · ${cotizacion.proveedor}`} abierto alCerrar={alCerrar} ancho="max-w-2xl">
+        <p className="px-6 py-12 text-center text-sm text-ink-soft">
+          {estado.estado === "error" ? estado.mensaje : "Cargando la cotización…"}
+        </p>
+      </Dialogo>
+    );
+  }
+
+  return (
+    <FormularioCotizacion
+      solped={solped}
+      items={datos.items}
+      pedidos={datos.pedidos}
+      solicitados={datos.solicitados}
+      proveedores={datos.proveedores}
+      cuantas={datos.cotizaciones.length}
+      cotizaciones={datos.cotizaciones}
+      proveedorInicial={cotizacion.proveedorId}
+      corrigiendo={{ cotizacion, items: estado.datos }}
+      alCerrar={alCerrar}
+      alGuardado={alGuardado}
+    />
+  );
+}
+
 /** Lo que pasó con el último envío: sin abrir → vista por el proveedor → recibida. */
 function EstadoDelEnvio({ envio }: { envio: EnvioSolicitud | undefined }) {
   if (!envio) return null;
@@ -519,6 +600,7 @@ function FormularioCotizacion({
   cuantas,
   cotizaciones,
   proveedorInicial,
+  corrigiendo = null,
   alCerrar,
   alGuardado,
 }: {
@@ -532,6 +614,8 @@ function FormularioCotizacion({
   cotizaciones: Cotizacion[];
   /** El proveedor de la solicitud desde la que se abrió, si se abrió desde una. */
   proveedorInicial: string | null;
+  /** Corregir una cotización ya cargada: sus valores vienen puestos y se actualiza esa misma. */
+  corrigiendo?: { cotizacion: Cotizacion; items: ItemCotizado[] } | null;
   alCerrar: () => void;
   alGuardado: () => void;
 }) {
@@ -557,25 +641,28 @@ function FormularioCotizacion({
     ...disponibles.filter((p) => !aQuienSePidio.includes(p.id)),
   ];
 
+  const previa = corrigiendo?.cotizacion ?? null;
   const [proveedorId, setProveedorId] = useState(
-    proveedorInicial && ordenados.some((p) => p.id === proveedorInicial)
-      ? proveedorInicial
-      : aQuienSePidio.length === 1
-        ? aQuienSePidio[0]
-        : "",
+    previa
+      ? previa.proveedorId
+      : proveedorInicial && ordenados.some((p) => p.id === proveedorInicial)
+        ? proveedorInicial
+        : aQuienSePidio.length === 1
+          ? aQuienSePidio[0]
+          : "",
   );
   const [solicitadaEn, setSolicitadaEn] = useState(hoy);
-  const [recibidaEn, setRecibidaEn] = useState(hoy);
-  const [plazo, setPlazo] = useState<number | "">("");
-  const [flete, setFlete] = useState(0);
-  const [descuento, setDescuento] = useState(0);
-  const [conFlete, setConFlete] = useState(false);
-  const [conDescuento, setConDescuento] = useState(false);
+  const [recibidaEn, setRecibidaEn] = useState(previa?.recibidaEn ?? hoy);
+  const [plazo, setPlazo] = useState<number | "">(previa?.plazoEntregaDias ?? "");
+  const [flete, setFlete] = useState(previa?.flete ?? 0);
+  const [descuento, setDescuento] = useState(previa?.descuento ?? 0);
+  const [conFlete, setConFlete] = useState((previa?.flete ?? 0) > 0);
+  const [conDescuento, setConDescuento] = useState((previa?.descuento ?? 0) > 0);
   /* La condición de pago se propone con la del proveedor y solo se guarda
      aparte si alguien la cambia. Guardarla siempre obligaría a sincronizarla
      cada vez que cambia el proveedor, que es de donde salen los formularios que
      muestran la condición de otro. */
-  const [condicionEditada, setCondicionEditada] = useState<string | null>(null);
+  const [condicionEditada, setCondicionEditada] = useState<string | null>(previa?.condicionPago ?? null);
   /* Lo que la persona escribió, por proveedor e ítem. Las líneas se DERIVAN de
      lo que se le pidió a ese proveedor más estos cambios: así, al cambiar de
      proveedor la plantilla cambia sola y no se pierde lo ya tecleado. */
@@ -587,9 +674,9 @@ function FormularioCotizacion({
   const [error, setError] = useState<string | null>(null);
 
   const proveedor = proveedores.find((p) => p.id === proveedorId);
-  const pendiente = cotizaciones.find(
-    (c) => c.proveedorId === proveedorId && c.recibidaEn === null,
-  );
+  // Al corregir, "la cotización" es la que se está corrigiendo; si no, la solicitud pendiente de ese proveedor.
+  const pendiente =
+    previa ?? cotizaciones.find((c) => c.proveedorId === proveedorId && c.recibidaEn === null);
   const condicion =
     condicionEditada ?? (proveedor ? condicionDeProveedor(proveedor) : "Contado");
 
@@ -597,7 +684,11 @@ function FormularioCotizacion({
      ítems y con las cantidades que se le pidieron; si no, toda la solicitud.
      El nombre propuesto es, en orden, el que ya cotizó este proveedor antes, el
      técnico del catálogo y el de faena. */
-  const solicitado = pendiente ? solicitados[proveedorId] : undefined;
+  const solicitado = corrigiendo
+    ? { items: corrigiendo.items, nombres: new Map<string, string>() }
+    : pendiente
+      ? solicitados[proveedorId]
+      : undefined;
   const base: Linea[] = solicitado
     ? solicitado.items.flatMap((ci) => {
         const p = pedidos.find((x) => x.id === ci.solpedItemId);
@@ -614,8 +705,9 @@ function FormularioCotizacion({
             tieneNombreTecnico: p.nombreTecnico !== null,
             unidad: p.unidad,
             cantidad: ci.cantidad,
-            precio: 0,
-            disponible: true,
+            // Una cotización nueva parte en cero; al corregir, de lo ya cargado.
+            precio: ci.precioUnitario,
+            disponible: ci.disponible,
           },
         ];
       })
@@ -691,6 +783,8 @@ function FormularioCotizacion({
           condicionPago: condicion.trim() || null,
           flete,
           descuento,
+          corregir: !!corrigiendo,
+          validezHasta: previa?.validezHasta ?? null,
           precios: lineas.map((l) => ({
             solpedItemId: l.solpedItemId,
             precioUnitario: l.precio,
@@ -764,8 +858,12 @@ function FormularioCotizacion({
 
   return (
     <Dialogo
-      titulo="Nueva cotización"
-      descripcion={`${solped.numero} · los precios que te pasó un proveedor`}
+      titulo={corrigiendo ? `Editar precios · ${corrigiendo.cotizacion.proveedor}` : "Nueva cotización"}
+      descripcion={
+        corrigiendo
+          ? `${solped.numero} · corrige lo que cargaste; se actualiza esta misma cotización`
+          : `${solped.numero} · los precios que te pasó un proveedor`
+      }
       abierto
       alCerrar={alCerrar}
       ancho="max-w-4xl"
@@ -773,6 +871,19 @@ function FormularioCotizacion({
       <form onSubmit={guardar}>
         <div className="grid gap-5 px-6 py-6 sm:grid-cols-2">
           <div className="sm:col-span-2">
+            {corrigiendo ? (
+              <>
+                <Etiqueta>Proveedor</Etiqueta>
+                <p className="rounded-xl border border-mist-deep bg-mist/30 px-4 py-2.5 text-sm font-semibold text-ink">
+                  {corrigiendo.cotizacion.proveedor}
+                </p>
+                <Ayuda>
+                  Estás corrigiendo la cotización {corrigiendo.cotizacion.numero ?? corrigiendo.cotizacion.id}.
+                  {corrigiendo.cotizacion.seleccionada &&
+                    " Este proveedor está elegido: si ya generaste la orden de compra, cambiar los precios acá no la modifica; hay que corregirla aparte."}
+                </Ayuda>
+              </>
+            ) : (
             <Combo
               etiqueta="Proveedor"
               requerido
@@ -795,6 +906,7 @@ function FormularioCotizacion({
                   : "Cada proveedor cotiza una vez por solicitud. Los que ya respondieron no aparecen."
               }
             />
+            )}
           </div>
 
           <label>
@@ -1088,7 +1200,7 @@ function FormularioCotizacion({
               disabled={guardando || !proveedorId}
               className="rounded-full bg-cyan px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:cursor-wait disabled:opacity-70"
             >
-              {guardando ? "Guardando…" : "Guardar cotización"}
+              {guardando ? "Guardando…" : corrigiendo ? "Guardar cambios" : "Guardar cotización"}
             </button>
           </div>
         </div>

@@ -23,7 +23,7 @@ import { LineasDeGasto, lineaVacia, netoLinea, type LineaGasto } from "./LineasD
 import { formatearRut, type Proveedor } from "@/lib/abastecimiento";
 import type { CampoContrato, Datos } from "@/lib/campos";
 import { categoriasDe, type Categoria } from "@/lib/categorias";
-import { eliminar } from "@/lib/crud";
+import { crearConId, eliminar } from "@/lib/crud";
 import { opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
 import { cargarLineasDeCompra, guardarCompraDirecta, siguienteIdCompra, type Compra, type EstadoPagoCompra } from "@/lib/egresos";
 import { formatearPesos } from "@/lib/formato";
@@ -129,6 +129,9 @@ export function FormularioCompra({
   const [borrando, setBorrando] = useState(false);
   const [propios, setPropios] = useState<Datos>(compra?.datos ?? {});
   const [creandoProveedor, setCreandoProveedor] = useState(false);
+  const [pasandoAOficina, setPasandoAOficina] = useState(false);
+  const [pasando, setPasando] = useState(false);
+  const [errorPaso, setErrorPaso] = useState<string | null>(null);
 
   /* Al editar se traen sus líneas. Una compra anterior a las líneas no tiene:
      se muestra como una sola, con su detalle, categoría, tipo y neto; al
@@ -229,6 +232,41 @@ export function FormularioCompra({
     );
   }
 
+  /* Oficina Central no es un contrato: sus egresos viven en otra tabla. Pasar una
+     compra allá es crear el egreso con los montos guardados y quitarla del
+     contrato, para que no cuente en los dos lados. */
+  async function pasarAOficina() {
+    if (!compra) return;
+    setErrorPaso(null);
+    setPasando(true);
+    try {
+      const nuevoId = await crearConId("egresos_oficina_central", {
+        categoria: compra.origen === "reembolso" ? "reembolsos" : "compras",
+        fecha: compra.fecha,
+        proveedor: (compra.origen === "reembolso" && compra.rendidoPor) || compra.proveedor,
+        descripcion: compra.detalle || `Compra ${compra.id}`,
+        documento: compra.documento,
+        neto: compra.neto,
+        iva: compra.iva,
+        estado: compra.estadoPago === "pagada" ? "pagado" : "pendiente",
+        observaciones: `Pasada desde ${compra.contrato} (${compra.id}).`,
+      });
+      try {
+        await eliminar("compras", compra.id);
+      } catch (e) {
+        // Sin esto quedaría contada en el contrato y en Oficina Central.
+        await eliminar("egresos_oficina_central", nuevoId).catch(() => {});
+        throw e;
+      }
+      alGuardado();
+      alCerrar();
+    } catch (e) {
+      setErrorPaso(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPasando(false);
+    }
+  }
+
   async function borrar() {
     setErrorBorrado(null);
     setBorrando(true);
@@ -287,6 +325,18 @@ export function FormularioCompra({
               alCambiar={elegirContrato}
             />
             <SelectorAnexo contratoId={f.datos.contrato_id} valor={f.datos.anexo_id} alCambiar={(v) => f.cambiar("anexo_id", v)} />
+
+            {editando && compra.estadoPago !== "anulada" && (
+              <Ancho>
+                <p className="text-xs leading-relaxed text-ink-soft">
+                  ¿Es un gasto de la empresa y no de este contrato?{" "}
+                  <button type="button" onClick={() => setPasandoAOficina(true)}
+                    className="font-semibold text-cyan-deep hover:underline">
+                    Pasar a Oficina Central
+                  </button>
+                </p>
+              </Ancho>
+            )}
 
             <CampoTexto
               etiqueta="N° de documento"
@@ -452,6 +502,16 @@ export function FormularioCompra({
           }}
         />
       )}
+
+      <Confirmacion
+        abierto={pasandoAOficina}
+        titulo="Pasar a Oficina Central"
+        detalle={`${compra?.id ?? ""} — ${compra?.proveedor ?? ""} deja de ser costo de ${compra?.contrato ?? "el contrato"} y queda como egreso de Oficina Central (${formatearPesos(compra?.neto ?? 0)} netos). Se usan los montos ya guardados, sin cambios sin guardar; el detalle por líneas se resume y los respaldos adjuntos no se trasladan.`}
+        error={errorPaso}
+        procesando={pasando}
+        alCancelar={() => setPasandoAOficina(false)}
+        alConfirmar={pasarAOficina}
+      />
 
       <Confirmacion
         abierto={confirmando}

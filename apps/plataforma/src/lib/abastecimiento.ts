@@ -970,8 +970,14 @@ export async function cargarRespuesta({
   descuento,
   precios,
   validezHasta = null,
+  corregir = false,
 }: {
   cotizacionId: string;
+  /**
+   * Corregir una cotización ya cargada (se equivocó un precio): se actualizan
+   * los valores pero NO el estado, para no deselegir a un proveedor elegido.
+   */
+  corregir?: boolean;
   recibidaEn: string;
   plazoEntregaDias: number | null;
   condicionPago: string | null;
@@ -997,7 +1003,7 @@ export async function cargarRespuesta({
       flete,
       descuento,
       validez_hasta: validezHasta,
-      estado: "recibida",
+      ...(corregir ? {} : { estado: "recibida" }),
     })
     .eq("id", cotizacionId);
 
