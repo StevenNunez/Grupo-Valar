@@ -9,6 +9,7 @@ import { FormularioServicio } from "../formularios/FormularioServicio";
 import { DialogoAdjuntos } from "../ui/Adjuntos";
 import { Chip, type Tono } from "../ui/Chip";
 import { AccionesFila, DialogoHistorial, useEdicion } from "../ui/Historial";
+import { Buscador, coincide } from "../ui/Buscador";
 import { Tabla, Total, type Columna } from "../ui/Tabla";
 import { CampoFiltro, Contenido, Desplegable, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
 import { cargarProveedores, type Proveedor } from "@/lib/abastecimiento";
@@ -424,6 +425,7 @@ function Contenidos({
 }) {
   const [filtro, setFiltro] = useFiltro<Filtrado>("egresos-terceros:estado", "todos");
   const [contrato, setContrato] = useFiltro("egresos-terceros:contrato", "todos");
+  const [texto, setTexto] = useState("");
 
   /* Un anexo se controla como un contrato aparte: Carpas tiene su propia opción. */
   const unidadDeFila = (e: EgresoTercero) => unidadDe(anexos, e.contratoId, e.anexoId);
@@ -453,18 +455,23 @@ function Contenidos({
   );
 
   const visibles = useMemo(() => {
-    if (filtro === "compras") return filas.filter((e) => e.origen === "compra");
-    if (filtro === "ordenes") return filas.filter((e) => e.origen === "orden");
-    if (filtro === "servicios") return filas.filter((e) => e.origen === "servicio");
-    if (filtro === "reembolsos") return filas.filter((e) => e.rendidoPor);
-    if (filtro === "recurrentes") return filas.filter((e) => e.recurrente);
-    if (filtro === "sinFactura") return filas.filter(sinFactura);
-    if (filtro === "porPagar") return filas.filter(debe);
-    if (filtro === "vencidos") return filas.filter(vencido);
-    if (filtro === "pagados") return filas.filter((e) => !e.rendidoPor && e.estadoPago === "pagada");
-    if (filtro === "activos") return filas.filter((e) => e.tipo === "activo");
-    return filas;
-  }, [filas, filtro]);
+    const delEstatus =
+      filtro === "compras" ? filas.filter((e) => e.origen === "compra")
+      : filtro === "ordenes" ? filas.filter((e) => e.origen === "orden")
+      : filtro === "servicios" ? filas.filter((e) => e.origen === "servicio")
+      : filtro === "reembolsos" ? filas.filter((e) => e.rendidoPor)
+      : filtro === "recurrentes" ? filas.filter((e) => e.recurrente)
+      : filtro === "sinFactura" ? filas.filter(sinFactura)
+      : filtro === "porPagar" ? filas.filter(debe)
+      : filtro === "vencidos" ? filas.filter(vencido)
+      : filtro === "pagados" ? filas.filter((e) => !e.rendidoPor && e.estadoPago === "pagada")
+      : filtro === "activos" ? filas.filter((e) => e.tipo === "activo")
+      : filas;
+    /* Buscar recorta la lista, las tarjetas y el total: se ve cuánto suma lo buscado. */
+    return delEstatus.filter((e) =>
+      coincide(texto, [e.tercero, e.documento, e.detalle, e.categoria, e.contratoId, e.ordenId, e.rendidoPor]),
+    );
+  }, [filas, filtro, texto]);
 
   // Lo anulado se ve en la lista pero no suma en ninguna tarjeta ni en el total.
   const contables = visibles.filter(cuenta);
@@ -556,11 +563,12 @@ function Contenidos({
           </>
         }
       >
+        <Buscador valor={texto} alCambiar={setTexto} etiqueta="Buscar egresos" placeholder="Buscar por proveedor, N° de OC, factura, detalle, categoría o contrato…" />
         <Tabla
           columnas={columnas(edicion, abrirOrden)}
           filas={visibles}
           claveDe={(e) => `${e.id}|${e.periodo}`}
-          vacio={mes === "todos" ? "Ningún movimiento en este filtro." : "Ningún movimiento en este mes con este filtro."}
+          vacio={texto.trim() ? "Ningún movimiento coincide con la búsqueda." : mes === "todos" ? "Ningún movimiento en este filtro." : "Ningún movimiento en este mes con este filtro."}
           pie={
             <>
               <Total colSpan={4}>Total</Total>

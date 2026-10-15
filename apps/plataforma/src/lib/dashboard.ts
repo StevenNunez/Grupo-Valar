@@ -330,7 +330,8 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
   for (const m of movimientos) {
     if (!m.periodo) continue;
     const mes = primeroDelMes(m.periodo);
-    const catId = m.categoria_id ?? "sin-categoria";
+    /* Igual que la vista (0085): lo sin categoría va en una fila por familia. */
+    const catId = m.categoria_id ?? `sin-categoria-${m.familia ?? "compras"}`;
     const base = categoriaBase.get(`${m.contrato_id}|${catId}|${mes}`);
     const neto = Number(m.neto);
     const ordinario = m.tipo === "ordinario" ? neto : 0;

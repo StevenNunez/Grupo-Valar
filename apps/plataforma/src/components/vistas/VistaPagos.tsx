@@ -11,6 +11,7 @@ import {
   Pie,
   useFormulario,
 } from "../ui/Formulario";
+import { Buscador, coincide } from "../ui/Buscador";
 import { Tabla, Total, type Columna } from "../ui/Tabla";
 import { Contenido, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
 import { BotonImprimir, Impresion } from "../ui/Impresion";
@@ -317,16 +318,20 @@ function PorVencimiento({
   const puedeMarcar = usePuede("pagos.marcar");
   const [trabajando, setTrabajando] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [texto, setTexto] = useState("");
 
   const visibles = useMemo(() => {
     const cs = datos.cuentas;
-    if (filtro === "vencidas") return cs.filter((c) => c.estadoDocumento === "vencido");
-    if (filtro === "sin_factura") return cs.filter((c) => c.estadoDocumento === "no_facturado");
-    if (filtro === "programadas") return cs.filter((c) => c.fechaPagoProgramada !== null);
-    if (filtro === "abiertas")
-      return cs.filter((c) => c.estadoDocumento !== "pagado" && c.estadoDocumento !== "anulado");
-    return cs;
-  }, [datos.cuentas, filtro]);
+    let r = cs;
+    if (filtro === "vencidas") r = cs.filter((c) => c.estadoDocumento === "vencido");
+    else if (filtro === "sin_factura") r = cs.filter((c) => c.estadoDocumento === "no_facturado");
+    else if (filtro === "programadas") r = cs.filter((c) => c.fechaPagoProgramada !== null);
+    else if (filtro === "abiertas")
+      r = cs.filter((c) => c.estadoDocumento !== "pagado" && c.estadoDocumento !== "anulado");
+
+    /* Busca en el N° de la OC, el proveedor, su RUT, el documento y el detalle. */
+    return r.filter((c) => coincide(texto, [c.ordenNumero, c.ordenId, c.proveedor, c.rut, c.documento, c.detalle, c.contratoId, c.contrato]));
+  }, [datos.cuentas, filtro, texto]);
 
   async function accion(id: string, hacer: () => Promise<void>) {
     setError(null);
@@ -364,11 +369,13 @@ function PorVencimiento({
         </p>
       )}
 
+      <Buscador valor={texto} alCambiar={setTexto} etiqueta="Buscar cuentas por pagar" placeholder="Buscar por N° de OC, proveedor, RUT, factura o contrato…" />
+
       <Tabla
         columnas={columnasLinea({ semana, trabajando, accion, alFacturar, puedeProgramar, puedeMarcar })}
         filas={visibles}
         claveDe={(c) => c.id}
-        vacio="Nada en este estado."
+        vacio={texto.trim() ? "Ninguna cuenta coincide con la búsqueda." : "Nada en este estado."}
         pie={
           <>
             <Total>Total</Total>

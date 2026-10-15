@@ -10,7 +10,7 @@ import { useCallback, useEffect, useState } from "react";
  */
 export type EstadoConsulta<T> =
   | { estado: "cargando" }
-  | { estado: "error"; mensaje: string }
+  | { estado: "error"; mensaje: string; reintentar?: () => void }
   | { estado: "listo"; datos: T };
 
 export type Consulta<T> = {
@@ -65,6 +65,21 @@ export function olvidarConsultas() {
   }
 }
 
+/* Un fallo pasajero (la base ocupada, un corte de red) casi siempre se arregla
+   solo con volver a pedir. Supabase no cobra por consulta, así que se reintenta
+   antes de molestar a la persona. Un error de verdad (permiso, dato inválido)
+   no se reintenta: fallaría igual. */
+const INTENTOS = 3;
+const ESPERA_MS = 1500;
+
+function esPasajero(mensaje: string): boolean {
+  return /statement timeout|timeout|timed out|failed to fetch|network|fetch failed|load failed|connection|temporarily|\b(502|503|504|520|522|524)\b/i.test(
+    mensaje,
+  );
+}
+
+const esperar = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 /**
  * @param clave  Si viene, la pantalla abre con lo último que se vio y lo
  *               refresca sin volver a "cargando". Los datos tienen que ser
@@ -78,12 +93,29 @@ export function useConsulta<T>(consultar: () => Promise<T>, clave?: string): Con
   const [actualizando, setActualizando] = useState(estado.estado === "listo");
   const [version, setVersion] = useState(0);
 
-  const recargar = useCallback(() => setVersion((v) => v + 1), []);
+  const recargar = useCallback(() => {
+    // Si estaba en error, vuelve a mostrar el "cargando" mientras reintenta.
+    setEstado((actual) => (actual.estado === "error" ? { estado: "cargando" } : actual));
+    setVersion((v) => v + 1);
+  }, []);
 
   useEffect(() => {
     let vigente = true;
 
-    consultar()
+    const conReintentos = async (): Promise<T> => {
+      for (let intento = 1; ; intento++) {
+        try {
+          return await consultar();
+        } catch (e) {
+          const mensaje = e instanceof Error ? e.message : String(e);
+          if (intento >= INTENTOS || !esPasajero(mensaje) || !vigente) throw e;
+          await esperar(ESPERA_MS * intento);
+          if (!vigente) throw e;
+        }
+      }
+    };
+
+    conReintentos()
       .then((datos) => {
         if (!vigente) return;
         if (clave) guardar(clave, datos);
@@ -100,7 +132,7 @@ export function useConsulta<T>(consultar: () => Promise<T>, clave?: string): Con
             console.warn("No se pudo actualizar:", mensaje);
             return actual;
           }
-          return { estado: "error", mensaje };
+          return { estado: "error", mensaje, reintentar: recargar };
         });
       });
 

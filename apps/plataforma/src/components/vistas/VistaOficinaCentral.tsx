@@ -20,6 +20,7 @@ import {
   Campos, Confirmacion, Dialogo, Pie, ResumenIva, ivaDe, useBorrado, useFormulario,
 } from "../ui/Formulario";
 import { DialogoHistorial } from "../ui/Historial";
+import { Buscador, coincide } from "../ui/Buscador";
 import { Tabla, Total, type Columna } from "../ui/Tabla";
 import { CampoFiltro, Contenido, Desplegable, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
 
@@ -61,6 +62,7 @@ export function VistaOficinaCentral() {
   const [categoria, setCategoria] = useFiltro<FiltroCategoria>("oficina-central:categoria", "todos");
   const [mes, setMes] = useFiltro("oficina-central:mes", "todos");
   const [estatus, setEstatus] = useFiltro<Estatus>("oficina-central:estatus", "todos");
+  const [texto, setTexto] = useState("");
   const [formulario, setFormulario] = useState<{ registro: EgresoOficina | null; categoria: CategoriaOficina } | null>(null);
   const [historial, setHistorial] = useState<EgresoOficina | null>(null);
   const puedeCargar = usePuede("gestion.editar");
@@ -89,7 +91,10 @@ export function VistaOficinaCentral() {
               : estatus === "pagados" ? fila.estado === "pagado"
               : estatus === "sinDocumento" ? !fila.documento
               : true);
-          const visibles = categoria === "todos" ? delEstatus : delEstatus.filter((fila) => fila.categoria === categoria);
+          const delTexto = (categoria === "todos" ? delEstatus : delEstatus.filter((fila) => fila.categoria === categoria));
+          const visibles = delTexto.filter((fila) =>
+            coincide(texto, [fila.proveedor, fila.descripcion, fila.documento, fila.observaciones]),
+          );
           const porCategoria = Object.fromEntries(
             categoriasOficina.map(({ id }) => [id, totalOficina(delEstatus.filter((fila) => fila.categoria === id))]),
           ) as Record<CategoriaOficina, number>;
@@ -132,7 +137,8 @@ export function VistaOficinaCentral() {
                     <Filtro etiqueta="Estatus" opciones={estatusGasto} valor={estatus} alCambiar={setEstatus} />
                   </CampoFiltro>
                 </>}>
-                <Tabla filas={visibles} claveDe={(fila) => fila.id} vacio="Aún no hay egresos de oficina central para este filtro."
+                <Buscador valor={texto} alCambiar={setTexto} etiqueta="Buscar egresos" placeholder="Buscar por proveedor, descripción o documento…" />
+                <Tabla filas={visibles} claveDe={(fila) => fila.id} vacio={texto.trim() ? "Ningún egreso coincide con la búsqueda." : "Aún no hay egresos de oficina central para este filtro."}
                   columnas={columnas(puedeCargar ? (fila) => setFormulario({ registro: fila, categoria: fila.categoria }) : null, setHistorial)}
                   pie={<><Total colSpan={4}>Total neto</Total><Total derecha>{formatearPesos(totalOficina(visibles))}</Total><Total colSpan={2} /></>} />
               </Panel>

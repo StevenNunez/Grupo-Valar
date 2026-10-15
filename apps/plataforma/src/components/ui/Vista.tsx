@@ -239,17 +239,27 @@ export function Cargando() {
   );
 }
 
-export function Fallo({ mensaje }: { mensaje: string }) {
+export function Fallo({ mensaje, reintentar }: { mensaje: string; reintentar?: () => void }) {
+  const lento = /timeout|timed out|failed to fetch|network|fetch failed|load failed/i.test(mensaje);
   return (
     <div role="alert" className="rounded-2xl border border-[#f0cdc8] bg-[#fdeeec] p-6">
       <p className="font-display text-lg font-semibold text-[#a52f24]">
         No se pudieron cargar los datos
       </p>
       <p className="mt-2 text-sm text-ink-soft">
-        Vuelve a cargar la página. Si el problema sigue, revisa que la base de datos
-        esté activa: los proyectos gratis de Supabase se pausan tras una semana sin
-        uso.
+        {lento
+          ? "La base de datos tardó más de lo normal en responder, incluso después de reintentar. Suele ser pasajero: prueba de nuevo en unos segundos."
+          : "Vuelve a cargar la página. Si el problema sigue, avisa a quien administra la plataforma."}
       </p>
+      {reintentar && (
+        <button
+          type="button"
+          onClick={reintentar}
+          className="mt-4 rounded-lg bg-[#a52f24] px-4 py-2 text-sm font-medium text-white transition hover:opacity-90"
+        >
+          Reintentar
+        </button>
+      )}
       <p className="mt-3 font-mono text-xs text-ink-soft/80">{mensaje}</p>
     </div>
   );
@@ -264,6 +274,6 @@ export function Contenido<T>({
   children: (datos: T) => React.ReactNode;
 }) {
   if (consulta.estado === "cargando") return <Cargando />;
-  if (consulta.estado === "error") return <Fallo mensaje={consulta.mensaje} />;
+  if (consulta.estado === "error") return <Fallo mensaje={consulta.mensaje} reintentar={consulta.reintentar} />;
   return <>{children(consulta.datos)}</>;
 }
