@@ -580,7 +580,7 @@ function FormularioCotizacion({
      lo que se le pidió a ese proveedor más estos cambios: así, al cambiar de
      proveedor la plantilla cambia sola y no se pierde lo ya tecleado. */
   const [cambios, setCambios] = useState<
-    Record<string, Partial<Pick<Linea, "precio" | "disponible" | "nombre">>>
+    Record<string, Partial<Pick<Linea, "precio" | "disponible" | "nombre" | "cantidad">>>
   >({});
   const [guardarNombres, setGuardarNombres] = useState(true);
   const [guardando, setGuardando] = useState(false);
@@ -642,7 +642,7 @@ function FormularioCotizacion({
     .reduce((t, l) => t + Math.round(l.cantidad * l.precio), 0);
   const puesto = itemsNeto - descuento + flete;
 
-  function cambiar(id: string, campo: "precio" | "disponible" | "nombre", valor: unknown) {
+  function cambiar(id: string, campo: "precio" | "disponible" | "nombre" | "cantidad", valor: unknown) {
     setCambios((c) => ({ ...c, [clave(id)]: { ...c[clave(id)], [campo]: valor } }));
   }
 
@@ -671,6 +671,10 @@ function FormularioCotizacion({
       setError("Elige un proveedor.");
       return;
     }
+    if (lineas.some((l) => l.disponible && !(l.cantidad > 0))) {
+      setError("Hay un ítem con cantidad cero. Ponle la cantidad, o desmarca «¿Tiene?» si el proveedor no lo tiene.");
+      return;
+    }
 
     setError(null);
     setGuardando(true);
@@ -692,6 +696,7 @@ function FormularioCotizacion({
             precioUnitario: l.precio,
             disponible: l.disponible,
             nombre: l.nombre,
+            cantidad: l.cantidad,
           })),
         });
       } else {
@@ -943,7 +948,7 @@ function FormularioCotizacion({
               <thead>
                 <tr className="border-b border-mist text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
                   <th className="py-2 pr-3">Ítem · nombre como lo cotizó el proveedor</th>
-                  <th className="w-24 py-2 pr-3 text-right">Cantidad</th>
+                  <th className="w-32 py-2 pr-3 text-right">Cantidad</th>
                   <th className="w-32 py-2 pr-3 text-right">P. unitario</th>
                   <th className="w-28 py-2 pr-3 text-right">Neto</th>
                   <th className="w-24 py-2">¿Tiene?</th>
@@ -972,8 +977,20 @@ function FormularioCotizacion({
                         <span className="mt-1 block text-[11px] text-ink-soft">Se pidió: {l.descripcion}</span>
                       )}
                     </td>
-                    <td className="py-2 pr-3 text-right tabular-nums text-ink-soft">
-                      {formatearNumero(l.cantidad)} {l.unidad}
+                    <td className="py-2 pr-3 align-top">
+                      {/* Editable: se pidieron 3 bolsas y se vende por paquetes de 10. */}
+                      <div className="flex items-center justify-end gap-1.5 text-ink-soft">
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={l.cantidad}
+                          onChange={(e) => cambiar(l.solpedItemId, "cantidad", Number(e.target.value) || 0)}
+                          aria-label={`Cantidad de ${l.nombre}`}
+                          className={`${claseCelda} w-20 text-right tabular-nums`}
+                        />
+                        <span className="text-xs">{l.unidad}</span>
+                      </div>
                     </td>
                     <td className="py-2 pr-3">
                       <input
@@ -1285,6 +1302,8 @@ function DialogoGenerarOrden({
   );
 
   const [elegidos, setElegidos] = useState<Set<string> | null>(null);
+  /* Lo que de verdad se compra, cuando difiere de lo cotizado (paquetes de 10). */
+  const [cantidades, setCantidades] = useState<Record<string, number>>({});
   const [conFlete, setConFlete] = useState(true);
   // El anexo de la solicitud viene propuesto; se puede cambiar si esta parte va a otro.
   const [anexoId, setAnexoId] = useState(solped.anexoId ?? "");
@@ -1326,7 +1345,7 @@ function DialogoGenerarOrden({
 
   const netoElegido = comprables
     .filter((i) => marcados.has(i.solpedItemId))
-    .reduce((t, i) => t + Math.round(i.cantidad * i.precioUnitario), 0);
+    .reduce((t, i) => t + Math.round((cantidades[i.solpedItemId] ?? i.cantidad) * i.precioUnitario), 0);
   const flete = conFlete ? cotizacion.flete : 0;
   const total = netoElegido + flete;
 
@@ -1348,6 +1367,7 @@ function DialogoGenerarOrden({
         numero,
         emisor,
         soloItems: [...marcados],
+        cantidades,
         incluirFlete: conFlete && cotizacion.flete > 0,
         anexoId: anexoId || null,
         proyecto: (() => {
@@ -1451,14 +1471,27 @@ function DialogoGenerarOrden({
                         </span>
                       )}
                     </td>
-                    <td className="py-2 pr-3 text-right tabular-nums text-ink-soft">
-                      {formatearNumero(i.cantidad)} {pedido?.unidad ?? ""}
+                    <td className="py-2 pr-3 text-right text-ink-soft">
+                      <span className="inline-flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={cantidades[i.solpedItemId] ?? i.cantidad}
+                          onChange={(e) =>
+                            setCantidades((c) => ({ ...c, [i.solpedItemId]: Number(e.target.value) || 0 }))
+                          }
+                          aria-label={`Cantidad a comprar de ${i.nombreCotizado ?? pedido?.descripcion ?? "ítem"}`}
+                          className="w-20 rounded-md border border-mist-deep bg-white px-2 py-1 text-right text-sm tabular-nums text-ink outline-none focus:border-cyan"
+                        />
+                        <span className="text-xs">{pedido?.unidad ?? ""}</span>
+                      </span>
                     </td>
                     <td className="py-2 pr-3 text-right tabular-nums text-ink-soft">
                       {formatearPesos(i.precioUnitario)}
                     </td>
                     <td className="py-2 text-right tabular-nums text-ink">
-                      {formatearPesos(Math.round(i.cantidad * i.precioUnitario))}
+                      {formatearPesos(Math.round((cantidades[i.solpedItemId] ?? i.cantidad) * i.precioUnitario))}
                     </td>
                   </tr>
                 );
@@ -1837,6 +1870,8 @@ function DialogoPedirCotizacion({
   const [elegidos, setElegidos] = useState<Set<string>>(
     () => new Set(items.map((i) => i.id)),
   );
+  /* Cantidad a pedirle a este proveedor cuando difiere de la de faena. */
+  const [cantidades, setCantidades] = useState<Record<string, number>>({});
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1866,7 +1901,7 @@ function DialogoPedirCotizacion({
         numero: siguienteNumeroSolicitud(cotizaciones),
         items: items
           .filter((i) => elegidos.has(i.id))
-          .map((i) => ({ solpedItemId: i.id, cantidad: i.cantidad })),
+          .map((i) => ({ solpedItemId: i.id, cantidad: cantidades[i.id] || i.cantidad })),
         observaciones: observaciones.trim() || null,
       });
       alPedida(id);
@@ -1941,12 +1976,27 @@ function DialogoPedirCotizacion({
                   </span>
                 )}
               </span>
-              <span className="shrink-0 tabular-nums text-ink-soft">
-                {formatearNumero(i.cantidad)} {i.unidad}
+              {/* Se le puede pedir otra cantidad que la de faena: si lo vende por
+                  paquetes de 10 y faena pidió 3, se le piden 10. */}
+              <span className="flex shrink-0 items-center gap-1.5 text-ink-soft">
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={cantidades[i.id] ?? i.cantidad}
+                  onChange={(e) => setCantidades((c) => ({ ...c, [i.id]: Number(e.target.value) || 0 }))}
+                  aria-label={`Cantidad a pedir de ${i.nombreParaPedir}`}
+                  className="w-20 rounded-md border border-mist-deep bg-white px-2 py-1 text-right text-sm tabular-nums text-ink outline-none focus:border-cyan"
+                />
+                {i.unidad}
               </span>
             </li>
           ))}
         </ul>
+        <p className="mt-2 text-xs text-ink-soft">
+          Cambia la cantidad si el proveedor lo vende en otra presentación (paquetes, cajas). Faena sigue viendo lo
+          que pidió.
+        </p>
 
         <label className="mt-5 block">
           <Etiqueta>Observaciones para el proveedor</Etiqueta>

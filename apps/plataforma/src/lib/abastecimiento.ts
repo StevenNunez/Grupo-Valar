@@ -978,7 +978,14 @@ export async function cargarRespuesta({
   flete: number;
   descuento: number;
   /** Por ítem de la solicitud: precio unitario y si lo tiene. */
-  precios: { solpedItemId: string; precioUnitario: number; disponible: boolean; nombre?: string | null }[];
+  precios: {
+    solpedItemId: string;
+    precioUnitario: number;
+    disponible: boolean;
+    nombre?: string | null;
+    /** Lo que de verdad se cotiza/compra: puede diferir de lo pedido (se vende por paquetes). */
+    cantidad?: number;
+  }[];
   validezHasta?: string | null;
 }) {
   const { error } = await supabase
@@ -1003,6 +1010,7 @@ export async function cargarRespuesta({
         precio_unitario: p.disponible ? p.precioUnitario : 0,
         disponible: p.disponible,
         nombre_cotizado: p.nombre?.trim() || null,
+        ...(p.cantidad !== undefined && p.cantidad > 0 ? { cantidad: p.cantidad } : {}),
       })
       .eq("cotizacion_id", cotizacionId)
       .eq("solped_item_id", p.solpedItemId);
@@ -1243,6 +1251,7 @@ export async function generarOrdenDesdeCotizacion({
   numero,
   emisor,
   soloItems,
+  cantidades,
   incluirFlete = true,
   proyecto = null,
   anexoId,
@@ -1264,6 +1273,11 @@ export async function generarOrdenDesdeCotizacion({
    * Vacío o sin definir = todos los cotizados con precio.
    */
   soloItems?: string[];
+  /**
+   * Cantidad a comprar por `solped_item_id` cuando difiere de la cotizada: se
+   * pidieron 3 bolsas y se compra por paquetes de 10. Sin entrada, la cotizada.
+   */
+  cantidades?: Record<string, number>;
   /** El flete se cobra una vez. En una segunda orden del mismo proveedor, no. */
   incluirFlete?: boolean;
   /**
@@ -1334,7 +1348,8 @@ export async function generarOrdenDesdeCotizacion({
   for (const i of cotizados) {
     n += 1;
     const pedido = porId.get(i.solpedItemId);
-    const neto = Math.round(i.cantidad * i.precioUnitario);
+    const cantidad = cantidades?.[i.solpedItemId] && cantidades[i.solpedItemId] > 0 ? cantidades[i.solpedItemId] : i.cantidad;
+    const neto = Math.round(cantidad * i.precioUnitario);
 
     const { error } = await supabase.from("items_compra").insert({
       id: `IT-${ordenId}-${String(n).padStart(3, "0")}`,
@@ -1347,7 +1362,7 @@ export async function generarOrdenDesdeCotizacion({
       // El nombre técnico con que lo cotizó el proveedor: es con el que se compra.
       descripcion: i.nombreCotizado || (pedido?.descripcion ?? "Ítem cotizado"),
       unidad: pedido?.unidad ?? "un",
-      cantidad: i.cantidad,
+      cantidad,
       precio_unitario: i.precioUnitario,
       iva: Math.round(neto * 0.19),
       // El tipo de gasto viene de la solicitud: es lo que decide si castiga el
