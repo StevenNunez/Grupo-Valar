@@ -448,11 +448,15 @@ type Respuesta<T> = { ok: true; datos: T } | { ok: false; error: string };
 
 export type Destinatario = { nombre: string; correo: string; cargo: string };
 
-export async function cargarDestinatarios(): Promise<Respuesta<Destinatario[]>> {
+export async function cargarDestinatarios(
+  para: "orden" | "cotizacion" = "orden",
+): Promise<Respuesta<Destinatario[]>> {
   const t = await token();
   if (!t) return { ok: false, error: "La sesión expiró. Vuelve a ingresar." };
   try {
-    const r = await fetch("/api/ordenes/destinatarios/", { headers: { Authorization: `Bearer ${t}` } });
+    const r = await fetch(`/api/ordenes/destinatarios/${para === "cotizacion" ? "?para=cotizacion" : ""}`, {
+      headers: { Authorization: `Bearer ${t}` },
+    });
     return (await r.json()) as Respuesta<Destinatario[]>;
   } catch {
     return { ok: false, error: "No se pudo cargar la lista de personas de Valar." };
@@ -506,6 +510,23 @@ export async function abrirPdfDeOrden(ordenId: string): Promise<string | null> {
  * que dependen de esas líneas, y borrarlas dejaría la historia incompleta. Para
  * esos casos el camino es anular la orden o cerrar lo pendiente.
  */
+/**
+ * Solo Soporte: borra la orden con TODO lo que cuelga (ítems, recepciones,
+ * facturas propias y sus notas de crédito). Lo hace una función de la base en
+ * una sola transacción (`eliminar_orden_completa`, migración 0087), que vuelve a
+ * comprobar que quien llama es Soporte. Es irreversible.
+ */
+export async function eliminarOrdenCompleta(ordenId: string) {
+  const { error } = await supabase.rpc("eliminar_orden_completa", { p_orden: ordenId });
+  if (error) {
+    throw new Error(
+      /eliminar_orden_completa/.test(error.message) && /schema cache|not find|does not exist/i.test(error.message)
+        ? "Falta aplicar la migración 0087 en la base."
+        : error.message,
+    );
+  }
+}
+
 export async function eliminarOrdenConItems(ordenId: string) {
   const { data, error } = await supabase
     .from("items_compra")

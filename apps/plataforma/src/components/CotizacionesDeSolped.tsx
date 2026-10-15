@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Chip } from "./ui/Chip";
 import { Combo } from "./ui/Combo";
 import { Dialogo } from "./ui/Formulario";
@@ -8,11 +8,12 @@ import { useConsulta } from "@/lib/consulta";
 import {
   cargarAvanceDeSolped,
   cargarComparativo,
+  cargarEnviosDeSolicitudes,
   cargarCotizacion,
   cargarItemsDeCotizacion,
   cargarItemsDeSolped,
   cargarProveedores,
-  armarCorreoSolicitud,
+  enviarSolicitudAlProveedor,
   cargarRespuesta,
   enlaceMailto,
   registrarEnvio,
@@ -29,13 +30,13 @@ import {
   type ItemSolped,
   type AvanceItem,
   type Cotizacion,
+  type EnvioSolicitud,
   type Proveedor,
   type Solped,
 } from "@/lib/abastecimiento";
 import { Impresion } from "./ui/Impresion";
 import { SolicitudCotizacionImprimible } from "./SolicitudCotizacionImprimible";
 import { cargarAnexos, etiquetaAnexo, proyectoDeAnexo, type Anexo } from "@/lib/anexos";
-import { enviarSolicitudPorCorreo } from "@/lib/usuarios";
 import {
   emparejar,
   leerCotizacionPdf,
@@ -44,7 +45,8 @@ import {
 } from "@/lib/lector-cotizacion";
 import { crear } from "@/lib/crud";
 import { formatearFecha, formatearNumero, formatearPesos } from "@/lib/formato";
-import { siguienteNumero } from "@/lib/ordenes";
+import { cargarDestinatarios, siguienteNumero, type Destinatario } from "@/lib/ordenes";
+import { emisorOC } from "@/lib/empresa";
 import { puede, useUsuario } from "@/lib/sesion";
 
 /**
@@ -70,6 +72,8 @@ type Datos = {
      ahí sale el nombre técnico con el que se le pide al proveedor. */
   pedidos: ItemSolped[];
   proveedores: Proveedor[];
+  /* Qué pasó con cada solicitud enviada: abierta por el proveedor, recibida. */
+  envios: EnvioSolicitud[];
 };
 
 export function CotizacionesDeSolped({
@@ -88,7 +92,8 @@ export function CotizacionesDeSolped({
       cargarItemsDeSolped(solped.id),
       cargarProveedores(),
     ]);
-    return { cotizaciones, items, pedidos, proveedores };
+    const envios = await cargarEnviosDeSolicitudes(cotizaciones.map((c) => c.id));
+    return { cotizaciones, items, pedidos, proveedores, envios };
   });
 
   const [cotizando, setCotizando] = useState(false);
@@ -266,6 +271,9 @@ function Comparativo({
                             : `Creada el ${formatearFecha(c.solicitadaEn)}`}
                         {c.itemsSinStock > 0 ? ` · ${c.itemsSinStock} sin stock` : ""}
                       </span>
+                      {c.recibidaEn === null && (
+                        <EstadoDelEnvio envio={datos.envios.find((e) => e.cotizacionId === c.id)} />
+                      )}
                       {c.recibidaEn === null && !c.enviadaEn && (
                         <span className="mt-1 block text-xs font-semibold text-[#8a5a09]">
                           Todavía no se le manda
@@ -423,6 +431,24 @@ function Comparativo({
         />
       )}
     </div>
+  );
+}
+
+/** Lo que pasó con el último envío: sin abrir → vista por el proveedor → recibida. */
+function EstadoDelEnvio({ envio }: { envio: EnvioSolicitud | undefined }) {
+  if (!envio) return null;
+  if (envio.recibidaEn) {
+    return (
+      <span className="mt-1 block">
+        <Chip tono="bueno">Recibida{envio.recibidaPor ? ` por ${envio.recibidaPor}` : ""}</Chip>
+        {envio.comentario && <span className="mt-1 block text-xs text-ink-soft">“{envio.comentario}”</span>}
+      </span>
+    );
+  }
+  return (
+    <span className="mt-1 block">
+      {envio.vistaEn ? <Chip tono="info">Vista por el proveedor</Chip> : <Chip tono="aviso">Enviada, sin abrir</Chip>}
+    </span>
   );
 }
 
@@ -1772,18 +1798,20 @@ function VistaSolicitud({
 /* ── Mandarle la solicitud al proveedor ───────────────────────────────────── */
 
 /**
- * Arma el correo con todo escrito y lo abre en el cliente de quien está
- * trabajando.
+ * Manda la solicitud desde la plataforma, con el correo de Valar (cabecera,
+ * tabla de ítems, botón para responder), igual que la OC.
  *
- * POR QUÉ NO SE MANDA SOLO. La plataforma es un export estático: no hay
- * servidor que pueda enviar un correo por su cuenta, y meter la clave de un
- * servicio de correo en el navegador la deja a la vista de cualquiera. Hacerlo
- * desde una casilla de la empresa necesita una Edge Function y un dominio
- * verificado; hasta entonces esto es lo que ya hacen a mano, pero sin teclear.
+ * Todo se puede editar antes de enviar: los destinatarios (varios), el asunto y
+ * el mensaje. Quien envía va siempre con copia —así le llega a su casilla— y se
+ * puede copiar a más personas de Valar o escribir cualquier otro correo. El
+ * proveedor contesta a quien envía, no a la casilla desde la que sale.
  *
- * El detalle de los ítems va EN EL CUERPO. Un `mailto:` no adjunta archivos, y
- * un correo que dice "adjunto solicitud" sin adjunto no sirve. Así el proveedor
- * puede cotizar respondiendo, y el PDF queda para quien quiera mandarlo además.
+ * Los ítems no van dentro del mensaje: los pone el servidor como tabla (y como
+ * texto en la versión simple), para que el proveedor cotice respondiendo.
+ *
+ * «Abrir en mi correo» y «Ya la mandé» quedan como salida para cuando el envío
+ * del servidor no esté disponible: nadie se queda sin poder mandar la solicitud
+ * por una configuración que no estaba lista.
  */
 function DialogoEnviar({
   solped,
@@ -1798,12 +1826,30 @@ function DialogoEnviar({
   alCerrar: () => void;
   alEnviada: () => void;
 }) {
-  const [destinatario, setDestinatario] = useState(
-    cotizacion.correoProveedor ?? proveedor?.correo ?? "",
+  const usuario = useUsuario();
+  const numero = cotizacion.numero ?? cotizacion.id;
+
+  const [para, setPara] = useState(cotizacion.correoProveedor ?? proveedor?.correo ?? "");
+  const [asunto, setAsunto] = useState(`Solicitud de cotización ${numero} · ${emisorOC.razonSocial}`);
+  const [mensaje, setMensaje] = useState(() =>
+    mensajeInicialSolicitud({
+      numero,
+      contacto: cotizacion.contactoProveedor,
+      fechaRequerida: solped.fechaRequerida,
+      nombre: usuario.nombre,
+    }),
   );
+  const [cc, setCc] = useState<string[]>([]);
+  const [otros, setOtros] = useState("");
+  const [buscar, setBuscar] = useState("");
+  const [personas, setPersonas] = useState<Destinatario[] | null>(null);
+  const [errorPersonas, setErrorPersonas] = useState<string | null>(null);
   const [copiado, setCopiado] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+  const [enviada, setEnviada] = useState<{ para: string[]; cc: string[] } | null>(null);
+
+  const yo = usuario.correo.toLowerCase();
 
   const { estado } = useConsulta(async () => {
     const [cotizados, pedidos] = await Promise.all([
@@ -1812,6 +1858,25 @@ function DialogoEnviar({
     ]);
     return { cotizados, pedidos };
   });
+
+  useEffect(() => {
+    let vigente = true;
+    cargarDestinatarios("cotizacion").then((r) => {
+      if (!vigente) return;
+      if (r.ok) setPersonas(r.datos);
+      else setErrorPersonas(r.error);
+    });
+    return () => {
+      vigente = false;
+    };
+  }, []);
+
+  const elegibles = useMemo(() => {
+    const q = buscar.trim().toLowerCase();
+    return (personas ?? [])
+      .filter((p) => p.correo !== yo)
+      .filter((p) => !q || `${p.nombre} ${p.correo} ${p.cargo}`.toLowerCase().includes(q));
+  }, [personas, yo, buscar]);
 
   if (estado.estado !== "listo") {
     return (
@@ -1833,69 +1898,56 @@ function DialogoEnviar({
     };
   });
 
-  const { asunto, cuerpo } = armarCorreoSolicitud({
-    numero: cotizacion.numero ?? cotizacion.id,
-    contrato: solped.contrato,
-    solicitante: solped.solicitanteNombre,
-    fechaRequerida: solped.fechaRequerida,
-    contacto: cotizacion.contactoProveedor,
-    items,
-    observaciones: cotizacion.observaciones,
-  });
+  const copias = [...new Set([...cc, ...otros.split(/[,;\s]+/).map((c) => c.trim().toLowerCase()).filter(Boolean)])];
 
-  const enlace = enlaceMailto(destinatario, asunto, cuerpo);
+  /* Para el cliente de correo del computador: el mensaje y el detalle juntos,
+     porque un `mailto:` no puede armar la tabla. */
+  const cuerpoMailto = [
+    mensaje.trim(),
+    "",
+    "Ítems a cotizar:",
+    items.map((i) => `${String(i.linea).padStart(2, "0")}. ${i.descripcion} — ${i.cantidad} ${i.unidad}`).join("\n"),
+    cotizacion.observaciones ? `\nObservaciones: ${cotizacion.observaciones}` : "",
+  ].join("\n");
+  const enlace = enlaceMailto(para, asunto, cuerpoMailto);
   const muyLargo = enlace.length > TOPE_MAILTO;
 
-  /**
-   * Mandar de verdad, sin salir de la plataforma.
-   *
-   * Si la función de correo está desplegada, sale de ahí; el remitente es la
-   * casilla que esté configurada en los secretos —hoy todavía no es una de
-   * Valar— y el proveedor contesta al correo de quien pidió la cotización.
-   * Si no está —o falla—, se cae al camino de siempre: abrir el cliente de
-   * correo con todo escrito. Lo que no puede pasar es que alguien se quede sin
-   * poder mandar la solicitud porque una configuración de servidor no estaba
-   * lista.
-   */
-  async function enviarDeVerdad() {
-    if (!destinatario.trim()) {
+  async function enviarDeVerdad(e: React.FormEvent) {
+    e.preventDefault();
+    if (!para.trim()) {
       setError("Falta el correo del proveedor.");
       return;
     }
     setError(null);
     setEnviando(true);
-    try {
-      const salio = await enviarSolicitudPorCorreo({
-        cotizacionId: cotizacion.id,
-        para: destinatario.trim(),
-        asunto,
-        texto: cuerpo,
-      });
-
-      if (salio) {
-        alEnviada();
-        return;
-      }
-
-      // La función no está disponible: se abre el cliente de correo.
-      await registrarEnvio(cotizacion.id, destinatario.trim());
-      window.location.href = enlace;
-      alEnviada();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setEnviando(false);
-    }
+    const r = await enviarSolicitudAlProveedor(cotizacion.id, {
+      para,
+      cc: copias,
+      asunto,
+      mensaje,
+      numero,
+      proveedor: cotizacion.proveedor,
+      contrato: solped.contrato,
+      solicitante: solped.solicitanteNombre,
+      fechaRequerida: solped.fechaRequerida,
+      observaciones: cotizacion.observaciones,
+      items,
+    });
+    setEnviando(false);
+    if (!r.ok) return setError(r.error);
+    setEnviada({ para: r.para, cc: r.cc });
+    alEnviada();
   }
 
   async function marcarEnviada(abrirCliente: boolean) {
-    if (!destinatario.trim()) {
+    if (!para.trim()) {
       setError("Falta el correo del proveedor.");
       return;
     }
     setError(null);
     setEnviando(true);
     try {
-      await registrarEnvio(cotizacion.id, destinatario.trim());
+      await registrarEnvio(cotizacion.id, para.trim());
       if (abrirCliente) window.location.href = enlace;
       alEnviada();
     } catch (e) {
@@ -1906,7 +1958,7 @@ function DialogoEnviar({
 
   async function copiar() {
     try {
-      await navigator.clipboard.writeText(`${asunto}\n\n${cuerpo}`);
+      await navigator.clipboard.writeText(`${asunto}\n\n${cuerpoMailto}`);
       setCopiado(true);
       setTimeout(() => setCopiado(false), 2500);
     } catch {
@@ -1914,109 +1966,239 @@ function DialogoEnviar({
     }
   }
 
+  if (enviada) {
+    return (
+      <Dialogo titulo={`Solicitud ${numero} enviada`} abierto alCerrar={alCerrar} ancho="max-w-lg">
+        <div className="px-6 py-6 text-sm text-ink">
+          <p className="rounded-xl bg-[#e6f4ee] px-4 py-3 font-medium text-[#0e7a4f]">
+            Se le envió a {enviada.para.join(", ")}
+            {enviada.cc.length ? `, con copia a ${enviada.cc.join(", ")}` : ""}.
+          </p>
+          <p className="mt-4 text-ink-soft">
+            El proveedor le contesta a {yo || "quien envió la solicitud"}. Cuando responda, carga sus precios
+            con «Cargar precios».
+          </p>
+        </div>
+        <div className="flex justify-end border-t border-mist px-6 py-5">
+          <button
+            type="button"
+            onClick={alCerrar}
+            className="rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-white hover:bg-cyan-deep"
+          >
+            Listo
+          </button>
+        </div>
+      </Dialogo>
+    );
+  }
+
   return (
     <Dialogo
-      titulo={`Enviar ${cotizacion.numero ?? cotizacion.id} a ${cotizacion.proveedor}`}
-      descripcion="Se abre tu correo con todo escrito. Revísalo antes de mandarlo."
+      titulo={`Enviar ${numero} a ${cotizacion.proveedor}`}
+      descripcion={`${items.length} ${items.length === 1 ? "ítem" : "ítems"} a cotizar. Va con el PDF adjunto y un enlace para que el proveedor confirme que la recibió. Todo se puede editar antes de enviar.`}
       abierto
       alCerrar={alCerrar}
-      ancho="max-w-2xl"
+      ancho="max-w-3xl"
     >
-      <div className="px-6 py-6">
-        <label className="block">
-          <Etiqueta>Para</Etiqueta>
-          <input
-            type="email"
-            value={destinatario}
-            onChange={(e) => setDestinatario(e.target.value)}
-            placeholder="ventas@proveedor.cl"
-            className={claseCelda}
-          />
-          <Ayuda>
-            {cotizacion.correoProveedor
-              ? "Sale de la ficha del proveedor. Si cambió, corrígelo también en Proveedores."
-              : "Este proveedor no tiene correo en su ficha: escríbelo acá y agrégalo en Proveedores."}
-          </Ayuda>
-        </label>
+      <form onSubmit={enviarDeVerdad}>
+        <div className="grid gap-5 px-6 py-6">
+          <label className="block">
+            <Etiqueta>Para</Etiqueta>
+            <input
+              value={para}
+              onChange={(e) => setPara(e.target.value)}
+              placeholder="ventas@proveedor.cl"
+              className={claseCelda}
+            />
+            <Ayuda>
+              {cotizacion.correoProveedor
+                ? "Sale de la ficha del proveedor; puedes cambiarlo o agregar más, separados por coma. Si cambió, corrígelo también en Proveedores."
+                : "Este proveedor no tiene correo en su ficha: escríbelo acá y agrégalo en Proveedores. Varios, separados por coma."}
+            </Ayuda>
+          </label>
 
-        <div className="mt-5">
-          <Etiqueta>Asunto</Etiqueta>
-          <p className="rounded-xl border border-mist-deep bg-mist/30 px-4 py-2.5 text-sm text-ink">
-            {asunto}
-          </p>
+          <div>
+            <Etiqueta>Con copia</Etiqueta>
+            <div className="flex flex-wrap gap-1.5">
+              <span
+                className="rounded-full bg-ink px-3 py-1 text-xs font-semibold text-white"
+                title="Quien envía va siempre con copia"
+              >
+                {usuario.nombre || yo} · {yo} · siempre
+              </span>
+              {cc.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setCc((x) => x.filter((y) => y !== c))}
+                  className="rounded-full border border-cyan px-3 py-1 text-xs font-semibold text-cyan-deep hover:bg-cyan/5"
+                  aria-label={`Quitar ${c}`}
+                >
+                  {personas?.find((p) => p.correo === c)?.nombre ?? c} ✕
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-3 rounded-xl border border-mist-deep">
+              {(personas?.length ?? 0) > 8 && (
+                <input
+                  value={buscar}
+                  onChange={(e) => setBuscar(e.target.value)}
+                  placeholder="Buscar en Valar…"
+                  aria-label="Buscar personas de Valar"
+                  className="w-full rounded-t-xl border-b border-mist px-3 py-2 text-sm outline-none"
+                />
+              )}
+              <ul className="max-h-36 overflow-y-auto py-1 text-sm">
+                {personas === null && !errorPersonas && (
+                  <li className="px-3 py-2 text-ink-soft">Cargando personas de Valar…</li>
+                )}
+                {errorPersonas && <li className="px-3 py-2 text-[#a52f24]">{errorPersonas}</li>}
+                {personas && elegibles.length === 0 && <li className="px-3 py-2 text-ink-soft">Nadie más de Valar para copiar.</li>}
+                {elegibles.map((p) => (
+                  <li key={p.correo}>
+                    <label className="flex cursor-pointer items-center gap-2.5 px-3 py-1.5 hover:bg-mist/40">
+                      <input
+                        type="checkbox"
+                        checked={cc.includes(p.correo)}
+                        onChange={(e) =>
+                          setCc((x) => (e.target.checked ? [...x, p.correo] : x.filter((y) => y !== p.correo)))
+                        }
+                        className="h-4 w-4 accent-cyan"
+                      />
+                      <span className="min-w-0">
+                        <span className="font-semibold text-ink">{p.nombre}</span>
+                        <span className="ml-2 text-xs text-ink-soft">
+                          {p.cargo ? `${p.cargo} · ` : ""}
+                          {p.correo}
+                        </span>
+                      </span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <input
+              value={otros}
+              onChange={(e) => setOtros(e.target.value)}
+              placeholder="Otro correo con copia (opcional, varios separados por coma)"
+              aria-label="Otros correos con copia"
+              className={`${claseCelda} mt-3`}
+            />
+          </div>
+
+          <label className="block">
+            <Etiqueta>Asunto</Etiqueta>
+            <input value={asunto} onChange={(e) => setAsunto(e.target.value)} required className={claseCelda} />
+          </label>
+
+          <label className="block">
+            <Etiqueta>Mensaje</Etiqueta>
+            <textarea
+              required
+              value={mensaje}
+              onChange={(e) => setMensaje(e.target.value)}
+              rows={9}
+              className="w-full rounded-xl border border-mist-deep bg-white px-4 py-3 text-sm leading-relaxed text-ink outline-none transition-colors focus:border-cyan"
+            />
+            <Ayuda>
+              Debajo del mensaje el correo trae la tabla con los {items.length}{" "}
+              {items.length === 1 ? "ítem" : "ítems"} y el botón «Ver la solicitud y confirmar recepción».
+            </Ayuda>
+          </label>
+
+          <details className="rounded-xl border border-mist-deep bg-mist/30 px-4 py-3 text-sm">
+            <summary className="cursor-pointer font-semibold text-ink">Ítems que van en el correo</summary>
+            <ol className="mt-2 list-inside list-decimal space-y-1 text-ink-soft">
+              {items.map((i) => (
+                <li key={i.linea}>
+                  <span className="text-ink">{i.descripcion}</span> — {formatearNumero(i.cantidad)} {i.unidad}
+                </li>
+              ))}
+            </ol>
+          </details>
+
+          {muyLargo && (
+            <p className="rounded-xl bg-[#fdf4e6] px-4 py-3 text-sm leading-relaxed text-[#8a5a09]">
+              Si usas <strong>Abrir en mi correo</strong>: el mensaje es largo y algunos clientes de correo lo cortan.
+              Mejor usa <strong>Enviar</strong>, que no tiene ese límite.
+            </p>
+          )}
         </div>
 
-        <div className="mt-5">
-          <Etiqueta>Mensaje</Etiqueta>
-          <pre className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded-xl border border-mist-deep bg-mist/30 px-4 py-3 font-sans text-sm leading-relaxed text-ink">
-            {cuerpo}
-          </pre>
-          <Ayuda>
-            El detalle va en el texto a propósito: así el proveedor puede cotizar
-            respondiendo, sin abrir un adjunto.
-          </Ayuda>
+        <div className="border-t border-mist px-6 py-5">
+          {error && (
+            <p role="alert" className="mb-4 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm font-medium text-[#a52f24]">
+              {error}
+            </p>
+          )}
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => void copiar()}
+              className="mr-auto rounded-full border border-mist-deep px-4 py-2.5 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink"
+            >
+              {copiado ? "Copiado" : "Copiar el mensaje"}
+            </button>
+
+            {/* Marcar sin enviar: para cuando ya se mandó por fuera y lo que falta
+                es que quede la constancia. */}
+            <button
+              type="button"
+              onClick={() => void marcarEnviada(false)}
+              disabled={enviando}
+              className="rounded-full border border-mist-deep px-4 py-2.5 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-50"
+            >
+              Ya la mandé
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void marcarEnviada(true)}
+              disabled={enviando || !para.trim()}
+              className="rounded-full border border-mist-deep px-4 py-2.5 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-50"
+            >
+              Abrir en mi correo
+            </button>
+
+            <button
+              type="submit"
+              disabled={enviando || !para.trim()}
+              className="rounded-full bg-cyan px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {enviando ? "Enviando…" : cotizacion.enviadaEn ? "Reenviar" : "Enviar"}
+            </button>
+          </div>
         </div>
-
-        {muyLargo && (
-          <p className="mt-4 rounded-xl bg-[#fdf4e6] px-4 py-3 text-sm leading-relaxed text-[#8a5a09]">
-            El mensaje es largo y algunos clientes de correo lo cortan al abrirlo. Usa
-            <strong> Copiar el mensaje</strong>, pégalo en un correo nuevo y adjunta el
-            PDF de la solicitud.
-          </p>
-        )}
-      </div>
-
-      <div className="border-t border-mist px-6 py-5">
-        {error && (
-          <p
-            role="alert"
-            className="mb-4 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm font-medium text-[#a52f24]"
-          >
-            {error}
-          </p>
-        )}
-        <div className="flex flex-wrap items-center justify-end gap-3">
-          <button
-            type="button"
-            onClick={() => void copiar()}
-            className="mr-auto rounded-full border border-mist-deep px-4 py-2.5 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink"
-          >
-            {copiado ? "Copiado" : "Copiar el mensaje"}
-          </button>
-
-          {/* Marcar sin abrir el cliente: para cuando ya se mandó por fuera y lo
-              que falta es que quede la constancia. */}
-          <button
-            type="button"
-            onClick={() => void marcarEnviada(false)}
-            disabled={enviando}
-            className="rounded-full border border-mist-deep px-4 py-2.5 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-50"
-          >
-            Ya la mandé
-          </button>
-
-          {/* Abrir el cliente queda como alternativa, no como la única vía:
-              sirve para revisar el correo antes de mandarlo, o cuando la
-              función de correo todavía no está desplegada. */}
-          <button
-            type="button"
-            onClick={() => void marcarEnviada(true)}
-            disabled={enviando || !destinatario.trim()}
-            className="rounded-full border border-mist-deep px-4 py-2.5 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-50"
-          >
-            Abrir en mi correo
-          </button>
-
-          <button
-            type="button"
-            onClick={() => void enviarDeVerdad()}
-            disabled={enviando || !destinatario.trim()}
-            className="rounded-full bg-cyan px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {enviando ? "Enviando…" : "Enviar"}
-          </button>
-        </div>
-      </div>
+      </form>
     </Dialogo>
   );
+}
+
+/** El mensaje con que arranca el correo: lo que sigue —ítems y botón— lo pone el servidor. */
+function mensajeInicialSolicitud(d: {
+  numero: string;
+  contacto: string | null;
+  fechaRequerida: string | null;
+  nombre: string;
+}) {
+  return [
+    d.contacto ? `Estimado/a ${d.contacto}:` : "Estimados:",
+    "",
+    "Agradeceremos cotizar los ítems que se detallan más abajo.",
+    d.fechaRequerida ? `Se necesitan en faena el ${formatearFecha(d.fechaRequerida)}.` : null,
+    "",
+    `Al responder, por favor mencione el número ${d.numero}.`,
+    "",
+    "La cotización no constituye orden de compra: la compra se formaliza únicamente con una orden emitida por " +
+      emisorOC.razonSocial +
+      ".",
+    "",
+    "Saludos,",
+    d.nombre,
+    emisorOC.razonSocial,
+  ]
+    .filter((l) => l !== null)
+    .join("\n");
 }

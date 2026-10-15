@@ -121,7 +121,10 @@ export type Remitente = {
  * de `/api/` son públicas: sin esto cualquiera mandaría correos a nombre de
  * Valar.
  */
-export async function remitenteDe(pedido: Request): Promise<Remitente | null> {
+export async function remitenteDe(
+  pedido: Request,
+  permiso: "ordenes.emitir" | "cotizacion.gestionar" = "ordenes.emitir",
+): Promise<Remitente | null> {
   const token = pedido.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -134,7 +137,7 @@ export async function remitenteDe(pedido: Request): Promise<Remitente | null> {
   const { data, error } = await sb.auth.getUser(token);
   if (error || !data.user) return null;
 
-  const { data: puede } = await sb.rpc("tiene_permiso", { clave: "ordenes.emitir" });
+  const { data: puede } = await sb.rpc("tiene_permiso", { clave: permiso });
   if (puede !== true) return null;
 
   const { data: perfil } = await sb.from("perfiles").select("nombre").eq("id", data.user.id).maybeSingle();

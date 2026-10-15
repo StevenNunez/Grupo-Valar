@@ -32,6 +32,7 @@ import { emisorOC } from "@/lib/empresa";
 import { formatearPesos } from "@/lib/formato";
 import {
   cargarLineasDeOrden,
+  eliminarOrdenCompleta,
   eliminarOrdenConItems,
   estadosOrden,
   siguienteNumero,
@@ -247,6 +248,8 @@ export function FormularioOrden({
 }) {
   const f = useFormulario<BorradorOrden>(borradorDe(orden, contratos, usuario, registrar));
   const editando = orden !== null;
+  // Solo Soporte borra una orden con recepciones o facturas (lo vuelve a exigir la base).
+  const esSoporte = usuario.general === "soporte";
   // Una orden nueva arranca con una línea en blanco. Se hace en el
   // inicializador y no en el efecto: llamar a setState en el cuerpo de un
   // efecto provoca un render en cascada.
@@ -296,7 +299,7 @@ export function FormularioOrden({
   const borrado = useBorrado("ordenes_compra_proveedor", orden?.id, () => {
     alGuardado();
     alCerrar();
-  }, eliminarOrdenConItems);
+  }, esSoporte ? eliminarOrdenCompleta : eliminarOrdenConItems);
 
   // Al abrir: si es nueva, se propone el número siguiente y una línea en
   // blanco. Si es existente, se traen sus ítems.
@@ -967,7 +970,11 @@ export function FormularioOrden({
       <Confirmacion
         abierto={borrado.confirmando}
         titulo="Eliminar orden de compra"
-        detalle={`Se va a eliminar ${orden?.numero ?? ""}. Se borran también sus ítems, y con ellos el gasto que representaba en el mes. Si ya hay ítems recibidos o facturados, no se podrá borrar: se anula.`}
+        detalle={
+          esSoporte
+            ? `Se va a eliminar ${orden?.numero ?? ""} con TODO lo que cuelga de ella: sus ítems, las recepciones, las facturas de esta orden y sus notas de crédito. El gasto desaparece del mes y del Dashboard. No se puede deshacer.`
+            : `Se va a eliminar ${orden?.numero ?? ""}. Se borran también sus ítems, y con ellos el gasto que representaba en el mes. Si ya hay ítems recibidos o facturados, no se podrá borrar: se anula, o se lo pides a Soporte.`
+        }
         error={borrado.error}
         procesando={borrado.borrando}
         alCancelar={borrado.cerrar}

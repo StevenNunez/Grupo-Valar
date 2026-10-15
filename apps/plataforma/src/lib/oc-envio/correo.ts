@@ -53,7 +53,7 @@ export async function enviarCorreoDeOrden(c: {
   asunto: string;
   texto: string;
   html: string;
-  adjunto: { nombre: string; contenido: Uint8Array };
+  adjunto?: { nombre: string; contenido: Uint8Array };
 }) {
   const c0 = smtp();
   const transporte = nodemailer.createTransport({
@@ -72,13 +72,13 @@ export async function enviarCorreoDeOrden(c: {
     subject: c.asunto,
     text: c.texto,
     html: c.html,
-    attachments: [
-      { filename: c.adjunto.nombre, content: Buffer.from(c.adjunto.contenido), contentType: "application/pdf" },
-    ],
+    attachments: c.adjunto
+      ? [{ filename: c.adjunto.nombre, content: Buffer.from(c.adjunto.contenido), contentType: "application/pdf" }]
+      : undefined,
   });
 }
 
-const escapar = (s: string) =>
+export const escapar = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /* ── El correo, con la cara de Valar ──────────────────────────────────────────
@@ -87,7 +87,7 @@ const escapar = (s: string) =>
    (www.grupovalar.cl/logo-valar.png); si el cliente bloquea imágenes, queda
    "VALAR" escrito al lado, así que el correo se identifica igual. */
 
-const MARCA = {
+export const MARCA = {
   tinta: "#1f2124",
   suave: "#5f6b7a",
   cian: "#18a6cd",
@@ -102,7 +102,7 @@ const MARCA = {
  * degradado (Gmail ignora `background-clip`), así que cada letra lleva su
  * tramo del azul → morado → verde de `InteractiveLogo`.
  */
-function firmaTeoLabs() {
+export function firmaTeoLabs() {
   const paradas = [
     [0x25, 0x63, 0xeb],
     [0xa8, 0x55, 0xf7],

@@ -1085,6 +1085,77 @@ export async function registrarEnvio(cotizacionId: string, correo: string) {
   if (error) throw new Error(error.message);
 }
 
+/** Lo que pasó con un envío: si el proveedor lo abrió y si avisó que lo recibió. */
+export type EnvioSolicitud = {
+  cotizacionId: string;
+  enviadaEn: string;
+  para: string;
+  vistaEn: string | null;
+  recibidaEn: string | null;
+  recibidaPor: string | null;
+  comentario: string | null;
+};
+
+/**
+ * Los envíos de las solicitudes indicadas, del más nuevo al más viejo. Si la
+ * migración 0086 todavía no está aplicada devuelve vacío: la pantalla funciona
+ * igual, solo sin el estado «vista / recibida».
+ */
+export async function cargarEnviosDeSolicitudes(cotizacionIds: string[]): Promise<EnvioSolicitud[]> {
+  if (cotizacionIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from("cotizaciones_envios")
+    .select("cotizacion_id, enviada_en, para, vista_en, recibida_en, recibida_por, comentario")
+    .in("cotizacion_id", cotizacionIds)
+    .order("enviada_en", { ascending: false });
+  if (error) return [];
+  return (data ?? []).map((e) => ({
+    cotizacionId: e.cotizacion_id as string,
+    enviadaEn: e.enviada_en as string,
+    para: e.para as string,
+    vistaEn: (e.vista_en as string | null) ?? null,
+    recibidaEn: (e.recibida_en as string | null) ?? null,
+    recibidaPor: (e.recibida_por as string | null) ?? null,
+    comentario: (e.comentario as string | null) ?? null,
+  }));
+}
+
+/**
+ * Manda la solicitud desde el servidor, con el correo de Valar (tabla de ítems,
+ * PDF adjunto, enlace para confirmar recepción) y copia a quien envía. Nunca lanza: devuelve el error
+ * escrito para la pantalla.
+ */
+export async function enviarSolicitudAlProveedor(
+  cotizacionId: string,
+  datos: {
+    para: string;
+    cc: string[];
+    asunto: string;
+    mensaje: string;
+    numero: string;
+    proveedor: string;
+    contrato: string;
+    solicitante: string;
+    fechaRequerida: string | null;
+    observaciones: string | null;
+    items: { descripcion: string; unidad: string; cantidad: number }[];
+  },
+): Promise<{ ok: true; para: string[]; cc: string[] } | { ok: false; error: string }> {
+  const { data } = await supabase.auth.getSession();
+  const t = data.session?.access_token;
+  if (!t) return { ok: false, error: "La sesión expiró. Vuelve a ingresar." };
+  try {
+    const r = await fetch(`/api/cotizaciones/${encodeURIComponent(cotizacionId)}/enviar/`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" },
+      body: JSON.stringify(datos),
+    });
+    return await r.json();
+  } catch {
+    return { ok: false, error: "No se pudo conectar con el servidor. Revisa la conexión." };
+  }
+}
+
 /**
  * Elige un proveedor.
  *
