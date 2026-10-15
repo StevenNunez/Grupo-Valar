@@ -283,6 +283,38 @@ function Comparativo({
         </div>
       </div>
 
+      {/* Qué falta para que la solicitud esté completa: se compra en varias
+          órdenes, y mientras quede algo sin cubrir hay que cotizar y emitir. */}
+      {(() => {
+        const faltan = datos.items.filter((i) => i.cantidadPendiente > 0);
+        const hayCompra = datos.items.some((i) => i.cantidadComprada > 0);
+        if (!hayCompra && faltan.length === 0) return null;
+        return faltan.length === 0 ? (
+          <p className="mt-5 rounded-xl bg-[#eaf6ef] px-4 py-3 text-sm font-medium text-[#0e7a4f]">
+            Todos los ítems de la solicitud ya están comprados.
+          </p>
+        ) : (
+          <div className="mt-5 rounded-xl border border-[#ecd9b0] bg-[#fdf4e6] px-4 py-3">
+            <p className="text-sm font-semibold text-[#8a5a09]">
+              Faltan {faltan.length} de {datos.items.length} ítems por comprar
+            </p>
+            <ul className="mt-2 grid gap-x-6 gap-y-1 text-sm text-ink sm:grid-cols-2">
+              {faltan.map((i) => (
+                <li key={i.id} className="flex justify-between gap-3">
+                  <span className="min-w-0 truncate">{i.descripcion}</span>
+                  <span className="shrink-0 tabular-nums text-ink-soft">
+                    {formatearNumero(i.cantidadPendiente)} {i.unidad}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-ink-soft">
+              Pide cotización a otro proveedor por estos ítems, elígelo y genera su orden. La solicitud queda completa cuando no falte ninguno.
+            </p>
+          </div>
+        );
+      })()}
+
       {datos.cotizaciones.length > 0 && (
         <div className="mt-5 overflow-x-auto">
           <table className="w-full min-w-[44rem] border-collapse text-sm">
@@ -457,6 +489,7 @@ function Comparativo({
         <DialogoPedirCotizacion
           solped={solped}
           items={datos.pedidos}
+          avance={datos.items}
           proveedores={datos.proveedores}
           cotizaciones={datos.cotizaciones}
           alCerrar={() => setPidiendo(false)}
@@ -711,7 +744,10 @@ function FormularioCotizacion({
           },
         ];
       })
-    : items.map((i) => {
+    : (items.some((i) => i.cantidadComprada > 0) && items.some((i) => i.cantidadPendiente > 0)
+        ? items.filter((i) => i.cantidadPendiente > 0)
+        : items
+      ).map((i) => {
         const p = pedidos.find((x) => x.id === i.id);
         return {
           solpedItemId: i.id,
@@ -720,7 +756,7 @@ function FormularioCotizacion({
           articuloId: p?.articuloId ?? null,
           tieneNombreTecnico: p?.nombreTecnico != null,
           unidad: i.unidad,
-          cantidad: i.cantidadPedida,
+          cantidad: i.cantidadComprada > 0 && i.cantidadPendiente > 0 ? i.cantidadPendiente : i.cantidadPedida,
           precio: 0,
           disponible: true,
         };
@@ -1959,7 +1995,8 @@ function LectorDeCotizacion({
  */
 function DialogoPedirCotizacion({
   solped,
-  items,
+  items: todos,
+  avance,
   proveedores,
   cotizaciones,
   alCerrar,
@@ -1967,11 +2004,19 @@ function DialogoPedirCotizacion({
 }: {
   solped: Solped;
   items: ItemSolped[];
+  /** Lo comprado hasta ahora: de ahí sale lo que falta pedir. */
+  avance: AvanceItem[];
   proveedores: Proveedor[];
   cotizaciones: Cotizacion[];
   alCerrar: () => void;
   alPedida: (cotizacionId: string) => void;
 }) {
+  /* Si ya se compró parte de la solicitud, solo se ofrece lo que falta y por la
+     cantidad que falta. Si no falta nada (o nada se ha comprado), todo. */
+  const pendientes = new Map(avance.filter((a) => a.cantidadPendiente > 0).map((a) => [a.id, a.cantidadPendiente]));
+  const hayCompra = avance.some((a) => a.cantidadComprada > 0);
+  const items = hayCompra && pendientes.size > 0 ? todos.filter((i) => pendientes.has(i.id)) : todos;
+  const cantidadBase = (i: ItemSolped) => (hayCompra ? pendientes.get(i.id) : undefined) ?? i.cantidad;
   const yaPedidos = cotizaciones.map((c) => c.proveedorId);
   const disponibles = proveedores.filter(
     (p) => !yaPedidos.includes(p.id) && p.estado !== "inactivo",
@@ -2013,7 +2058,7 @@ function DialogoPedirCotizacion({
         numero: siguienteNumeroSolicitud(cotizaciones),
         items: items
           .filter((i) => elegidos.has(i.id))
-          .map((i) => ({ solpedItemId: i.id, cantidad: cantidades[i.id] || i.cantidad })),
+          .map((i) => ({ solpedItemId: i.id, cantidad: cantidades[i.id] || cantidadBase(i) })),
         observaciones: observaciones.trim() || null,
       });
       alPedida(id);
@@ -2095,7 +2140,7 @@ function DialogoPedirCotizacion({
                   type="number"
                   min="0"
                   step="any"
-                  value={cantidades[i.id] ?? i.cantidad}
+                  value={cantidades[i.id] ?? cantidadBase(i)}
                   onChange={(e) => setCantidades((c) => ({ ...c, [i.id]: Number(e.target.value) || 0 }))}
                   aria-label={`Cantidad a pedir de ${i.nombreParaPedir}`}
                   className="w-20 rounded-md border border-mist-deep bg-white px-2 py-1 text-right text-sm tabular-nums text-ink outline-none focus:border-cyan"

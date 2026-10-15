@@ -629,6 +629,21 @@ export async function cargarAvanceDeSolped(solpedId: string): Promise<AvanceItem
   }));
 }
 
+/**
+ * Cuántos ítems le faltan por comprar a cada solicitud (por id de solicitud).
+ * Solo salen las que tienen alguno pendiente.
+ */
+export async function cargarPendientesPorSolped(): Promise<Record<string, number>> {
+  const { data, error } = await supabase
+    .from("solped_items_avance")
+    .select("solped_id")
+    .gt("cantidad_pendiente", 0);
+  if (error) throw new Error(error.message);
+  const cuenta: Record<string, number> = {};
+  for (const f of (data ?? []) as { solped_id: string }[]) cuenta[f.solped_id] = (cuenta[f.solped_id] ?? 0) + 1;
+  return cuenta;
+}
+
 /* ── Cotizaciones ─────────────────────────────────────────────────────────── */
 
 export type Cotizacion = {
@@ -1217,12 +1232,32 @@ export async function seleccionarCotizacion(
   const limpio = motivo.trim();
   if (!limpio) throw new Error("Falta el motivo de la selección.");
 
+  /* Una solicitud se compra en varias órdenes, a distintos proveedores. Elegir a
+     otro para lo que falta no puede dar por descartado a quien ya tiene una OC:
+     esa cotización queda como respondida, no como rechazada. */
+  const conOrden = await supabase
+    .from("ordenes_compra_proveedor")
+    .select("cotizacion_id")
+    .eq("solped_id", solpedId)
+    .not("cotizacion_id", "is", null);
+  if (conOrden.error) throw new Error(conOrden.error.message);
+  const yaCompradas = (conOrden.data ?? []).map((o) => o.cotizacion_id as string).filter((id) => id !== cotizacionId);
+
   const otras = await supabase
     .from("cotizaciones")
     .update({ seleccionada: false, estado: "descartada" })
     .eq("solped_id", solpedId)
-    .neq("id", cotizacionId);
+    .neq("id", cotizacionId)
+    .not("id", "in", `(${yaCompradas.map((id) => `"${id}"`).join(",") || '""'})`);
   if (otras.error) throw new Error(otras.error.message);
+
+  if (yaCompradas.length > 0) {
+    const compradas = await supabase
+      .from("cotizaciones")
+      .update({ seleccionada: false, estado: "recibida" })
+      .in("id", yaCompradas);
+    if (compradas.error) throw new Error(compradas.error.message);
+  }
 
   const elegida = await supabase
     .from("cotizaciones")
@@ -1231,11 +1266,13 @@ export async function seleccionarCotizacion(
   if (elegida.error) throw new Error(elegida.error.message);
 
   // Con proveedor elegido, la solicitud queda lista para que se autorice la
-  // compra: ese es el momento en que el monto pasa por el umbral.
+  // compra: ese es el momento en que el monto pasa por el umbral. Si ya se está
+  // comprando, el estado no retrocede.
   const solped = await supabase
     .from("solped")
     .update({ estado: "cotizada" })
-    .eq("id", solpedId);
+    .eq("id", solpedId)
+    .in("estado", ["aprobada", "en-cotizacion", "cotizada"]);
   if (solped.error) throw new Error(solped.error.message);
 }
 

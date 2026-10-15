@@ -15,6 +15,7 @@ import { cargarArticulos, type Articulo } from "@/lib/articulos";
 import { useConsulta } from "@/lib/consulta";
 import {
   cargarAprobaciones,
+  cargarPendientesPorSolped,
   cargarSolped,
   firmar,
   nombreEstadoSolped,
@@ -49,12 +50,13 @@ const tonos: Record<EstadoSolped, Tono> = {
   anulada: "neutro",
 };
 
-type Filtrado = "todas" | "por-aprobar" | "abiertas" | "cerradas";
+type Filtrado = "todas" | "por-aprobar" | "abiertas" | "incompletas" | "cerradas";
 
 const opciones: { id: Filtrado; titulo: string }[] = [
   { id: "todas", titulo: "Todas" },
   { id: "por-aprobar", titulo: "Por aprobar" },
   { id: "abiertas", titulo: "Abiertas" },
+  { id: "incompletas", titulo: "Faltan ítems por comprar" },
   { id: "cerradas", titulo: "Cerradas" },
 ];
 
@@ -66,18 +68,22 @@ type Datos = {
   categorias: FilaCategoria[];
   /** El maestro, para autocompletar los ítems al armar la solicitud. */
   articulos: Articulo[];
+  /** Ítems que todavía faltan por comprar, por solicitud. */
+  pendientes: Record<string, number>;
 };
 
 async function cargar(): Promise<Datos> {
-  const [solped, contratos, dashboard, articulos] = await Promise.all([
+  const [solped, contratos, dashboard, articulos, pendientes] = await Promise.all([
     cargarSolped(),
     cargarContratosBreve(),
     cargarDashboard(),
     /* El catálogo no puede tumbar la pantalla: si la 0027 todavía no está
        aplicada, la solicitud se sigue armando escribiendo a mano. */
     cargarArticulos().catch(() => [] as Articulo[]),
+    // Un dato de apoyo: si falla, la lista se ve igual, sin el aviso de faltantes.
+    cargarPendientesPorSolped().catch(() => ({}) as Record<string, number>),
   ]);
-  return { solped, contratos, categorias: dashboard.categorias, articulos };
+  return { solped, contratos, categorias: dashboard.categorias, articulos, pendientes };
 }
 
 export function VistaSolped() {
@@ -100,6 +106,7 @@ export function VistaSolped() {
           <>
             <Contenidos
               filas={datos.solped}
+              pendientes={datos.pendientes}
               edicion={edicion}
               alFirmar={setFirmando}
               alVerExpediente={setExpediente}
@@ -169,14 +176,20 @@ export function VistaSolped() {
   );
 }
 
+/** En compra a medias: ya salió alguna orden y todavía faltan ítems por cubrir. */
+const enCompraIncompleta = (s: Solped, pendientes: Record<string, number>) =>
+  !CERRADAS.includes(s.estado) && s.cantidadComprada > 0 && (pendientes[s.id] ?? 0) > 0;
+
 function Contenidos({
   filas,
+  pendientes,
   edicion,
   alFirmar,
   alVerExpediente,
   alCotizar,
 }: {
   filas: Solped[];
+  pendientes: Record<string, number>;
   edicion: ReturnType<typeof useEdicion<Solped>>;
   alFirmar: (s: Solped) => void;
   alVerExpediente: (s: Solped) => void;
@@ -189,9 +202,10 @@ function Contenidos({
   const visibles = useMemo(() => {
     if (filtro === "por-aprobar") return filas.filter((s) => s.estado === "en-aprobacion");
     if (filtro === "abiertas") return filas.filter((s) => !CERRADAS.includes(s.estado));
+    if (filtro === "incompletas") return filas.filter((s) => enCompraIncompleta(s, pendientes));
     if (filtro === "cerradas") return filas.filter((s) => CERRADAS.includes(s.estado));
     return filas;
-  }, [filas, filtro]);
+  }, [filas, filtro, pendientes]);
 
   const porAprobar = filas.filter((s) => s.estado === "en-aprobacion");
   const abiertas = filas.filter((s) => !CERRADAS.includes(s.estado));
@@ -252,7 +266,7 @@ function Contenidos({
         }
       >
         <Tabla
-          columnas={columnas(edicion, alFirmar, alVerExpediente, alCotizar, permisos)}
+          columnas={columnas(edicion, alFirmar, alVerExpediente, alCotizar, permisos, pendientes)}
           filas={visibles}
           claveDe={(s) => s.id}
           vacio="Ninguna solicitud en este estado."
@@ -268,6 +282,7 @@ const columnas = (
   alVerExpediente: (s: Solped) => void,
   alCotizar: (s: Solped) => void,
   permisos: { enviar: boolean; aprobar: boolean },
+  pendientes: Record<string, number>,
 ): Columna<Solped>[] => [
   {
     clave: "numero",
@@ -339,6 +354,11 @@ const columnas = (
     celda: (s) => (
       <>
         <Chip tono={tonos[s.estado]}>{nombreEstadoSolped[s.estado]}</Chip>
+        {enCompraIncompleta(s, pendientes) && (
+          <span className="mt-1 block text-xs font-semibold text-[#8a5a09]">
+            Faltan {pendientes[s.id]} de {s.items} ítems por comprar
+          </span>
+        )}
         {s.prioridad !== "normal" && (
           <span className="mt-1 block text-xs font-semibold uppercase tracking-wide text-[#8a5a09]">
             {s.prioridad}
@@ -353,7 +373,7 @@ const columnas = (
     derecha: true,
     celda: (s) => (
       <div className="flex items-center justify-end gap-1">
-        {["aprobada", "en-cotizacion", "cotizada"].includes(s.estado) && (
+        {(["aprobada", "en-cotizacion", "cotizada"].includes(s.estado) || enCompraIncompleta(s, pendientes)) && (
           <button
             type="button"
             onClick={() => alCotizar(s)}
