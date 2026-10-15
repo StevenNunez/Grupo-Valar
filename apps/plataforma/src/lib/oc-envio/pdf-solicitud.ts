@@ -154,18 +154,18 @@ export async function pdfDeSolicitud(r: ResumenSolicitud): Promise<Uint8Array> {
 
   raya(y);
   y -= 13;
-  const tercio = ancho / 3;
-  (
-    [
-      ["Fecha", fecha(r.fecha)],
-      ["Se necesita para", fecha(r.fechaRequerida)],
-      ["Contrato", r.contrato || "—"],
-    ] as const
-  ).forEach(([etiqueta, valor], i) => {
-    texto(etiqueta.toUpperCase(), MARGEN + i * tercio, y, { tam: 7, fuente: negrita, color: SUAVE });
-    partir(valor, tercio - 8, negrita, 9)
+  const campos: [string, string][] = [
+    ["Fecha", fecha(r.fecha)],
+    ...(r.solped ? ([["Requerimiento", r.solped]] as [string, string][]) : []),
+    ["Se necesita para", fecha(r.fechaRequerida)],
+    ["Contrato", r.contrato || "—"],
+  ];
+  const columna = ancho / campos.length;
+  campos.forEach(([etiqueta, valor], i) => {
+    texto(etiqueta.toUpperCase(), MARGEN + i * columna, y, { tam: 7, fuente: negrita, color: SUAVE });
+    partir(valor, columna - 8, negrita, 9)
       .slice(0, 2)
-      .forEach((l, n) => texto(l, MARGEN + i * tercio, y - 12 - n * 11, { tam: 9, fuente: negrita }));
+      .forEach((l, n) => texto(l, MARGEN + i * columna, y - 12 - n * 11, { tam: 9, fuente: negrita }));
   });
   y -= 36;
   raya(y);
@@ -215,10 +215,6 @@ export async function pdfDeSolicitud(r: ResumenSolicitud): Promise<Uint8Array> {
   /* ── Observaciones y aviso ──────────────────────────────────────────────── */
   const parrafos: [string, string][] = [];
   if (r.observaciones?.trim()) parrafos.push(["OBSERVACIONES", r.observaciones.trim()]);
-  parrafos.push([
-    "CÓMO RESPONDER",
-    `Responda indicando el número ${r.numero}${r.emisorCorreo ? ` a ${r.emisorCorreo}` : ""}, con precio unitario, plazo de entrega y condición de pago. La cotización no constituye orden de compra: la compra se formaliza únicamente con una orden emitida por ${emisorOC.razonSocial}.`,
-  ]);
   for (const [titulo, cuerpo] of parrafos) {
     const lineas = cuerpo
       .split(/\r?\n/)

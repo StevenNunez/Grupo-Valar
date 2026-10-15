@@ -44,8 +44,7 @@ export function RecibirSolicitud({
       <div className="rounded-xl bg-[#e6f4ee] px-5 py-4">
         <p className="font-semibold text-[#0e7a4f]">Solicitud recibida</p>
         <p className="mt-1 text-sm text-ink">
-          Quedó registrado{hecha.por ? ` por ${hecha.por}` : ""}. Para cotizar, responde el correo que te llegó
-          indicando el número de la solicitud.
+          Quedó registrado{hecha.por ? ` por ${hecha.por}` : ""}.
         </p>
         {hecha.comentario && <p className="mt-1 text-sm text-ink-soft">“{hecha.comentario}”</p>}
       </div>

@@ -391,6 +391,8 @@ export type ItemSolped = {
   pagnolMaterialId: string | null;
   /** Con el que hay que pedirlo: el técnico si se conoce, si no el de faena. */
   nombreParaPedir: string;
+  /** El nombre técnico que ya tiene el artículo del catálogo; nulo si aún no lo tiene. */
+  nombreTecnico: string | null;
   especificacion: string | null;
 };
 
@@ -424,6 +426,7 @@ export async function cargarItemsDeSolped(solpedId: string): Promise<ItemSolped[
       articuloId: (f.articulo_id as string | null) ?? null,
       pagnolMaterialId: (f.pagnol_material_id as string | null) ?? null,
       nombreParaPedir: articulo?.nombre_tecnico?.trim() || descripcion,
+      nombreTecnico: articulo?.nombre_tecnico?.trim() || null,
       especificacion: articulo?.especificacion ?? null,
     };
   });
@@ -798,6 +801,8 @@ export type ItemCotizado = {
   disponible: boolean;
   plazoDias: number | null;
   observacion: string | null;
+  /** Como lo cotizó el proveedor (nombre técnico). Nulo = no se editó. */
+  nombreCotizado: string | null;
 };
 
 export async function cargarItemsDeCotizacion(cotizacionId: string): Promise<ItemCotizado[]> {
@@ -818,7 +823,27 @@ export async function cargarItemsDeCotizacion(cotizacionId: string): Promise<Ite
     disponible: Boolean(f.disponible),
     plazoDias: f.plazo_dias === null ? null : Number(f.plazo_dias),
     observacion: (f.observacion as string | null) ?? null,
+    nombreCotizado: (f.nombre_cotizado as string | null)?.trim() || null,
   }));
+}
+
+/**
+ * Cómo le llama este proveedor a cada artículo del catálogo, según lo que cotizó
+ * antes. Sirve para proponer el nombre técnico al cargar sus precios, sin
+ * tener que volver a escribirlo.
+ */
+export async function cargarNombresDeProveedor(
+  proveedorId: string,
+  articuloIds: string[],
+): Promise<Map<string, string>> {
+  if (articuloIds.length === 0) return new Map();
+  const { data, error } = await supabase
+    .from("articulo_proveedor")
+    .select("articulo_id, nombre_proveedor")
+    .eq("proveedor_id", proveedorId)
+    .in("articulo_id", articuloIds);
+  if (error) return new Map();
+  return new Map((data ?? []).map((f) => [f.articulo_id as string, f.nombre_proveedor as string]));
 }
 
 /** Correlativo de la cotización dentro de su solicitud: COT-<solped>-01. */
@@ -953,7 +978,7 @@ export async function cargarRespuesta({
   flete: number;
   descuento: number;
   /** Por ítem de la solicitud: precio unitario y si lo tiene. */
-  precios: { solpedItemId: string; precioUnitario: number; disponible: boolean }[];
+  precios: { solpedItemId: string; precioUnitario: number; disponible: boolean; nombre?: string | null }[];
   validezHasta?: string | null;
 }) {
   const { error } = await supabase
@@ -977,12 +1002,18 @@ export async function cargarRespuesta({
       .update({
         precio_unitario: p.disponible ? p.precioUnitario : 0,
         disponible: p.disponible,
+        nombre_cotizado: p.nombre?.trim() || null,
       })
       .eq("cotizacion_id", cotizacionId)
       .eq("solped_item_id", p.solpedItemId);
 
-    if (fallo) throw new Error(fallo.message);
+    if (fallo) throw new Error(mensajeDeNombreCotizado(fallo.message));
   }
+}
+
+/** Si la migración 0088 no está aplicada, decirlo en claro en vez de un error de columna. */
+export function mensajeDeNombreCotizado(mensaje: string) {
+  return /nombre_cotizado/.test(mensaje) ? "Falta aplicar la migración 0088 en la base." : mensaje;
 }
 
 /* ── Enviarle la solicitud al proveedor ───────────────────────────────────── */
@@ -1313,7 +1344,8 @@ export async function generarOrdenDesdeCotizacion({
       // Lo que se pidió del catálogo de Pagnol se compra con la misma referencia.
       pagnol_material_id: pedido?.pagnolMaterialId ?? null,
       categoria_id: pedido?.categoriaId ?? null,
-      descripcion: pedido?.descripcion ?? "Ítem cotizado",
+      // El nombre técnico con que lo cotizó el proveedor: es con el que se compra.
+      descripcion: i.nombreCotizado || (pedido?.descripcion ?? "Ítem cotizado"),
       unidad: pedido?.unidad ?? "un",
       cantidad: i.cantidad,
       precio_unitario: i.precioUnitario,

@@ -65,7 +65,8 @@ export default async function PaginaSolicitudProveedor({ params }: Props) {
           </a>
         </header>
 
-        <dl className="grid gap-4 border-b border-mist px-6 py-5 text-sm sm:grid-cols-3">
+        <dl className="grid gap-4 border-b border-mist px-6 py-5 text-sm sm:grid-cols-2 lg:grid-cols-4">
+          {c.solped && <Dato etiqueta="Requerimiento">{c.solped}</Dato>}
           <Dato etiqueta="Se necesita para">{c.fechaRequerida ? formatearFecha(c.fechaRequerida) : "—"}</Dato>
           <Dato etiqueta="Solicita">{c.solicitante || "—"}</Dato>
           <Dato etiqueta="Contacto Valar">
@@ -101,10 +102,6 @@ export default async function PaginaSolicitudProveedor({ params }: Props) {
               {c.observaciones}
             </p>
           )}
-          <p className="mt-4 text-xs text-ink-soft">
-            Para cotizar, responde el correo que te llegó indicando el número {c.numero}. La cotización no constituye
-            orden de compra.
-          </p>
         </div>
 
         <section className="border-t border-mist px-6 py-6">

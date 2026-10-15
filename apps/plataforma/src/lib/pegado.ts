@@ -40,7 +40,7 @@ const ENCABEZADOS = /^(ítem|item|descripci[oó]n|detalle|un|um|unidad|cantidad|
  * Lee una fila. Devuelve null si no es un ítem: el encabezado, las filas
  * numeradas pero vacías que trae la plantilla (12, 13… 22) o una línea en blanco.
  */
-function leerFila(linea: string): FilaPegada | null {
+function leerFila(linea: string, estricta = false): FilaPegada | null {
   const celdas = linea.split("\t").map((c) => c.trim());
   const textos: string[] = [];
   const numeros: number[] = [];
@@ -62,6 +62,9 @@ function leerFila(linea: string): FilaPegada | null {
   let cantidad = 1;
   let precioUnitario = 0;
   const par = buscarPar(numeros);
+  // Estricta: solo vale una fila donde cantidad × precio = total, que es lo que
+  // distingue un ítem de cualquier otra línea con números (fechas, RUT, teléfonos).
+  if (estricta && !par) return null;
   if (par) [cantidad, precioUnitario] = par;
   else if (numeros.length >= 2) [cantidad, precioUnitario] = numeros.slice(-2);
   else if (numeros.length === 1) precioUnitario = numeros[0];
@@ -88,9 +91,21 @@ function buscarPar(numeros: number[]): [number, number] | null {
   return null;
 }
 
+/**
+ * Una línea con celdas separadas por tabulador, leída SIN depender de ningún
+ * encabezado y solo si cuadra (cantidad × precio = total). La usa el lector de
+ * cotizaciones como plan B cuando el PDF no trae una tabla que se pueda leer
+ * por sus títulos.
+ */
+export function leerLineaQueCuadra(linea: string): FilaPegada | null {
+  const fila = leerFila(linea, true);
+  // Una descripción de verdad tiene palabras; «C/U» o «-» no lo son.
+  return fila && /[A-Za-zÁÉÍÓÚÑáéíóúñ]{3,}/.test(fila.descripcion) ? fila : null;
+}
+
 export function leerPegado(texto: string): FilaPegada[] {
   return texto
     .split(/\r?\n/)
-    .map(leerFila)
+    .map((linea) => leerFila(linea))
     .filter((f): f is FilaPegada => f !== null);
 }

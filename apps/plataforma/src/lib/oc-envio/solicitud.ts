@@ -17,6 +17,8 @@ export type ItemSolicitud = { linea: number; descripcion: string; unidad: string
 /** La foto de lo que se mandó: el enlace, el PDF y el correo muestran esto. */
 export type ResumenSolicitud = {
   numero: string;
+  /** El requerimiento (SOLPED) del que sale: sirve para ubicar la cotización. Vacío en envíos viejos. */
+  solped?: string | null;
   /** AAAA-MM-DD en que se creó la solicitud. */
   fecha: string;
   proveedor: string;
@@ -38,10 +40,6 @@ export function cuerpoDeSolicitud(
   r: ResumenSolicitud,
   empresa: { razonSocial: string; rut: string; direccion: string },
 ) {
-  const responder = r.emisorCorreo
-    ? `mailto:${encodeURIComponent(r.emisorCorreo)}?subject=${encodeURIComponent(`Cotización ${r.numero}`)}`
-    : null;
-
   const detalleTexto = r.items
     .map((i) => `${String(i.linea).padStart(2, "0")}. ${i.descripcion} — ${cantidad(i.cantidad)} ${i.unidad}`)
     .join("\n");
@@ -49,14 +47,13 @@ export function cuerpoDeSolicitud(
   const texto = [
     mensaje.trim(),
     "",
+    r.solped ? `Requerimiento: ${r.solped}` : "",
     "Ítems a cotizar:",
     detalleTexto,
     r.observaciones ? `\nObservaciones: ${r.observaciones}` : "",
     "",
-    `Ver la solicitud, descargar el PDF y avisar que la recibiste:`,
+    "Ver la solicitud y confirmar recepción:",
     enlace,
-    "",
-    `Responde este correo con tu cotización, indicando el número ${r.numero}.`,
     "",
     "—",
     `${empresa.razonSocial} · RUT ${empresa.rut}`,
@@ -97,7 +94,7 @@ export function cuerpoDeSolicitud(
 <html lang="es">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Solicitud de cotización ${escapar(r.numero)}</title></head>
 <body style="margin:0;padding:0;background:${MARCA.niebla}">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0">Solicitud de cotización ${escapar(r.numero)} · ${r.items.length} ${r.items.length === 1 ? "ítem" : "ítems"} · responde este correo con tu cotización.</div>
+<div style="display:none;max-height:0;overflow:hidden;opacity:0">Solicitud de cotización ${escapar(r.numero)}${r.solped ? ` · ${escapar(r.solped)}` : ""} · ${r.items.length} ${r.items.length === 1 ? "ítem" : "ítems"}.</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${MARCA.niebla}">
   <tr><td align="center" style="padding:28px 12px">
     <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;font-family:Arial,Helvetica,sans-serif;color:${MARCA.tinta}">
@@ -122,7 +119,7 @@ export function cuerpoDeSolicitud(
         <div style="margin-top:4px;font-size:14px;color:${MARCA.suave}">Para <strong style="color:${MARCA.tinta}">${escapar(r.proveedor)}</strong></div>
 
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;background:#f4f6f7;border-radius:12px">
-          <tr>${dato("Contrato", r.contrato)}${dato("Se necesita para", fechaCorta(r.fechaRequerida))}${dato("Solicita", r.solicitante || "—")}</tr>
+          <tr>${r.solped ? dato("Requerimiento", r.solped) : ""}${dato("Contrato", r.contrato)}${dato("Se necesita para", fechaCorta(r.fechaRequerida))}${dato("Solicita", r.solicitante || "—")}</tr>
         </table>
 
         <div style="margin-top:24px;font-size:14px;line-height:1.6;color:${MARCA.tinta}">${parrafos}</div>
@@ -141,12 +138,6 @@ export function cuerpoDeSolicitud(
             <a href="${escapar(enlace)}" target="_blank" style="display:inline-block;padding:14px 26px;font-size:15px;font-weight:bold;color:#ffffff;text-decoration:none">Ver la solicitud y confirmar recepci&oacute;n &rarr;</a>
           </td>
         </tr></table>
-        <div style="font-size:12px;color:${MARCA.suave}">Ah&iacute; la ves, descargas el PDF (que tambi&eacute;n va adjunto) y avisas que la recibiste.${
-          responder
-            ? ` Para cotizar, <a href="${escapar(responder)}" target="_blank" style="color:${MARCA.cianOscuro};font-weight:bold">responde este correo</a>.`
-            : ""
-        }</div>
-        <div style="margin-top:6px;font-size:12px;color:${MARCA.suave}">Indica el n&uacute;mero ${escapar(r.numero)} al responder. La cotizaci&oacute;n no constituye orden de compra.</div>
 
         ${
           contacto.length

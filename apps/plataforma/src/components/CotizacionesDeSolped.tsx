@@ -9,6 +9,8 @@ import {
   cargarAvanceDeSolped,
   cargarComparativo,
   cargarEnviosDeSolicitudes,
+  cargarNombresDeProveedor,
+  mensajeDeNombreCotizado,
   cargarCotizacion,
   cargarItemsDeCotizacion,
   cargarItemsDeSolped,
@@ -37,6 +39,7 @@ import {
 import { Impresion } from "./ui/Impresion";
 import { SolicitudCotizacionImprimible } from "./SolicitudCotizacionImprimible";
 import { cargarAnexos, etiquetaAnexo, proyectoDeAnexo, type Anexo } from "@/lib/anexos";
+import { aprenderNombreDelProveedor, fijarNombreTecnico } from "@/lib/articulos";
 import {
   emparejar,
   leerCotizacionPdf,
@@ -74,6 +77,9 @@ type Datos = {
   proveedores: Proveedor[];
   /* Qué pasó con cada solicitud enviada: abierta por el proveedor, recibida. */
   envios: EnvioSolicitud[];
+  /* Por proveedor con solicitud pendiente: lo que se le pidió y cómo suele
+     llamarle a cada artículo. Es lo que arma el formulario de precios solo. */
+  solicitados: Record<string, { items: ItemCotizado[]; nombres: Map<string, string> }>;
 };
 
 export function CotizacionesDeSolped({
@@ -93,10 +99,29 @@ export function CotizacionesDeSolped({
       cargarProveedores(),
     ]);
     const envios = await cargarEnviosDeSolicitudes(cotizaciones.map((c) => c.id));
-    return { cotizaciones, items, pedidos, proveedores, envios };
+
+    const solicitados: Datos["solicitados"] = {};
+    await Promise.all(
+      cotizaciones
+        .filter((c) => c.recibidaEn === null)
+        .map(async (c) => {
+          const pedidoItems = await cargarItemsDeCotizacion(c.id);
+          const articulos = pedidoItems
+            .map((ci) => pedidos.find((p) => p.id === ci.solpedItemId)?.articuloId)
+            .filter((a): a is string => !!a);
+          solicitados[c.proveedorId] = {
+            items: pedidoItems,
+            nombres: await cargarNombresDeProveedor(c.proveedorId, articulos),
+          };
+        }),
+    );
+
+    return { cotizaciones, items, pedidos, proveedores, envios, solicitados };
   });
 
-  const [cotizando, setCotizando] = useState(false);
+  /* Abierto = se están cargando precios. `proveedorId` viene lleno cuando se
+     entra por el botón de una solicitud concreta. */
+  const [cotizando, setCotizando] = useState<{ proveedorId: string | null } | null>(null);
   const [eligiendo, setEligiendo] = useState<Cotizacion | null>(null);
 
   return (
@@ -122,7 +147,7 @@ export function CotizacionesDeSolped({
           <Comparativo
             solped={solped}
             datos={estado.datos}
-            alAgregar={() => setCotizando(true)}
+            alAgregar={(proveedorId) => setCotizando({ proveedorId: proveedorId ?? null })}
             alElegir={setEligiendo}
             alCambiar={() => {
               recargar();
@@ -136,10 +161,13 @@ export function CotizacionesDeSolped({
         <FormularioCotizacion
           solped={solped}
           items={estado.datos.items}
+          pedidos={estado.datos.pedidos}
+          solicitados={estado.datos.solicitados}
           proveedores={estado.datos.proveedores}
           cuantas={estado.datos.cotizaciones.length}
           cotizaciones={estado.datos.cotizaciones}
-          alCerrar={() => setCotizando(false)}
+          proveedorInicial={cotizando.proveedorId}
+          alCerrar={() => setCotizando(null)}
           alGuardado={() => {
             recargar();
             alCambiar();
@@ -178,7 +206,8 @@ function Comparativo({
 }: {
   solped: Solped;
   datos: Datos;
-  alAgregar: () => void;
+  /** Cargar precios; con el proveedor, cuando se entra desde su solicitud. */
+  alAgregar: (proveedorId?: string) => void;
   alElegir: (c: Cotizacion) => void;
   alCambiar: () => void;
 }) {
@@ -223,7 +252,7 @@ function Comparativo({
           </button>
           <button
             type="button"
-            onClick={alAgregar}
+            onClick={() => alAgregar()}
             className="inline-flex items-center gap-1.5 rounded-full border border-mist-deep px-4 py-2 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
@@ -335,6 +364,17 @@ function Comparativo({
                           >
                             {c.enviadaEn ? "Reenviar" : "Enviar"}
                           </button>
+                          )}
+                          {/* Los precios de ESTE proveedor, ya con su solicitud: no hay
+                              que volver a buscarlo ni a marcar qué ítems se le pidieron. */}
+                          {puedeCotizar && (
+                            <button
+                              type="button"
+                              onClick={() => alAgregar(c.proveedorId)}
+                              className="rounded-full bg-cyan px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-cyan-deep"
+                            >
+                              Cargar precios
+                            </button>
                           )}
                         </div>
                       )}
@@ -456,7 +496,14 @@ function EstadoDelEnvio({ envio }: { envio: EnvioSolicitud | undefined }) {
 
 type Linea = {
   solpedItemId: string;
+  /** Como se pidió (el nombre técnico del catálogo si se conoce). */
   descripcion: string;
+  /** El nombre con que el proveedor lo cotizó: editable, y es el que irá a la orden de compra. */
+  nombre: string;
+  /** Del catálogo, si el ítem está enlazado: ahí se aprende el nombre. */
+  articuloId: string | null;
+  /** El artículo ya tiene nombre técnico en el catálogo. */
+  tieneNombreTecnico: boolean;
   unidad: string;
   cantidad: number;
   precio: number;
@@ -466,18 +513,25 @@ type Linea = {
 function FormularioCotizacion({
   solped,
   items,
+  pedidos,
+  solicitados,
   proveedores,
   cuantas,
   cotizaciones,
+  proveedorInicial,
   alCerrar,
   alGuardado,
 }: {
   solped: Solped;
   items: AvanceItem[];
+  pedidos: ItemSolped[];
+  solicitados: Datos["solicitados"];
   proveedores: Proveedor[];
   cuantas: number;
   /** Las que ya existen: de ahí sale si esto responde a una solicitud enviada. */
   cotizaciones: Cotizacion[];
+  /** El proveedor de la solicitud desde la que se abrió, si se abrió desde una. */
+  proveedorInicial: string | null;
   alCerrar: () => void;
   alGuardado: () => void;
 }) {
@@ -495,7 +549,21 @@ function FormularioCotizacion({
     (p) => !yaRespondieron.includes(p.id) && p.estado !== "inactivo",
   );
 
-  const [proveedorId, setProveedorId] = useState(disponibles[0]?.id ?? "");
+  /* Los proveedores a los que SE LES PIDIÓ van primero: los precios que se
+     cargan son, casi siempre, de ellos. Si hay uno solo, ya viene elegido. */
+  const aQuienSePidio = cotizaciones.filter((c) => c.recibidaEn === null).map((c) => c.proveedorId);
+  const ordenados = [
+    ...disponibles.filter((p) => aQuienSePidio.includes(p.id)),
+    ...disponibles.filter((p) => !aQuienSePidio.includes(p.id)),
+  ];
+
+  const [proveedorId, setProveedorId] = useState(
+    proveedorInicial && ordenados.some((p) => p.id === proveedorInicial)
+      ? proveedorInicial
+      : aQuienSePidio.length === 1
+        ? aQuienSePidio[0]
+        : "",
+  );
   const [solicitadaEn, setSolicitadaEn] = useState(hoy);
   const [recibidaEn, setRecibidaEn] = useState(hoy);
   const [plazo, setPlazo] = useState<number | "">("");
@@ -508,16 +576,13 @@ function FormularioCotizacion({
      cada vez que cambia el proveedor, que es de donde salen los formularios que
      muestran la condición de otro. */
   const [condicionEditada, setCondicionEditada] = useState<string | null>(null);
-  const [lineas, setLineas] = useState<Linea[]>(
-    items.map((i) => ({
-      solpedItemId: i.id,
-      descripcion: i.descripcion,
-      unidad: i.unidad,
-      cantidad: i.cantidadPedida,
-      precio: 0,
-      disponible: true,
-    })),
-  );
+  /* Lo que la persona escribió, por proveedor e ítem. Las líneas se DERIVAN de
+     lo que se le pidió a ese proveedor más estos cambios: así, al cambiar de
+     proveedor la plantilla cambia sola y no se pierde lo ya tecleado. */
+  const [cambios, setCambios] = useState<
+    Record<string, Partial<Pick<Linea, "precio" | "disponible" | "nombre">>>
+  >({});
+  const [guardarNombres, setGuardarNombres] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -528,14 +593,77 @@ function FormularioCotizacion({
   const condicion =
     condicionEditada ?? (proveedor ? condicionDeProveedor(proveedor) : "Contado");
 
+  /* La plantilla: si a este proveedor se le mandó una solicitud, SOLO sus
+     ítems y con las cantidades que se le pidieron; si no, toda la solicitud.
+     El nombre propuesto es, en orden, el que ya cotizó este proveedor antes, el
+     técnico del catálogo y el de faena. */
+  const solicitado = pendiente ? solicitados[proveedorId] : undefined;
+  const base: Linea[] = solicitado
+    ? solicitado.items.flatMap((ci) => {
+        const p = pedidos.find((x) => x.id === ci.solpedItemId);
+        if (!p) return [];
+        return [
+          {
+            solpedItemId: p.id,
+            descripcion: p.nombreParaPedir,
+            nombre:
+              ci.nombreCotizado ??
+              (p.articuloId ? solicitado.nombres.get(p.articuloId) : undefined) ??
+              p.nombreParaPedir,
+            articuloId: p.articuloId,
+            tieneNombreTecnico: p.nombreTecnico !== null,
+            unidad: p.unidad,
+            cantidad: ci.cantidad,
+            precio: 0,
+            disponible: true,
+          },
+        ];
+      })
+    : items.map((i) => {
+        const p = pedidos.find((x) => x.id === i.id);
+        return {
+          solpedItemId: i.id,
+          descripcion: p?.nombreParaPedir ?? i.descripcion,
+          nombre: p?.nombreParaPedir ?? i.descripcion,
+          articuloId: p?.articuloId ?? null,
+          tieneNombreTecnico: p?.nombreTecnico != null,
+          unidad: i.unidad,
+          cantidad: i.cantidadPedida,
+          precio: 0,
+          disponible: true,
+        };
+      });
+
+  const clave = (itemId: string) => `${proveedorId}:${itemId}`;
+  const lineas: Linea[] = base.map((l) => ({ ...l, ...cambios[clave(l.solpedItemId)] }));
+
   const itemsNeto = lineas
     .filter((l) => l.disponible)
     .reduce((t, l) => t + Math.round(l.cantidad * l.precio), 0);
   const puesto = itemsNeto - descuento + flete;
 
-  function cambiar(id: string, campo: keyof Linea, valor: unknown) {
-    setLineas((ls) => ls.map((l) => (l.solpedItemId === id ? { ...l, [campo]: valor } : l)));
+  function cambiar(id: string, campo: "precio" | "disponible" | "nombre", valor: unknown) {
+    setCambios((c) => ({ ...c, [clave(id)]: { ...c[clave(id)], [campo]: valor } }));
   }
+
+  /** Lo que lee el PDF: precios y, de paso, los nombres reales de los materiales. */
+  function aplicarLectura(precios: Map<string, number>, nombres: Map<string, string>) {
+    setCambios((c) => {
+      const siguiente = { ...c };
+      for (const [id, precio] of precios) {
+        siguiente[clave(id)] = {
+          ...siguiente[clave(id)],
+          precio,
+          disponible: true,
+          ...(nombres.get(id) ? { nombre: nombres.get(id) } : {}),
+        };
+      }
+      return siguiente;
+    });
+  }
+
+  /** Cuando el proveedor cotizó todo y no quedó nada fuera. */
+  const sinPrecio = lineas.filter((l) => l.disponible && l.precio <= 0).length;
 
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
@@ -563,6 +691,7 @@ function FormularioCotizacion({
             solpedItemId: l.solpedItemId,
             precioUnitario: l.precio,
             disponible: l.disponible,
+            nombre: l.nombre,
           })),
         });
       } else {
@@ -591,14 +720,38 @@ function FormularioCotizacion({
             cantidad: l.cantidad,
             precio_unitario: l.disponible ? l.precio : 0,
             disponible: l.disponible,
+            nombre_cotizado: l.nombre.trim() || null,
           });
+        }
+      }
+
+      /* Los nombres reales de los materiales se quedan en el catálogo: cómo le
+         llama ESTE proveedor a cada artículo (con su último precio) y, si el
+         artículo aún no tenía nombre técnico, ese pasa a ser con el que se pide
+         la próxima vez. Un fallo acá no debe deshacer una cotización ya guardada. */
+      if (guardarNombres) {
+        for (const l of lineas) {
+          const nombre = l.nombre.trim();
+          if (!l.articuloId || !l.disponible || l.precio <= 0 || !nombre) continue;
+          try {
+            await aprenderNombreDelProveedor({
+              articuloId: l.articuloId,
+              proveedorId,
+              nombreProveedor: nombre,
+              precio: l.precio,
+              fecha: recibidaEn || hoy,
+            });
+            if (!l.tieneNombreTecnico) await fijarNombreTecnico(l.articuloId, nombre);
+          } catch {
+            // El catálogo se puede completar después; la cotización ya quedó.
+          }
         }
       }
 
       alGuardado();
       alCerrar();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(mensajeDeNombreCotizado(e instanceof Error ? e.message : String(e)));
     } finally {
       setGuardando(false);
     }
@@ -618,17 +771,22 @@ function FormularioCotizacion({
             <Combo
               etiqueta="Proveedor"
               requerido
-              opciones={opcionesDe(disponibles)}
+              opciones={opcionesDe(
+                ordenados,
+                new Map(cotizaciones.filter((c) => c.recibidaEn === null).map((c) => [c.proveedorId, c.numero ?? c.id])),
+              )}
               valor={proveedorId}
               alCambiar={setProveedorId}
               marcador={
                 disponibles.length === 0
                   ? "No quedan proveedores por cotizar"
-                  : "Escribe para buscar entre los proveedores…"
+                  : aQuienSePidio.length > 0
+                    ? "Los que tienen solicitud enviada salen primero…"
+                    : "Escribe para buscar entre los proveedores…"
               }
               ayuda={
                 pendiente
-                  ? `Responde a la solicitud ${pendiente.numero ?? pendiente.id}: se cargan los precios sobre ella y no se crea otra.`
+                  ? `Responde a la solicitud ${pendiente.numero ?? pendiente.id}: aparecen solo los ${lineas.length} ítems que se le pidieron, y los precios se cargan sobre ella.`
                   : "Cada proveedor cotiza una vez por solicitud. Los que ya respondieron no aparecen."
               }
             />
@@ -765,14 +923,8 @@ function FormularioCotizacion({
           <div className="mt-4">
             <LectorDeCotizacion
               lineas={lineas}
-              alAplicar={({ precios, condicion, flete: fleteLeido, descuento: dctoLeido }) => {
-                setLineas((ls) =>
-                  ls.map((l) =>
-                    precios.has(l.solpedItemId)
-                      ? { ...l, precio: precios.get(l.solpedItemId)!, disponible: true }
-                      : l,
-                  ),
-                );
+              alAplicar={({ precios, nombres, condicion, flete: fleteLeido, descuento: dctoLeido }) => {
+                aplicarLectura(precios, nombres);
                 if (condicion) setCondicionEditada(condicion);
                 if (fleteLeido !== null && fleteLeido > 0) {
                   setConFlete(true);
@@ -790,7 +942,7 @@ function FormularioCotizacion({
             <table className="w-full min-w-[38rem] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-mist text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
-                  <th className="py-2 pr-3">Ítem</th>
+                  <th className="py-2 pr-3">Ítem · nombre como lo cotizó el proveedor</th>
                   <th className="w-24 py-2 pr-3 text-right">Cantidad</th>
                   <th className="w-32 py-2 pr-3 text-right">P. unitario</th>
                   <th className="w-28 py-2 pr-3 text-right">Neto</th>
@@ -798,9 +950,28 @@ function FormularioCotizacion({
                 </tr>
               </thead>
               <tbody>
+                {lineas.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-sm text-ink-soft">
+                      Elige el proveedor para ver los ítems que se le pidieron.
+                    </td>
+                  </tr>
+                )}
                 {lineas.map((l) => (
                   <tr key={l.solpedItemId} className="border-b border-mist last:border-0">
-                    <td className="py-2 pr-3 text-ink">{l.descripcion}</td>
+                    <td className="py-2 pr-3 align-top">
+                      {/* El nombre que escribe el proveedor es el técnico: es el que
+                          va a la orden de compra y al catálogo. Se corrige acá. */}
+                      <input
+                        value={l.nombre}
+                        onChange={(e) => cambiar(l.solpedItemId, "nombre", e.target.value)}
+                        aria-label={`Nombre cotizado de ${l.descripcion}`}
+                        className={claseCelda}
+                      />
+                      {l.nombre.trim() !== l.descripcion.trim() && (
+                        <span className="mt-1 block text-[11px] text-ink-soft">Se pidió: {l.descripcion}</span>
+                      )}
+                    </td>
                     <td className="py-2 pr-3 text-right tabular-nums text-ink-soft">
                       {formatearNumero(l.cantidad)} {l.unidad}
                     </td>
@@ -841,6 +1012,28 @@ function FormularioCotizacion({
               </tbody>
             </table>
           </div>
+
+          <label className="mt-4 flex cursor-pointer items-start gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
+              checked={guardarNombres}
+              onChange={(e) => setGuardarNombres(e.target.checked)}
+              className="mt-0.5 size-4 rounded border-mist-deep accent-cyan"
+            />
+            <span>
+              Guardar estos nombres en el catálogo
+              <span className="block text-xs text-ink-soft">
+                Queda cómo le llama este proveedor a cada artículo y, si el artículo aún no tenía nombre técnico,
+                con ese se pedirá la próxima vez. La orden de compra sale con estos nombres igual.
+              </span>
+            </span>
+          </label>
+          {sinPrecio > 0 && lineas.length > 0 && (
+            <p className="mt-3 text-xs text-[#8a5a09]">
+              {sinPrecio} {sinPrecio === 1 ? "ítem sigue" : "ítems siguen"} sin precio. Si el proveedor no lo tiene,
+              desmarca «¿Tiene?».
+            </p>
+          )}
 
           <dl className="mt-5 ml-auto flex w-full max-w-xs flex-col gap-1 text-sm">
             <Linea etiqueta="Ítems" valor={formatearPesos(itemsNeto)} />
@@ -986,12 +1179,22 @@ function DialogoSeleccion({
   );
 }
 
-/** Un proveedor como opción del buscador: nombre arriba, RUT y rubro abajo. */
-function opcionesDe(proveedores: Proveedor[]) {
+/**
+ * Un proveedor como opción del buscador: nombre arriba, RUT y rubro abajo. A los
+ * que ya se les pidió cotización (`esperando`: proveedor → N° de solicitud) se
+ * les avisa, porque son los que casi siempre se buscan.
+ */
+function opcionesDe(proveedores: Proveedor[], esperando: Map<string, string> = new Map()) {
   return proveedores.map((p) => ({
     id: p.id,
     titulo: p.razonSocial,
-    nota: [formatearRut(p.rut), ...p.rubros.slice(0, 2)].filter(Boolean).join(" · "),
+    nota: [
+      esperando.has(p.id) ? `Esperando respuesta · ${esperando.get(p.id)}` : null,
+      formatearRut(p.rut),
+      ...p.rubros.slice(0, 2),
+    ]
+      .filter(Boolean)
+      .join(" · "),
   }));
 }
 
@@ -1236,7 +1439,11 @@ function DialogoGenerarOrden({
                       />
                     </td>
                     <td className="py-2 pr-3">
-                      <span className="block text-ink">{pedido?.descripcion ?? "Ítem"}</span>
+                      {/* Con este nombre —el técnico que cotizó el proveedor— nace la línea de la orden. */}
+                      <span className="block text-ink">{i.nombreCotizado ?? pedido?.descripcion ?? "Ítem"}</span>
+                      {i.nombreCotizado && pedido && i.nombreCotizado !== pedido.descripcion && (
+                        <span className="mt-0.5 block text-xs text-ink-soft">Se pidió: {pedido.descripcion}</span>
+                      )}
                       {yaComprado && (
                         <span className="mt-0.5 block text-xs text-[#8a5a09]">
                           Ya se compraron {formatearNumero(pedido?.cantidadComprada ?? 0)}{" "}
@@ -1351,6 +1558,8 @@ function LectorDeCotizacion({
   lineas: Linea[];
   alAplicar: (r: {
     precios: Map<string, number>;
+    /** Cómo escribió el proveedor cada ítem: son los nombres reales de los materiales. */
+    nombres: Map<string, string>;
     condicion: string | null;
     flete: number | null;
     descuento: number | null;
@@ -1362,15 +1571,50 @@ function LectorDeCotizacion({
   const [error, setError] = useState<string | null>(null);
   const [lectura, setLectura] = useState<LecturaCotizacion | null>(null);
 
-  const items = lineas.map((l) => ({ id: l.solpedItemId, descripcion: l.descripcion }));
+  /* Lo que la persona corrigió a mano: ítem → índice de la línea leída, o -1 si
+     ese ítem no lleva ninguna. Manda sobre lo que adivinó el lector. */
+  const [manual, setManual] = useState<Record<string, number>>({});
+
+  /* Se compara contra el nombre con que se pidió y también contra el que este
+     proveedor ya usó antes: la segunda vez lo reconoce exacto. */
+  const items = lineas.flatMap((l) => [
+    { id: l.solpedItemId, descripcion: l.descripcion },
+    ...(l.nombre.trim() && l.nombre !== l.descripcion ? [{ id: l.solpedItemId, descripcion: l.nombre }] : []),
+  ]);
   const resultado = lectura ? emparejar(lectura.filas, items) : null;
+
+  const automatica = new Map<string, number>();
+  if (lectura && resultado) {
+    for (const [itemId, { fila }] of resultado.asignadas) automatica.set(itemId, lectura.filas.indexOf(fila));
+  }
+  /** La línea leída que le toca a un ítem: la que eligió la persona o la que calzó sola. */
+  const lineaDe = (itemId: string) => manual[itemId] ?? automatica.get(itemId) ?? -1;
+  const aplicables = lineas.filter((l) => {
+    const i = lineaDe(l.solpedItemId);
+    return i >= 0 && lectura?.filas[i]?.precioUnitario != null;
+  });
+
+  function nuevaLectura(l: LecturaCotizacion) {
+    setManual({});
+    setLectura(l);
+  }
+
+  /** Cuando el proveedor cotizó en el mismo orden en que se pidió, esto es lo más rápido. */
+  function asignarEnOrden() {
+    if (!lectura) return;
+    const siguiente: Record<string, number> = {};
+    lineas.forEach((l, n) => {
+      siguiente[l.solpedItemId] = n < lectura.filas.length ? n : -1;
+    });
+    setManual(siguiente);
+  }
 
   async function leerArchivo(archivo: File | undefined) {
     if (!archivo) return;
     setError(null);
     setLeyendo(true);
     try {
-      setLectura(await leerCotizacionPdf(archivo));
+      nuevaLectura(await leerCotizacionPdf(archivo));
     } catch (e) {
       setError(
         e instanceof Error
@@ -1383,13 +1627,17 @@ function LectorDeCotizacion({
   }
 
   function aplicar() {
-    if (!resultado) return;
+    if (!lectura) return;
     const precios = new Map<string, number>();
-    for (const [itemId, { fila }] of resultado.asignadas) {
-      if (fila.precioUnitario !== null) precios.set(itemId, fila.precioUnitario);
+    const nombres = new Map<string, string>();
+    for (const l of aplicables) {
+      const fila = lectura.filas[lineaDe(l.solpedItemId)];
+      precios.set(l.solpedItemId, fila.precioUnitario as number);
+      if (fila.descripcion.trim()) nombres.set(l.solpedItemId, fila.descripcion.trim());
     }
     alAplicar({
       precios,
+      nombres,
       condicion: lectura?.condicion ?? null,
       flete: lectura?.flete ?? null,
       descuento: lectura?.descuento ?? null,
@@ -1454,9 +1702,11 @@ function LectorDeCotizacion({
 
       <textarea
         value={pegado}
-        onChange={(e) => setPegado(e.target.value)}
-        onBlur={() => {
-          if (pegado.trim()) setLectura(leerCotizacionPegada(pegado));
+        onChange={(e) => {
+          setPegado(e.target.value);
+          // Se lee al pegar, sin tener que salir del cuadro: ver qué entendió es inmediato.
+          if (e.target.value.trim()) nuevaLectura(leerCotizacionPegada(e.target.value));
+          else setLectura(null);
         }}
         rows={3}
         placeholder={"Descripción\tCantidad\tPrecio\tTotal\nDisco de corte 4½″\t10\t2.400\t24.000"}
@@ -1480,54 +1730,65 @@ function LectorDeCotizacion({
               <p className="text-sm text-ink">
                 Leí <strong>{lectura.filas.length}</strong>{" "}
                 {lectura.filas.length === 1 ? "línea" : "líneas"} y{" "}
-                <strong>{resultado?.asignadas.size ?? 0}</strong> calzan con lo que se
-                pidió.
+                <strong>{aplicables.length}</strong> de {lineas.length} ítems quedan con precio.
                 {lectura.condicion && ` Condición: ${lectura.condicion}.`}
                 {lectura.flete !== null && ` Flete: ${formatearPesos(lectura.flete)}.`}
               </p>
+              <p className="mt-1 text-xs text-ink-soft">
+                Cada ítem trae elegida la línea que más se le parece. Si alguna está mal, cámbiala en su lista.
+              </p>
 
-              <ul className="mt-3 flex max-h-52 flex-col gap-1 overflow-y-auto text-xs">
+              <ul className="mt-3 flex max-h-72 flex-col gap-1.5 overflow-y-auto text-xs">
                 {lineas.map((l) => {
-                  const calce = resultado?.asignadas.get(l.solpedItemId);
+                  const i = lineaDe(l.solpedItemId);
+                  const fila = i >= 0 ? lectura.filas[i] : undefined;
                   return (
                     <li
                       key={l.solpedItemId}
-                      className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2"
+                      className="grid items-center gap-2 rounded-lg bg-white px-3 py-2 sm:grid-cols-[1fr_1.4fr_auto]"
                     >
-                      <span className="min-w-0 flex-1 truncate text-ink">{l.descripcion}</span>
-                      {calce ? (
-                        <>
-                          <span className="truncate text-ink-soft" title={calce.fila.descripcion}>
-                            ← {calce.fila.descripcion.slice(0, 32)}
-                          </span>
-                          <span className="shrink-0 font-semibold tabular-nums text-ink">
-                            {formatearPesos(calce.fila.precioUnitario ?? 0)}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="shrink-0 text-[#8a5a09]">sin calce · queda a mano</span>
-                      )}
+                      <span className="min-w-0 truncate text-ink" title={l.descripcion}>
+                        {l.descripcion}
+                      </span>
+                      <select
+                        value={i}
+                        onChange={(e) => setManual((m) => ({ ...m, [l.solpedItemId]: Number(e.target.value) }))}
+                        aria-label={`Línea de la cotización para ${l.descripcion}`}
+                        className="min-w-0 rounded-md border border-mist-deep bg-white px-2 py-1.5 text-xs text-ink outline-none focus:border-cyan"
+                      >
+                        <option value={-1}>— sin precio · lo escribo yo —</option>
+                        {lectura.filas.map((f, n) => (
+                          <option key={n} value={n}>
+                            {f.descripcion.slice(0, 60)} · {f.precioUnitario === null ? "sin precio" : formatearPesos(f.precioUnitario)}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="shrink-0 text-right font-semibold tabular-nums text-ink">
+                        {fila?.precioUnitario != null ? formatearPesos(fila.precioUnitario) : "—"}
+                      </span>
                     </li>
                   );
                 })}
               </ul>
 
-              {resultado && resultado.sobrantes.length > 0 && (
-                <p className="mt-2 text-xs text-ink-soft">
-                  {resultado.sobrantes.length}{" "}
-                  {resultado.sobrantes.length === 1 ? "línea del PDF no corresponde" : "líneas del PDF no corresponden"}{" "}
-                  a nada de esta solicitud y se ignoran.
-                </p>
-              )}
-
-              <button
-                type="button"
-                onClick={aplicar}
-                disabled={(resultado?.asignadas.size ?? 0) === 0}
-                className="mt-4 rounded-full bg-cyan px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:opacity-50"
-              >
-                Usar estos precios
-              </button>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={aplicar}
+                  disabled={aplicables.length === 0}
+                  className="rounded-full bg-cyan px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:opacity-50"
+                >
+                  Usar estos precios
+                </button>
+                <button
+                  type="button"
+                  onClick={asignarEnOrden}
+                  className="rounded-full border border-mist-deep px-4 py-2 text-xs font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink"
+                  title="La primera línea leída para el primer ítem, la segunda para el segundo…"
+                >
+                  Asignar en el mismo orden
+                </button>
+              </div>
             </>
           )}
         </div>
@@ -1830,10 +2091,11 @@ function DialogoEnviar({
   const numero = cotizacion.numero ?? cotizacion.id;
 
   const [para, setPara] = useState(cotizacion.correoProveedor ?? proveedor?.correo ?? "");
-  const [asunto, setAsunto] = useState(`Solicitud de cotización ${numero} · ${emisorOC.razonSocial}`);
+  const [asunto, setAsunto] = useState(
+    `Solicitud de cotización ${numero} · ${solped.numero} · ${emisorOC.razonSocial}`,
+  );
   const [mensaje, setMensaje] = useState(() =>
     mensajeInicialSolicitud({
-      numero,
       contacto: cotizacion.contactoProveedor,
       fechaRequerida: solped.fechaRequerida,
       nombre: usuario.nombre,
@@ -2178,7 +2440,6 @@ function DialogoEnviar({
 
 /** El mensaje con que arranca el correo: lo que sigue —ítems y botón— lo pone el servidor. */
 function mensajeInicialSolicitud(d: {
-  numero: string;
   contacto: string | null;
   fechaRequerida: string | null;
   nombre: string;
@@ -2188,12 +2449,6 @@ function mensajeInicialSolicitud(d: {
     "",
     "Agradeceremos cotizar los ítems que se detallan más abajo.",
     d.fechaRequerida ? `Se necesitan en faena el ${formatearFecha(d.fechaRequerida)}.` : null,
-    "",
-    `Al responder, por favor mencione el número ${d.numero}.`,
-    "",
-    "La cotización no constituye orden de compra: la compra se formaliza únicamente con una orden emitida por " +
-      emisorOC.razonSocial +
-      ".",
     "",
     "Saludos,",
     d.nombre,

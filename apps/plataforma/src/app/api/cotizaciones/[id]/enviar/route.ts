@@ -62,7 +62,7 @@ export async function POST(pedido: Request, { params }: Contexto) {
   // El contrato sale de la base, no del pedido: de ahí depende quién ve el envío.
   const { data: solped } = await remitente.sb
     .from("solped")
-    .select("contrato_id")
+    .select("contrato_id, numero")
     .eq("empresa_id", cotizacion.empresa_id)
     .eq("id", cotizacion.solped_id)
     .maybeSingle();
@@ -98,6 +98,7 @@ export async function POST(pedido: Request, { params }: Contexto) {
 
   const resumen: ResumenSolicitud = {
     numero: String(cuerpo.numero ?? id).slice(0, 40),
+    solped: solped.numero ? String(solped.numero).slice(0, 40) : null,
     fecha: String(cotizacion.solicitada_en ?? "").slice(0, 10) || new Date().toISOString().slice(0, 10),
     proveedor: String(cuerpo.proveedor ?? "").slice(0, 200),
     contrato: String(cuerpo.contrato ?? "").slice(0, 200),

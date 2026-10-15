@@ -28,6 +28,8 @@
  * con cantidad y precio: ese cierra el ítem.
  */
 
+import { leerLineaQueCuadra, leerNumero } from "./pegado";
+
 export type FilaLeida = {
   descripcion: string;
   cantidad: number | null;
@@ -55,16 +57,11 @@ export type LecturaCotizacion = {
  * precio de cero.
  */
 export function aNumero(texto: string): number | null {
-  const limpio = texto.replace(/[^\d.,-]/g, "").trim();
-  if (!limpio || !/\d/.test(limpio)) return null;
-
-  const conComa = limpio.includes(",");
-  const normalizado = conComa
-    ? limpio.replace(/\./g, "").replace(",", ".")
-    : limpio.replace(/\.(?=\d{3}\b)/g, "");
-
-  const n = Number(normalizado);
-  return Number.isFinite(n) ? n : null;
+  /* Misma regla que el pegado de la OC (`leerNumero`): un separador seguido de
+     grupos de EXACTAMENTE tres cifras es de miles, venga con punto ("26.923",
+     Chile) o con coma ("26,923", como lo imprimen muchos sistemas de facturación).
+     Antes la coma siempre era decimal y «$ 26,923» se leía como $26,92. */
+  return leerNumero(texto.replace(/[^\d.,\-$\s]/g, ""));
 }
 
 /* ── Encabezados que sabemos reconocer ────────────────────────────────────── */
@@ -79,12 +76,14 @@ type Columna =
   | "otra";
 
 const TITULOS: { columna: Columna; patron: RegExp }[] = [
-  { columna: "numero", patron: /^#$|^n\s*°?$|^item$|^nro\.?$|^n[ºo]\.?$/i },
-  { columna: "descripcion", patron: /descrip|detalle|art[íi]culo|producto|glosa/i },
+  { columna: "numero", patron: /^#$|^n\s*°?$|^[ií]tem$|^nro\.?$|^n[ºo]\.?$|^l[ií]nea$/i },
+  { columna: "descripcion", patron: /descrip|detalle|art[íi]culo|producto|glosa|concepto|servicio|ensayo|material/i },
   { columna: "cantidad", patron: /^cant|cantidad|^qty|^cant\.?$/i },
   { columna: "precio", patron: /p\.?\s*unit|precio\s*unit|valor\s*unit|^precio$|^valor$|unitario/i },
   { columna: "total", patron: /^total|^subtotal|^importe|^monto/i },
   { columna: "unidad", patron: /^u\.?m\.?$|unidad|^um$|medida/i },
+  // «Item Código», «Ítem Descripción»…: un título que ARRANCA con «ítem» y no dijo otra cosa.
+  { columna: "numero", patron: /^[ií]tem\b/i },
 ];
 
 function columnaDe(texto: string): Columna {
@@ -129,7 +128,10 @@ export async function leerCotizacionPdf(archivo: File): Promise<LecturaCotizacio
       if (!("str" in it) || !it.str.trim()) continue;
       const y = Math.round(it.transform[5]);
       const clave = [...porY.keys()].find((k) => Math.abs(k - y) <= 3) ?? y;
-      porY.set(clave, [...(porY.get(clave) ?? []), { x: it.transform[4], texto: it.str }]);
+      porY.set(clave, [
+        ...(porY.get(clave) ?? []),
+        { x: it.transform[4], texto: it.str, w: it.width },
+      ]);
       textoCompleto += ` ${it.str}`;
     }
 
@@ -184,7 +186,8 @@ function celdasDe(linea: string): Trozo[] {
 
 /* ── De renglones a ítems ─────────────────────────────────────────────────── */
 
-export type Trozo = { x: number; texto: string };
+/** `w` es el ancho del texto en el PDF; la tabla pegada no lo tiene. */
+export type Trozo = { x: number; texto: string; w?: number };
 export type Renglon = { y: number; trozos: Trozo[] };
 
 /**
@@ -194,6 +197,30 @@ export type Renglon = { y: number; trozos: Trozo[] };
  * corre en la app y no una copia parecida.
  */
 export function interpretar(renglones: Renglon[], textoCompleto: string): LecturaCotizacion {
+  const porTabla = interpretarConTabla(renglones, textoCompleto);
+  if (porTabla.filas.length > 0) return porTabla;
+
+  /* Plan B, el mismo criterio con que se pega el detalle de una OC: sin mirar
+     títulos, una línea es un ítem si trae una descripción y tres números que
+     cuadran (cantidad × precio = total). Rescata las cotizaciones cuyas columnas
+     no se llaman como esperamos («Servicio o producto», «CLP $»…). */
+  const filas: FilaLeida[] = [];
+  for (const renglon of renglones) {
+    const fila = leerLineaQueCuadra(renglon.trozos.map((t) => t.texto).join("\t"));
+    if (fila) {
+      filas.push({
+        descripcion: fila.descripcion,
+        cantidad: fila.cantidad,
+        precioUnitario: fila.precioUnitario,
+        total: Math.round(fila.cantidad * fila.precioUnitario),
+      });
+    }
+  }
+
+  return filas.length > 0 ? { ...porTabla, filas, aviso: null } : porTabla;
+}
+
+function interpretarConTabla(renglones: Renglon[], textoCompleto: string): LecturaCotizacion {
   const cabecera = buscarCabecera(renglones);
 
   if (!cabecera) {
@@ -232,7 +259,7 @@ export function interpretar(renglones: Renglon[], textoCompleto: string): Lectur
     if (actual && actual.descripcion.trim() && actual.precioUnitario !== null) {
       filas.push({
         ...actual,
-        descripcion: actual.descripcion.replace(/\s+/g, " ").trim(),
+        descripcion: limpiarDescripcion(actual.descripcion),
       });
     }
     actual = null;
@@ -328,6 +355,27 @@ export function interpretar(renglones: Renglon[], textoCompleto: string): Lectur
   };
 }
 
+/**
+ * El nombre del ítem tal como lo escribió el proveedor, sin el relleno de su
+ * sistema. Algunos facturadores imprimen «INSUMO GENERICO · Desc. Detallada:
+ * INSUMO GENERICO · Comentario: COMPRESOR DE AIRE DIGITAL…»: el nombre real
+ * está en el comentario. Este nombre es el que termina en la orden de compra.
+ */
+export function limpiarDescripcion(texto: string) {
+  const compacto = texto.replace(/\s+/g, " ").trim();
+  const comentario = /comentario:\s*(.{4,})$/i.exec(compacto)?.[1]?.trim();
+  if (comentario) return comentario.replace(/[.\s]+$/, "");
+  return compacto.replace(/^(?:.*?)desc\.?\s*detallada:\s*/i, "").trim() || compacto;
+}
+
+/** El número del último pedazo que traiga alguno. */
+function ultimoNumero(pedazos: string[]): number | null {
+  for (let i = pedazos.length - 1; i >= 0; i--) {
+    if (/\d/.test(pedazos[i])) return aNumero(pedazos[i]);
+  }
+  return null;
+}
+
 /** De qué página viene un renglón, según cómo los numera `leerCotizacionPdf`. */
 const paginaDe = (y: number) => Math.max(0, Math.floor(-y / 100000));
 
@@ -358,7 +406,7 @@ function completar(f: FilaLeida) {
  */
 function buscarCabecera(renglones: Renglon[]) {
   for (const renglon of renglones) {
-    const columnas = renglon.trozos.map((t) => ({ x: t.x, columna: columnaDe(t.texto) }));
+    const columnas = renglon.trozos.map((t) => ({ x: t.x, w: t.w, columna: columnaDe(t.texto) }));
     const clases = new Set(columnas.map((c) => c.columna));
 
     // Con descripción y un número basta: hay proveedores que no ponen cantidad.
@@ -384,7 +432,7 @@ function buscarCabecera(renglones: Renglon[]) {
  * descripción aunque su título no lo entendamos: ahí viven la talla, la marca y
  * la unidad, y "Buzo Tyvek" sin la talla no distingue el L del XL.
  */
-function repartir(renglon: Renglon, columnas: { x: number; columna: Columna }[]) {
+function repartir(renglon: Renglon, columnas: { x: number; w?: number; columna: Columna }[]) {
   const juntado: Record<Columna, string[]> = {
     numero: [],
     descripcion: [],
@@ -403,22 +451,61 @@ function repartir(renglon: Renglon, columnas: { x: number; columna: Columna }[])
 
   for (const trozo of renglon.trozos) {
     const candidatas = columnas.filter((c) => trozo.x >= c.x - 6);
-    const columna =
+    let columna: Columna =
       candidatas.length > 0 ? candidatas[candidatas.length - 1].columna : "otra";
+
+    /* Los montos van alineados a la DERECHA y el título suele estar centrado:
+       un «$ 2.941.176» empieza bastante antes que «Precio unit.» y, medido por
+       el borde izquierdo, cae en la columna de al lado. Para un número se mira
+       el CENTRO del texto contra el centro de cada título: así cae en la
+       columna que realmente ocupa. */
+    const soloNumero = /^[\d.,$%\s-]+$/.test(trozo.texto) && /\d/.test(trozo.texto);
+    if (soloNumero && trozo.w !== undefined) {
+      const centro = trozo.x + trozo.w / 2;
+      const mejor = columnas
+        // También las columnas que no entendemos (Rec/Desc, Iva…): un monto que
+        // les pertenece no debe caer en la del precio por quedar cerca.
+        .filter((c) => c.w !== undefined && c.columna !== "descripcion")
+        .map((c) => ({ c, d: Math.abs(c.x + (c.w ?? 0) / 2 - centro) }))
+        .sort((a, b) => a.d - b.d)[0];
+      if (mejor && mejor.d <= 45) columna = mejor.c.columna;
+    }
+
+    /* Las descripciones van alineadas a la izquierda y el título «Descripción»
+       suele estar centrado: el texto arranca ANTES que su título y cae en la
+       columna de la izquierda (UM, Cant…). Un texto con palabras no es una
+       cantidad ni un precio ni un total, y una unidad es una sola palabra corta
+       («UN», «PR», «M3», «Und»): lo demás es la descripción. */
+    const tienePalabras = /[A-Za-zÁÉÍÓÚÑáéíóúñ]{4,}/.test(trozo.texto);
+    if (
+      (tienePalabras && (columna === "numero" || columna === "cantidad" || columna === "precio" || columna === "total")) ||
+      (columna === "unidad" && (trozo.texto.length > 8 || /\s/.test(trozo.texto.trim())))
+    ) {
+      columna = "descripcion";
+    }
 
     const entreDescripcionYNumeros =
       trozo.x >= xDescripcion - 6 && trozo.x < xPrimerNumero - 6;
 
-    if (columna === "otra" && entreDescripcionYNumeros) juntado.descripcion.push(trozo.texto);
-    else juntado[columna].push(trozo.texto);
+    /* Un texto con palabras, a la izquierda de las columnas de números y bajo un
+       título que no entendemos, es la descripción: pasa cuando el proveedor
+       pone el nombre ANTES de donde está el título «Detalle». */
+    const aLaIzquierdaDeLosNumeros = trozo.x < xPrimerNumero - 6;
+    if (columna === "otra" && (entreDescripcionYNumeros || (tienePalabras && aLaIzquierdaDeLosNumeros))) {
+      juntado.descripcion.push(trozo.texto);
+    } else {
+      juntado[columna].push(trozo.texto);
+    }
   }
 
   return {
     numero: aNumero(juntado.numero.join(" ")),
     descripcion: juntado.descripcion.join(" ").trim(),
-    cantidad: aNumero(juntado.cantidad.join(" ")),
-    precio: aNumero(juntado.precio.join(" ")),
-    total: aNumero(juntado.total.join(" ")),
+    /* Si dos pedazos caen en la misma columna («1» de la unidad y «1» de la
+       cantidad), vale el último: juntarlos daba «11». */
+    cantidad: ultimoNumero(juntado.cantidad),
+    precio: ultimoNumero(juntado.precio),
+    total: ultimoNumero(juntado.total),
   };
 }
 
