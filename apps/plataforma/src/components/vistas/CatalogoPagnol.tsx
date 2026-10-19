@@ -276,6 +276,14 @@ const nombreEstado: Record<ActivoPagnol["estado"], string> = {
 };
 const tonoEstado = { operativo: "bueno", en_mantencion: "aviso", de_baja: "neutro", extraviado: "critico" } as const;
 
+/**
+ * En Pagnol un activo llega a un contrato solo por una solicitud de material, y
+ * mientras está entregado. Al devolverse vuelve a su pañol (o a la Oficina
+ * Central) y el contrato queda en null: «sin contrato» no es un faltante, es
+ * un activo disponible. Entregado: panol null y responsable con quien lo tiene.
+ */
+const entregado = (a: ActivoPagnol) => !!a.contrato || (!a.panol && !!a.responsable);
+
 const SIN_CONTRATO = "__sin_contrato";
 const SIN_PANOL = "__sin_panol";
 
@@ -292,7 +300,8 @@ function TablaActivos({ filas }: { filas: ActivoPagnol[] }) {
 
   const contratos = useMemo(() => [...new Set(filas.map((a) => a.contrato?.nombre).filter((c): c is string => !!c))].sort(), [filas]);
   const panoles = useMemo(() => [...new Set(filas.map((a) => a.panol?.nombre).filter((c): c is string => !!c))].sort(), [filas]);
-  const sinContrato = filas.filter((a) => !a.contrato).length;
+  const enContratos = filas.filter((a) => !!a.contrato).length;
+  const disponibles = filas.filter((a) => !entregado(a)).length;
 
   const visibles = useMemo(() => {
     const q = norm(busqueda.trim());
@@ -322,10 +331,26 @@ function TablaActivos({ filas }: { filas: ActivoPagnol[] }) {
     {
       clave: "contrato",
       titulo: "Contrato",
-      celda: (a) => (a.contrato ? <span className="text-ink">{a.contrato.nombre}</span> : <span className="text-[#8a5a09]">Sin contrato asignado</span>),
+      celda: (a) =>
+        a.contrato ? (
+          <>
+            <span className="text-ink">{a.contrato.nombre}</span>
+            <span className="mt-0.5 block text-xs text-ink-soft">Entregado por solicitud</span>
+          </>
+        ) : (
+          <span className="text-ink-soft">Sin contrato</span>
+        ),
     },
-    { clave: "panol", titulo: "Pañol / ubicación", celda: (a) => <span className="text-ink-soft">{a.panol?.nombre ?? a.ubicacion ?? "—"}</span> },
-    { clave: "responsable", titulo: "Responsable", celda: (a) => <span className="text-ink-soft">{a.responsable ?? "—"}</span> },
+    {
+      clave: "panol",
+      titulo: "Dónde está",
+      celda: (a) => <span className="text-ink-soft">{a.panol?.nombre ?? (entregado(a) ? "Entregado" : (a.ubicacion ?? "—"))}</span>,
+    },
+    {
+      clave: "responsable",
+      titulo: "Lo tiene",
+      celda: (a) => <span className="text-ink-soft">{a.responsable ?? "—"}</span>,
+    },
     {
       clave: "valor",
       titulo: "Compra",
@@ -348,12 +373,8 @@ function TablaActivos({ filas }: { filas: ActivoPagnol[] }) {
         datos={[
           { etiqueta: "Activos", valor: String(filas.length), nota: "Registrados en Pagnol" },
           { etiqueta: "Operativos", valor: String(filas.filter((a) => a.estado === "operativo").length), nota: `${filas.filter((a) => a.estado === "en_mantencion").length} en mantención`, acento: "bueno" },
-          {
-            etiqueta: "Sin contrato",
-            valor: String(sinContrato),
-            nota: sinContrato === 0 ? "Todos asignados" : "Se asigna el contrato en Pagnol",
-            acento: sinContrato > 0 ? "aviso" : "bueno",
-          },
+          { etiqueta: "En un contrato", valor: String(enContratos), nota: "Entregados por solicitud de material" },
+          { etiqueta: "En pañol u oficina", valor: String(disponibles), nota: "Disponibles, sin contrato" },
           { etiqueta: "Valor de compra", valor: formatearPesos(valorTotal), nota: `${visibles.length} activos en el filtro` },
         ]}
       />
@@ -369,7 +390,7 @@ function TablaActivos({ filas }: { filas: ActivoPagnol[] }) {
             <CampoFiltro etiqueta="Contrato">
               <Desplegable
                 etiqueta="Contrato"
-                grupos={[{ opciones: [{ id: "todos", titulo: "Todos los contratos" }, { id: SIN_CONTRATO, titulo: "Sin contrato asignado" }, ...contratos.map((c) => ({ id: c, titulo: c }))] }]}
+                grupos={[{ opciones: [{ id: "todos", titulo: "Todos los contratos" }, { id: SIN_CONTRATO, titulo: "Sin contrato (disponibles)" }, ...contratos.map((c) => ({ id: c, titulo: c }))] }]}
                 valor={contrato}
                 alCambiar={setContrato}
               />

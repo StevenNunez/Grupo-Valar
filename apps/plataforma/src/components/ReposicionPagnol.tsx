@@ -123,8 +123,10 @@ export function ReposicionPagnol() {
       </div>
 
       <div className="grid gap-6 px-6 py-5 lg:grid-cols-2 lg:px-8">
-        <div>
-          <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-soft">Cada pañol, a su contrato</h3>
+        <div className="min-w-0">
+          <div className="flex min-h-9 items-center">
+            <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-soft">Cada pañol, a su contrato</h3>
+          </div>
           {datos.errorPanoles ? (
             <p className="mt-2 text-sm text-[#8a5a09]">{datos.errorPanoles}</p>
           ) : (datos.panoles ?? []).length === 0 ? (
@@ -132,12 +134,12 @@ export function ReposicionPagnol() {
           ) : (
             <ul className="mt-2 flex flex-col gap-2">
               {(datos.panoles ?? []).map((p) => (
-                <li key={p.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-mist-deep px-3 py-2 text-sm">
-                  <span className="text-ink">{p.nombre}</span>
+                <li key={p.id} className="flex min-w-0 flex-col gap-2 rounded-xl border border-mist-deep px-3 py-2.5 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                  <span className="min-w-0 break-words text-ink">{p.nombre}</span>
                   {editaPanoles ? (
                     <select aria-label={`Contrato de ${p.nombre}`} value={datos.asociaciones.get(p.id) ?? ""}
                       onChange={(e) => asignar(p, e.target.value)}
-                      className="rounded-lg border border-mist-deep bg-white px-2.5 py-1.5 text-sm text-ink">
+                      className="w-full min-w-0 truncate rounded-lg border border-mist-deep bg-white px-2.5 py-1.5 text-sm text-ink sm:w-64 sm:shrink-0">
                       <option value="">— Sin contrato —</option>
                       {datos.contratos.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                     </select>
@@ -168,8 +170,8 @@ export function ReposicionPagnol() {
           )}
         </div>
 
-        <div>
-          <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex min-h-9 items-center justify-between gap-3">
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-soft">Avisos sin solicitud</h3>
             {procesa && datos.pendientes.length > 0 && (
               <button type="button" onClick={procesar} disabled={trabajando}
