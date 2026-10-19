@@ -23,7 +23,7 @@ type Aviso = {
   webhook_id: string;
   recibido_en: string;
   error: string | null;
-  payload: { data?: { nombre?: string; material_id?: string; stock_actual?: number; stock_minimo?: number; panol?: { nombre: string } | null } };
+  payload: { data?: { nombre?: string; id?: string; stock_actual?: number; stock_minimo?: number; existencias?: { panol?: { nombre: string } | null; cantidad?: number }[] } };
 };
 
 type Datos = {
@@ -170,12 +170,12 @@ export function ReposicionPagnol() {
                 return (
                   <li key={a.webhook_id} className="rounded-xl border border-mist-deep px-3 py-2 text-sm">
                     <div className="flex items-start justify-between gap-3">
-                      <span className="text-ink">{d.nombre ?? d.material_id ?? "Material"}</span>
+                      <span className="text-ink">{d.nombre ?? d.id ?? "Material"}</span>
                       <Chip tono="aviso">stock {d.stock_actual ?? "?"} / mín {d.stock_minimo ?? "?"}</Chip>
                     </div>
                     <p className="mt-1 text-xs text-ink-soft">
                       {formatearFecha(a.recibido_en.slice(0, 10))}
-                      {d.panol?.nombre ? ` · ${d.panol.nombre}` : ""}
+                      {(d.existencias ?? []).filter((e) => e.panol?.nombre).map((e) => ` · ${e.panol!.nombre} (${e.cantidad ?? 0})`).join("")}
                     </p>
                     {a.error && <p className="mt-1 text-xs text-[#8a5a09]">{a.error}</p>}
                   </li>

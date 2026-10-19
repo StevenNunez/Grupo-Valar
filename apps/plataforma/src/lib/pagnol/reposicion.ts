@@ -18,14 +18,18 @@ import { clientePagnol } from "./client";
  * defecto de la base (`empresa_actual()`) sería nulo.
  */
 
+/**
+ * El `data` de `stock.bajo_minimo` (confirmado por Pagnol): el material con sus
+ * campos, el stock y el mínimo de TODA la empresa al cruzar hacia abajo, y
+ * dónde está el stock en `existencias` (el mínimo no es por pañol).
+ */
 type DatosAviso = {
-  material_id?: string;
+  id?: string;
   nombre?: string;
   unidad_medida?: string;
   stock_actual?: number | null;
   stock_minimo?: number | null;
-  panol?: { id: string; nombre: string } | null;
-  panol_id?: string | null;
+  existencias?: { panol?: { id: string; nombre: string } | null; cantidad?: number | null }[];
 };
 
 export type FilaAviso = {
@@ -44,7 +48,7 @@ export function cantidadSugerida(actual: number, minimo: number) {
 /** Nombre y unidad del material: del aviso si vienen, si no del catálogo. */
 async function datosDelMaterial(d: DatosAviso) {
   if (d.nombre && d.unidad_medida) return { nombre: d.nombre, unidad: d.unidad_medida };
-  const { data } = await clientePagnol("pagnol:materiales").GET("/materiales/{id}", { params: { path: { id: d.material_id! } } });
+  const { data } = await clientePagnol("pagnol:materiales").GET("/materiales/{id}", { params: { path: { id: d.id! } } });
   return { nombre: d.nombre ?? data?.nombre ?? "Material de Pagnol", unidad: d.unidad_medida ?? data?.unidad_medida ?? "un" };
 }
 
@@ -63,24 +67,30 @@ export async function procesarAvisoDeStock(sb: SupabaseClient, aviso: FilaAviso)
   const d = aviso.payload.data ?? {};
   const empresa = aviso.empresa_id;
   if (!empresa) return "El aviso es de una organización de Pagnol que no está enlazada a ninguna empresa de Valar.";
-  if (!d.material_id) return "El aviso no indica el material.";
-  const panolId = d.panol?.id ?? d.panol_id ?? null;
-  if (!panolId) return "El aviso no indica en qué pañol bajó el stock.";
+  if (!d.id) return "El aviso no indica el material.";
+  const existencias = (d.existencias ?? []).filter((e) => e.panol?.id);
+  if (!existencias.length) return "El aviso no indica en qué pañol está el stock.";
 
-  const { data: asociacion } = await sb
+  // El mínimo es de la empresa: el borrador va al contrato del pañol con
+  // contrato asignado donde el material está más escaso.
+  const { data: asociados } = await sb
     .from("pagnol_panoles_contratos")
-    .select("contrato_id")
+    .select("panol_id, contrato_id")
     .eq("empresa_id", empresa)
-    .eq("panol_id", panolId)
-    .maybeSingle();
-  if (!asociacion) return `El pañol «${d.panol?.nombre ?? panolId}» no tiene un contrato asignado.`;
-  const contrato = asociacion.contrato_id as string;
+    .in("panol_id", existencias.map((e) => e.panol!.id));
+  const contratoDe = new Map((asociados ?? []).map((a) => [a.panol_id as string, a.contrato_id as string]));
+  const elegida = existencias
+    .filter((e) => contratoDe.has(e.panol!.id))
+    .sort((a, b) => Number(a.cantidad ?? 0) - Number(b.cantidad ?? 0))[0];
+  if (!elegida) return `Ningún pañol con stock de este material tiene un contrato asignado (${existencias.map((e) => `«${e.panol!.nombre}»`).join(", ")}).`;
+  const contrato = contratoDe.get(elegida.panol!.id)!;
 
   const actual = Number(d.stock_actual ?? 0);
   const minimo = Number(d.stock_minimo ?? 0);
   const cantidad = cantidadSugerida(actual, minimo);
   const material = await datosDelMaterial(d);
-  const nota = `Stock en Pagnol: ${actual} (mínimo ${minimo})${d.panol?.nombre ? ` en ${d.panol.nombre}` : ""}.`;
+  const donde = existencias.map((e) => `${e.panol!.nombre} ${Number(e.cantidad ?? 0)}`).join(", ");
+  const nota = `Stock en Pagnol: ${actual} (mínimo ${minimo}). Por pañol: ${donde}.`;
 
   // El borrador de reposición abierto de ese contrato, o uno nuevo.
   let { data: solped } = await sb
@@ -113,7 +123,7 @@ export async function procesarAvisoDeStock(sb: SupabaseClient, aviso: FilaAviso)
   }
 
   const { data: lineas } = await sb.from("solped_items").select("id, linea, pagnol_material_id").eq("empresa_id", empresa).eq("solped_id", solped.id);
-  const existente = (lineas ?? []).find((l) => l.pagnol_material_id === d.material_id);
+  const existente = (lineas ?? []).find((l) => l.pagnol_material_id === d.id);
   if (existente) {
     // Mismo material otra vez: se actualiza con el último stock, no se duplica.
     const { error } = await sb.from("solped_items").update({ cantidad, observacion: nota }).eq("empresa_id", empresa).eq("id", existente.id);
@@ -128,7 +138,7 @@ export async function procesarAvisoDeStock(sb: SupabaseClient, aviso: FilaAviso)
       descripcion: material.nombre,
       unidad: material.unidad,
       cantidad,
-      pagnol_material_id: d.material_id,
+      pagnol_material_id: d.id,
       observacion: nota,
     });
     if (error) return `No se pudo agregar la línea: ${error.message}`;
