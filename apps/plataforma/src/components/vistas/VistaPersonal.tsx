@@ -13,7 +13,7 @@ import { cargarCampos, type CampoContrato } from "@/lib/campos";
 import { cargarCategorias, type Categoria } from "@/lib/categorias";
 import { useConsulta } from "@/lib/consulta";
 import { cargarContratosBreve, type ContratoBreve } from "@/lib/contratos";
-import { formatearMonto, formatearNumero, formatearPesos, mesLargo } from "@/lib/formato";
+import { formatearMonto, formatearNumero, formatearPesos, mesLargo, enPeriodo, gruposDePeriodo } from "@/lib/formato";
 import { cargarPersonal, type CostoPersonal } from "@/lib/egresos";
 import { cargarFiniquitos, type Finiquito } from "@/lib/finiquitos";
 import { motivosHhExtra } from "@/lib/haberes";
@@ -140,7 +140,7 @@ function Contenidos({
     () =>
       datos.personal.filter(
         (f) =>
-          (mes === "todos" || delMes(f.periodo) === mes) &&
+          enPeriodo(mes, delMes(f.periodo)) &&
           (contrato === "todos" || unidadDe(anexos, f.contratoId, f.anexoId) === contrato),
       ),
     [datos.personal, anexos, mes, contrato],
@@ -149,7 +149,7 @@ function Contenidos({
     () =>
       datos.finiquitos.filter(
         (f) =>
-          (mes === "todos" || delMes(f.periodo) === mes) &&
+          enPeriodo(mes, delMes(f.periodo)) &&
           (contrato === "todos" || (f.contratoId !== null && unidadDe(anexos, f.contratoId, f.anexoId) === contrato)),
       ),
     [datos.finiquitos, anexos, mes, contrato],
@@ -170,6 +170,10 @@ function Contenidos({
   const aporte = visibles.reduce((t, f) => t + f.aportePatronal, 0);
   const costoHhExtra = visibles.reduce((t, f) => t + f.horasExtraMonto, 0);
   const costo = visibles.reduce((t, f) => t + f.costoTotal, 0);
+  /* Planta (ordinario) contra extraordinario: parada de planta aparte y el resto de las HH extra. */
+  const costoParada = visibles.reduce((t, f) => t + Math.min(f.montosHh.monto_hh_parada_planta, f.horasExtraMonto), 0);
+  const costoOtrosExtra = costoHhExtra - costoParada;
+  const costoPlanta = costo - costoHhExtra;
   const finiquitos = finiquitosVisibles.reduce((t, f) => t + f.total, 0);
   const conReserva = finiquitosVisibles.filter((f) => f.conReserva);
   const horas = visibles.reduce((t, f) => t + f.horasHombre, 0);
@@ -182,7 +186,7 @@ function Contenidos({
     .reduce((t, f) => t + f.dotacion, 0);
 
   const costoPorHora = horas > 0 ? costo / horas : 0;
-  const cuando = mes === "todos" ? "Acumulado" : mesLargo(mes);
+  const cuando = mes === "todos" ? "Acumulado" : mes === "cerrados" ? "Meses cerrados" : mesLargo(mes);
 
   const nombreAnexo = (id: string | null) => {
     if (!id) return null;
@@ -198,6 +202,11 @@ function Contenidos({
             etiqueta: "Pago de personal",
             valor: formatearMonto(costo),
             nota: `${cuando} · haberes ${formatearMonto(remuneraciones)} · aporte patronal ${formatearMonto(aporte)} · sin finiquitos`,
+          },
+          {
+            etiqueta: "Costo extraordinario",
+            valor: formatearMonto(costoHhExtra),
+            nota: `${cuando} · parada de planta ${formatearMonto(costoParada)} · otros (reemplazos, licencias, feriados) ${formatearMonto(costoOtrosExtra)} · planta ordinaria ${formatearMonto(costoPlanta)}`,
           },
           {
             etiqueta: "Dotación actual",
@@ -229,7 +238,7 @@ function Contenidos({
                 etiqueta="Período"
                 valor={mes}
                 alCambiar={setMes}
-                grupos={[{ opciones: [{ id: "todos", titulo: "Todos los meses" }] }, { titulo: "Un mes", opciones: meses }]}
+                grupos={gruposDePeriodo(meses)}
               />
             </CampoFiltro>
             <CampoFiltro etiqueta="Contrato">

@@ -18,7 +18,7 @@ import { anexoRaiz, cargarAnexos, type Anexo } from "@/lib/anexos";
 import { actualizar, crearConId } from "@/lib/crud";
 import { useConsulta } from "@/lib/consulta";
 import { cargarContratosBreve, opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
-import { formatearFecha, formatearMonto, formatearPesos, mesLargo } from "@/lib/formato";
+import { formatearFecha, formatearMonto, formatearPesos, mesLargo, enPeriodo, gruposDePeriodo } from "@/lib/formato";
 import {
   abierta, cargarGarantias, estadosGarantia, vencida, type EstadoGarantia, type Garantia,
 } from "@/lib/garantias";
@@ -126,7 +126,7 @@ function Contenidos({ datos, edicion }: { datos: Datos; edicion: ReturnType<type
   const visibles = useMemo(() => {
     const buscado = texto.trim().toLowerCase();
     return todas.filter((g) => {
-      if (periodo !== "todos" && primeroDelMes(g.fechaPago) !== periodo) return false;
+      if (!enPeriodo(periodo, primeroDelMes(g.fechaPago))) return false;
       if (contrato !== "todos" && unidadDeFila(g) !== contrato) return false;
       if (filtro === "vencidas" ? !vencida(g) : filtro !== "todas" && g.estado !== filtro) return false;
       if (buscado && !`${g.concepto} ${g.proveedor} ${g.documento ?? ""} ${g.id}`.toLowerCase().includes(buscado)) return false;
@@ -178,7 +178,7 @@ function Contenidos({ datos, edicion }: { datos: Datos; edicion: ReturnType<type
           <>
             <CampoFiltro etiqueta="Período">
               <Desplegable etiqueta="Período" valor={periodo} alCambiar={setPeriodo}
-                grupos={[{ opciones: [{ id: "todos", titulo: "Todos los meses" }] }, { titulo: "Un mes", opciones: meses }]} />
+                grupos={gruposDePeriodo(meses)} />
             </CampoFiltro>
             <CampoFiltro etiqueta="Contrato">
               <Desplegable etiqueta="Contrato" valor={contrato} alCambiar={setContrato}

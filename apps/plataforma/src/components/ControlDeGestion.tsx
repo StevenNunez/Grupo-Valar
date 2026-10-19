@@ -13,6 +13,8 @@ import {
   cargarDashboard,
   cargarEstadoUf,
   detectarAlertas,
+  dividirPersonal,
+  type PersonalDividido,
   evolucion as calcularEvolucion,
   porContrato as agruparPorContrato,
   semaforo,
@@ -22,6 +24,7 @@ import {
   type CategoriaAcumulada,
   type Contrato,
   type DatosDashboard,
+  type Totales,
   type EstadoUf,
   type Evolucion,
   type FilaCategoria,
@@ -93,7 +96,7 @@ export function ControlDeGestion() {
   const usuario = useUsuario();
   /* Con clave, el Dashboard abre al instante con lo último que se vio y se
      actualiza por detrás: las vistas de las que sale son pesadas. */
-  const { estado } = useConsulta<DatosDashboard>(cargarDashboard, `${usuario.id}:${usuario.empresa}:dashboard-v4`);
+  const { estado } = useConsulta<DatosDashboard>(cargarDashboard, `${usuario.id}:${usuario.empresa}:dashboard-v5`);
 
   return (
     <>
@@ -165,15 +168,26 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
       const g = porContrato.get(f.padreId)!;
       if (!g.anexos.some((a) => a.id === f.contratoId)) g.anexos.push({ id: f.contratoId, nombre: f.contrato });
     }
-    return [...porContrato.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+    const lista = [...porContrato.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+    /* Oficina Central se elige como un contrato más, al final de la lista. */
+    if (datos.oficina.length > 0 || datos.personalOficina.length > 0) lista.push({ id: OFICINA, nombre: "Oficina Central", anexos: [] });
+    return lista;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mesesAlcance, datos.anexosDisponibles, alcance, cerradosIds]);
+  }, [mesesAlcance, datos.anexosDisponibles, datos.oficina, datos.personalOficina, alcance, cerradosIds]);
 
   /* Qué unidades están a la vista: null = todas, cada una por separado. */
+  const seleccionValida = useMemo(
+    () => seleccion.filter((id) => grupos.some((g) => g.id === id || g.anexos.some((a) => a.id === id))),
+    [seleccion, grupos],
+  );
+  /* Los contratos y anexos elegidos (sin Oficina Central); null = todos. */
   const unidades = useMemo<string[] | null>(() => {
-    const validas = seleccion.filter((id) => grupos.some((g) => g.id === id || g.anexos.some((a) => a.id === id)));
-    return validas.length > 0 ? validas : null;
-  }, [seleccion, grupos]);
+    const deContratos = seleccionValida.filter((id) => id !== OFICINA);
+    return deContratos.length > 0 ? deContratos : null;
+  }, [seleccionValida]);
+  const soloOficina = seleccionValida.length > 0 && unidades === null;
+  /* Oficina Central está a la vista si no se filtró nada o si se marcó. */
+  const conOficina = seleccionValida.length === 0 || seleccionValida.includes(OFICINA);
 
   const nombreDeUnidad = (id: string) => {
     for (const g of grupos) {
@@ -219,12 +233,12 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const filas = useMemo(() => recortarPeriodo(mesesAlcance, true), [mesesAlcance, periodo, unidades, periodosCerrados]);
+  const filas = useMemo(() => (soloOficina ? [] : recortarPeriodo(mesesAlcance, true)), [mesesAlcance, periodo, unidades, soloOficina, periodosCerrados]);
 
   /* Los contratos cerrados salen de la vista por contrato, pero su venta sigue
      siendo venta del año: se suma aparte, en el mismo período, y se avisa. */
   const ventaCerrados = useMemo(() => {
-    if (alcance !== "vigentes" || unidades || cerradosIds.size === 0) return 0;
+    if (alcance !== "vigentes" || unidades || soloOficina || cerradosIds.size === 0) return 0;
     const cerradas = datos.meses.filter((f) => cerradosIds.has(f.padreId ?? f.contratoId));
     return sumar(recortarPeriodo(cerradas, false)).venta;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -256,14 +270,23 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
   }, [datos.personalOficina, periodo, periodosCerrados]);
 
   const total = sumar(filas);
-  const finiquitos = useMemo(() => {
+  const operativosOficina = totalOficina(oficinaVisible.filter((f) => f.categoria !== "activos")) + personalOficina;
+  const activosOficina = totalOficina(oficinaVisible.filter((f) => f.categoria === "activos"));
+  /* Finiquitos del período: los de contratos siguen el filtro de contratos; los de
+     Oficina Central solo cuentan en el resultado de la empresa (sin filtro de contrato). */
+  const { finiquitos, finiquitosOficina } = useMemo(() => {
     const elegidos = esMes(periodo) ? [mesDe(periodo)] : periodo === "todo" ? periodosCerrados : periodosCerrados.slice(-Number(periodo));
-    return (datos.finiquitos ?? [])
-      .filter((f) => entraEnAlcance(f.contratoId) && elegidos.includes(f.periodo))
-      .filter((f) => !unidades || unidades.includes(f.contratoId) || (f.anexoId !== null && unidades.some((u) => u.startsWith(`${f.contratoId}#`))))
-      .reduce((t, f) => t + f.total, 0);
+    const delPeriodo = (datos.finiquitos ?? []).filter((f) => elegidos.includes(f.periodo));
+    const deContratos = delPeriodo
+      .filter((f) => f.contratoId !== null)
+      .filter((f) => !soloOficina && entraEnAlcance(f.contratoId as string))
+      .filter((f) => !unidades || unidades.includes(f.contratoId as string) || (f.anexoId !== null && unidades.some((u) => u.startsWith(`${f.contratoId}#`))));
+    return {
+      finiquitos: deContratos.reduce((t, f) => t + f.total, 0),
+      finiquitosOficina: conOficina ? delPeriodo.filter((f) => f.contratoId === null).reduce((t, f) => t + f.total, 0) : 0,
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [datos.finiquitos, periodo, periodosCerrados, unidades, alcance, cerradosIds]);
+  }, [datos.finiquitos, periodo, periodosCerrados, unidades, soloOficina, conOficina, alcance, cerradosIds]);
   const contratos = agruparPorContrato(filas);
   const evolucion = calcularEvolucion(filas);
 
@@ -276,15 +299,13 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
   // El informe imprime lo mismo que está en pantalla, filtros incluidos.
   const periodosVisibles = evolucion.map((e) => e.periodo);
 
-  const categoriasVisibles = acumularCategorias(
-    categoriasAlcance,
-    unidades ?? "todos",
-    evolucion.length,
-    periodosVisibles,
-  );
+  /* Solo Oficina Central marcada: ninguna categoría de contrato entra. */
+  const filtroCategorias: string | string[] = soloOficina ? [] : unidades ?? "todos";
+  const categoriasVisibles = acumularCategorias(categoriasAlcance, filtroCategorias, evolucion.length, periodosVisibles);
+  const personalDividido = dividirPersonal(categoriasAlcance, filtroCategorias, periodosVisibles, total);
 
   const textoAlcance = [
-    unidades ? unidades.map(nombreDeUnidad).join(" + ") : alcance === "cerrados" ? "Contratos cerrados" : alcance === "todos" ? "Todos los contratos, cerrados incluidos" : "Todos los contratos vigentes",
+    seleccionValida.length > 0 ? seleccionValida.map(nombreDeUnidad).join(" + ") : alcance === "cerrados" ? "Contratos cerrados" : alcance === "todos" ? "Todos los contratos, cerrados incluidos" : "Todos los contratos vigentes",
     [...rangos, ...mesesDisponibles].find((p) => p.id === periodo)?.titulo ?? "Todos los meses cerrados",
   ].join(" · ");
 
@@ -292,10 +313,10 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
     return (
       <>
       {datos.meses.length > 0 && <FiltrosDashboard
-        grupos={grupos} seleccion={unidades ?? []} alCambiarSeleccion={setSeleccion}
+        grupos={grupos} seleccion={seleccionValida} alCambiarSeleccion={setSeleccion}
         alcance={alcance} alCambiarAlcance={setAlcance} hayCerrados={cerradosIds.size > 0}
         periodo={periodo} alCambiarPeriodo={setPeriodo} mesesDisponibles={mesesDisponibles} />}
-      <div className="rounded-2xl border border-dashed border-mist-deep bg-white p-10 text-center">
+      {!soloOficina && <div className="rounded-2xl border border-dashed border-mist-deep bg-white p-10 text-center">
         <p className="font-display text-lg font-semibold text-ink">
           Todavía no hay movimientos de contratos cargados
         </p>
@@ -303,8 +324,8 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
           En cuanto se cargue el primer estado de pago o costo de un contrato, este panel muestra
           su rentabilidad. Los egresos de Oficina Central aparecen debajo.
         </p>
-      </div>
-      {!unidades && <ResumenOficina filas={oficinaVisible} personal={personalOficina} margenContratos={0} />}
+      </div>}
+      {conOficina && <IndicadoresParalelos filas={oficinaVisible} personal={personalOficina} margenContratos={0} finiquitos={finiquitos + finiquitosOficina} conOficina />}
       </>
     );
   }
@@ -312,7 +333,7 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
   return (
     <>
       <FiltrosDashboard
-        grupos={grupos} seleccion={unidades ?? []} alCambiarSeleccion={setSeleccion}
+        grupos={grupos} seleccion={seleccionValida} alCambiarSeleccion={setSeleccion}
         alcance={alcance} alCambiarAlcance={setAlcance} hayCerrados={cerradosIds.size > 0}
         periodo={periodo} alCambiarPeriodo={setPeriodo} mesesDisponibles={mesesDisponibles}
         /* El informe sale con los filtros puestos: lo que se ve es lo que se
@@ -345,15 +366,12 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
             nota: `${textoSemaforo[luz]} · meta ${meta}%`,
             acento: luz,
           },
-          {
-            etiqueta: "Finiquitos pagados",
-            valor: formatearMonto(finiquitos),
-            nota: "Aparte: no restan del resultado mensual; se imputan al cerrar el contrato",
-          },
         ]}
       />
 
-      {!unidades && <ResumenOficina filas={oficinaVisible} personal={personalOficina} margenContratos={total.margen} />}
+      <PanelOrdinarioExtra total={total} />
+
+      <IndicadoresParalelos filas={oficinaVisible} personal={personalOficina} margenContratos={total.margen} finiquitos={finiquitos + finiquitosOficina} conOficina={conOficina} />
 
       {/* ── Por contrato ───────────────────────────────────────────────────── */}
       {contratos.length > 1 && (
@@ -397,9 +415,10 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
         >
           <TablaCategorias
             categorias={categoriasAlcance}
-            contratoFiltro={unidades ?? "todos"}
+            contratoFiltro={filtroCategorias}
             meses={evolucion.length}
             periodosVisibles={periodosVisibles}
+            personal={personalDividido}
           />
         </Panel>
       </div>
@@ -413,6 +432,13 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
             contratos={contratos}
             evolucion={evolucion}
             categorias={categoriasVisibles}
+            personal={personalDividido}
+            paralelos={{
+              oficina: conOficina ? { operativos: operativosOficina, activos: activosOficina, movimientos: oficinaVisible.length } : null,
+              finiquitos: finiquitos + finiquitosOficina,
+              consolidado: conOficina ? total.margen - operativosOficina - finiquitos - finiquitosOficina : null,
+            }}
+            soloOficina={soloOficina}
             meta={meta}
             alcance={textoAlcance}
             emitidoPor={usuario.nombre}
@@ -423,29 +449,112 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
   );
 }
 
-function ResumenOficina({ filas, personal, margenContratos }: { filas: EgresoOficina[]; personal: number; margenContratos: number }) {
+/**
+ * Ordinario contra extraordinario. Sirve para cruzar el estado de pago
+ * extraordinario con lo que realmente costó la parada de planta y los demás
+ * extraordinarios: sin esto, un indicador bajo no se puede explicar.
+ * El costo extraordinario hoy sale solo del personal (HH extra por motivo).
+ */
+function PanelOrdinarioExtra({ total }: { total: Totales }) {
+  const costoExtra = total.costoParadaPlanta + total.costoOtrosExtra;
+  const resultadoOrd = total.ventaOrdinaria - total.costoOrdinario;
+  const resultadoExtra = total.ventaExtraordinaria - costoExtra;
+  const pct = (resultado: number, venta: number) => (venta > 0 ? `${((resultado / venta) * 100).toFixed(1)}%` : "—");
+  const color = (n: number) => (n < 0 ? "text-[#a52f24]" : "text-ink");
+
+  const filas: { titulo: string; ordinario: string; extra: string; total: string; fuerte?: boolean; sangria?: boolean; negativoOrd?: number; negativoExtra?: number }[] = [
+    { titulo: "Ventas netas", ordinario: formatearMonto(total.ventaOrdinaria), extra: formatearMonto(total.ventaExtraordinaria), total: formatearMonto(total.venta) },
+    { titulo: "Costos", ordinario: formatearMonto(total.costoOrdinario), extra: formatearMonto(costoExtra), total: formatearMonto(total.costo) },
+    { titulo: "HH de parada de planta", ordinario: "—", extra: formatearMonto(total.costoParadaPlanta), total: formatearMonto(total.costoParadaPlanta), sangria: true },
+    { titulo: "Otros extraordinarios (reemplazos, licencias, feriados compensados…)", ordinario: "—", extra: formatearMonto(total.costoOtrosExtra), total: formatearMonto(total.costoOtrosExtra), sangria: true },
+    { titulo: "Resultado", ordinario: formatearMonto(resultadoOrd), extra: formatearMonto(resultadoExtra), total: formatearMonto(total.margen), fuerte: true, negativoOrd: resultadoOrd, negativoExtra: resultadoExtra },
+    { titulo: "Rentabilidad s/ ventas", ordinario: pct(resultadoOrd, total.ventaOrdinaria), extra: pct(resultadoExtra, total.ventaExtraordinaria), total: `${total.margenPct.toFixed(1)}%`, fuerte: true },
+  ];
+
+  return (
+    <section aria-labelledby="ord-extra" className="mb-6 rounded-2xl border border-mist-deep bg-white p-6 lg:p-8">
+      <h2 id="ord-extra" className="font-display text-lg font-semibold text-ink">Ordinario y extraordinario</h2>
+      <p className="mb-5 mt-1 text-sm text-ink-soft">
+        Para contrastar el estado de pago extraordinario con el costo real de la parada de planta y los otros extraordinarios.
+        El costo extraordinario sale del personal (horas extra por motivo); las compras y servicios se cuentan como ordinarios.
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[34rem] text-sm">
+          <thead>
+            <tr className="border-b border-mist-deep text-left text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">
+              <th className="py-2 pr-4 font-semibold"><span className="sr-only">Concepto</span></th>
+              <th className="px-3 py-2 text-right font-semibold">Ordinario</th>
+              <th className="px-3 py-2 text-right font-semibold">Extraordinario</th>
+              <th className="py-2 pl-3 text-right font-semibold">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filas.map((f) => (
+              <tr key={f.titulo} className="border-b border-mist-deep/60 last:border-0">
+                <th scope="row" className={`py-2.5 pr-4 text-left ${f.sangria ? "pl-5 text-xs font-normal text-ink-soft" : "font-semibold text-ink"}`}>{f.titulo}</th>
+                <td className={`px-3 py-2.5 text-right ${f.fuerte ? "font-semibold" : ""} ${f.negativoOrd !== undefined ? color(f.negativoOrd) : f.sangria ? "text-ink-soft" : "text-ink"}`}>{f.ordinario}</td>
+                <td className={`px-3 py-2.5 text-right ${f.fuerte ? "font-semibold" : ""} ${f.negativoExtra !== undefined ? color(f.negativoExtra) : f.sangria ? "text-ink-soft" : "text-ink"}`}>{f.extra}</td>
+                <td className={`py-2.5 pl-3 text-right ${f.fuerte ? "font-semibold" : ""} ${f.sangria ? "text-xs text-ink-soft" : "text-ink"}`}>{f.total}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Indicadores paralelos: Oficina Central y Finiquitos, más chicos que los cuatro
+ * principales y con colores propios (oscuro y violeta) para que no se lean como
+ * parte del resultado de los contratos.
+ */
+function IndicadoresParalelos({
+  filas, personal, margenContratos, finiquitos, conOficina,
+}: { filas: EgresoOficina[]; personal: number; margenContratos: number; finiquitos: number; conOficina: boolean }) {
   // La nómina de la oficina es gasto operativo: sin ella el resultado se ve mejor de lo que es.
   const operativos = totalOficina(filas.filter((fila) => fila.categoria !== "activos")) + personal;
   const activos = totalOficina(filas.filter((fila) => fila.categoria === "activos"));
+  const consolidado = margenContratos - (conOficina ? operativos : 0) - finiquitos;
+
+  const mini = (etiqueta: string, valor: string, nota: string, oscuro: boolean, rojo = false) => (
+    <div key={etiqueta} className="min-w-[9.5rem] flex-1">
+      <dt className={`text-[0.65rem] font-semibold uppercase tracking-[0.14em] ${oscuro ? "text-white/60" : "text-[#4a3aa7]"}`}>{etiqueta}</dt>
+      <dd className={`mt-1.5 font-display text-lg font-semibold leading-none ${rojo ? (oscuro ? "text-[#ffb4a9]" : "text-[#a52f24]") : oscuro ? "text-white" : "text-[#4a3aa7]"}`}>{valor}</dd>
+      <dd className={`mt-1 text-xs ${oscuro ? "text-white/60" : "text-ink-soft"}`}>{nota}</dd>
+    </div>
+  );
+
   return (
-    <section className="mb-6 rounded-2xl border border-mist-deep bg-white p-6 lg:p-8">
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="font-display text-lg font-semibold text-ink">Oficina Central</h2>
-          <p className="mt-1 text-sm text-ink-soft">Egresos generales netos de IVA, separados de los costos de cada contrato.</p>
+    <section aria-label="Oficina Central y finiquitos" className="mb-6 grid gap-4 lg:grid-cols-[1fr_auto_1fr] lg:gap-0">
+      {conOficina && (
+        <div className="rounded-2xl bg-[#1f2a33] p-5 text-white lg:rounded-r-none">
+          <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="font-display text-base font-semibold">Oficina Central</h2>
+            <Link href="/control-de-gestion/egresos/oficina-central/" className="text-xs font-semibold text-white/70 hover:text-white hover:underline">Ver movimientos →</Link>
+          </div>
+          <dl className="flex flex-wrap gap-x-6 gap-y-4">
+            {mini("Gastos operativos", formatearMonto(operativos), "Compras, arriendos, personal", true)}
+            {mini("Compra de activos", formatearMonto(activos), "Inversión, fuera del resultado", true)}
+            {mini("Total egresos", formatearMonto(operativos + activos), `${filas.length} movimientos`, true)}
+          </dl>
+          {(filas.length > 0 || personal > 0) && (
+            <p className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/60">
+              {categoriasOficina.map((c) => <span key={c.id}>{c.titulo}: <strong className="text-white/90">{formatearMonto(totalOficina(filas.filter((f) => f.categoria === c.id)))}</strong></span>)}
+              {personal > 0 && <span>Personal: <strong className="text-white/90">{formatearMonto(personal)}</strong></span>}
+            </p>
+          )}
         </div>
-        <Link href="/control-de-gestion/egresos/oficina-central/" className="text-sm font-semibold text-cyan-deep hover:underline">Ver movimientos →</Link>
+      )}
+      {/* Línea de separación entre Oficina Central y Finiquitos. */}
+      {conOficina && <div aria-hidden="true" className="hidden w-px bg-mist-deep lg:mx-0 lg:block" />}
+      <div className={`rounded-2xl border border-[#c9bff0] bg-[#f3f0fc] p-5 ${conOficina ? "lg:rounded-l-none" : "lg:col-span-3"}`}>
+        <h2 className="mb-4 font-display text-base font-semibold text-[#4a3aa7]">Finiquitos · informativo</h2>
+        <dl className="flex flex-wrap gap-x-6 gap-y-4">
+          {mini("Finiquitos pagados", formatearMonto(finiquitos), "No son costo del contrato; se imputan al cerrarlo", false)}
+          {conOficina && mini("Resultado consolidado", formatearMonto(consolidado), "Contratos − oficina − finiquitos", false, consolidado < 0)}
+        </dl>
       </div>
-      <Resumen datos={[
-        { etiqueta: "Gastos operativos", valor: formatearMonto(operativos), nota: "Compras, arriendos, insumos y personal" },
-        { etiqueta: "Compra de activos", valor: formatearMonto(activos), nota: "Inversión, separada del resultado" },
-        { etiqueta: "Total egresos oficina", valor: formatearMonto(operativos + activos), nota: `${filas.length} movimientos registrados` },
-        { etiqueta: "Resultado tras oficina", valor: formatearMonto(margenContratos - operativos), nota: "Resultado contratos menos gastos operativos" },
-      ]} />
-      {(filas.length > 0 || personal > 0) && <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-ink-soft">
-        {categoriasOficina.map((c) => <span key={c.id}>{c.titulo}: <strong className="text-ink">{formatearMonto(totalOficina(filas.filter((f) => f.categoria === c.id)))}</strong></span>)}
-        {personal > 0 && <span>Personal: <strong className="text-ink">{formatearMonto(personal)}</strong></span>}
-      </div>}
     </section>
   );
 }
@@ -555,6 +664,9 @@ function TarjetaContrato({ contrato }: { contrato: Contrato }) {
 }
 
 /* ── Filtros ──────────────────────────────────────────────────────────────── */
+
+/** Id de Oficina Central en el selector; no choca con ningún contrato. */
+const OFICINA = "oficina-central";
 
 type GrupoContrato = { id: string; nombre: string; anexos: { id: string; nombre: string }[] };
 
@@ -804,6 +916,15 @@ function TablaEvolucion({ evolucion, meta }: { evolucion: Evolucion[]; meta: num
       celda: (f) => <span className="text-ink-soft">{formatearMonto(f.consolidado.costo)}</span>,
     },
     {
+      clave: "extra",
+      titulo: "De ello extraordinario",
+      derecha: true,
+      celda: (f) => {
+        const extra = f.consolidado.costoParadaPlanta + f.consolidado.costoOtrosExtra;
+        return <span className="text-ink-soft">{extra > 0 ? formatearMonto(extra) : "—"}</span>;
+      },
+    },
+    {
       clave: "margen",
       titulo: "Resultado",
       derecha: true,
@@ -867,11 +988,13 @@ function TablaCategorias({
   contratoFiltro,
   meses,
   periodosVisibles,
+  personal,
 }: {
   categorias: FilaCategoria[];
   contratoFiltro: string | string[];
   meses: number;
   periodosVisibles: string[];
+  personal: PersonalDividido;
 }) {
   // El mismo cálculo que imprime el informe: vive en la librería para que la
   // hoja y la pantalla no puedan discrepar.
@@ -956,6 +1079,7 @@ function TablaCategorias({
   ];
 
   return (
+    <>
     <Tabla
       columnas={columnas}
       filas={filas}
@@ -972,6 +1096,16 @@ function TablaCategorias({
         </>
       }
     />
+    {personal.total > 0 && (
+      <p className="mt-4 rounded-xl bg-mist/50 p-4 text-sm text-ink-soft">
+        <strong className="text-ink">Personal {formatearMonto(personal.total)}</strong> = ordinario{" "}
+        <strong className="text-ink">{formatearMonto(personal.ordinario)}</strong> + parada de planta{" "}
+        <strong className="text-ink">{formatearMonto(personal.paradaPlanta)}</strong> + otros extraordinarios{" "}
+        <strong className="text-ink">{formatearMonto(personal.otrosExtra)}</strong>
+        {" "}(reemplazos, licencias, feriados compensados…).
+      </p>
+    )}
+    </>
   );
 }
 

@@ -30,7 +30,7 @@ import {
   type EgresoTercero,
   type Servicio,
 } from "@/lib/egresos";
-import { diasHastaFecha, formatearFecha, formatearMonto, mesLargo } from "@/lib/formato";
+import { diasHastaFecha, formatearFecha, formatearMonto, mesLargo, enPeriodo, gruposDePeriodo } from "@/lib/formato";
 
 /**
  * Compras y servicios, juntos.
@@ -448,7 +448,7 @@ function Contenidos({
   const filas = useMemo(
     () =>
       todas.filter(
-        (e) => (mes === "todos" || primeroDelMes(e.periodo) === mes) && (contrato === "todos" || unidadDeFila(e) === contrato),
+        (e) => enPeriodo(mes, primeroDelMes(e.periodo)) && (contrato === "todos" || unidadDeFila(e) === contrato),
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [todas, mes, contrato, anexos],
@@ -543,10 +543,7 @@ function Contenidos({
                 etiqueta="Período"
                 valor={mes}
                 alCambiar={alCambiarMes}
-                grupos={[
-                  { opciones: [{ id: "todos", titulo: "Todos los meses" }] },
-                  { titulo: "Un mes", opciones: meses },
-                ]}
+                grupos={gruposDePeriodo(meses)}
               />
             </CampoFiltro>
             <CampoFiltro etiqueta="Contrato">
@@ -568,7 +565,7 @@ function Contenidos({
           columnas={columnas(edicion, abrirOrden)}
           filas={visibles}
           claveDe={(e) => `${e.id}|${e.periodo}`}
-          vacio={texto.trim() ? "Ningún movimiento coincide con la búsqueda." : mes === "todos" ? "Ningún movimiento en este filtro." : "Ningún movimiento en este mes con este filtro."}
+          vacio={texto.trim() ? "Ningún movimiento coincide con la búsqueda." : mes === "todos" || mes === "cerrados" ? "Ningún movimiento en este filtro." : "Ningún movimiento en este mes con este filtro."}
           pie={
             <>
               <Total colSpan={4}>Total</Total>
@@ -768,7 +765,7 @@ function OrdenesDeCompra({ ordenes, mes, abrir }: { ordenes: Orden[]; mes: Mes; 
   const abiertas = vigentes.filter((o) => estadoCiclo(o) !== "pagada");
   /* Las abiertas salen todas, sean del mes que sean: son trabajo pendiente, y
      una OC de julio sin recibir sigue siendo de hoy. "Todas" sí sigue el mes. */
-  const delMes = mes === "todos" ? vigentes : vigentes.filter((o) => primeroDelMes(o.fechaEmision) === mes);
+  const delMes = vigentes.filter((o) => enPeriodo(mes, primeroDelMes(o.fechaEmision)));
   const visibles = filtro === "todas" ? delMes : abiertas;
   const porFacturar = vigentes.reduce((t, o) => t + Math.max(0, o.neto - o.facturado), 0);
   const nc = vigentes.filter((o) => o.solicitarNc).length;
@@ -779,7 +776,7 @@ function OrdenesDeCompra({ ordenes, mes, abrir }: { ordenes: Orden[]; mes: Mes; 
         titulo="Órdenes de compra"
         nota={`${formatearMonto(porFacturar)} netos por facturar${nc ? ` · ${nc} ${nc === 1 ? "orden pide" : "órdenes piden"} nota de crédito` : ""}`}
         filtros={<Filtro etiqueta="Ver" valor={filtro} alCambiar={setFiltro}
-          opciones={[{ id: "abiertas", titulo: "Abiertas" }, { id: "todas", titulo: mes === "todos" ? "Todas" : "Todas del mes" }]} />}
+          opciones={[{ id: "abiertas", titulo: "Abiertas" }, { id: "todas", titulo: mes === "todos" || mes === "cerrados" ? "Todas" : "Todas del mes" }]} />}
       >
         <Tabla
           filas={visibles}

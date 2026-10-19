@@ -10,7 +10,7 @@ import { DialogoAdjuntos } from "../ui/Adjuntos";
 import { AccionesFila, DialogoHistorial, useEdicion } from "../ui/Historial";
 import { useConsulta } from "@/lib/consulta";
 import { cargarContratosBreve, type ContratoBreve } from "@/lib/contratos";
-import { formatearFecha, formatearMonto, mesLargo } from "@/lib/formato";
+import { formatearFecha, formatearMonto, mesLargo, enPeriodo, gruposDePeriodo } from "@/lib/formato";
 import { cargarCiclo, cargarOrdenesCompra, type Ciclo, type EstadoOC, type OrdenCompra } from "@/lib/ingresos";
 import { useUsuario } from "@/lib/sesion";
 import { esDeLaUnidad, opcionesDeCiclos, unidadesCubiertas } from "@/lib/unidades";
@@ -159,7 +159,7 @@ function Contenidos({
   const visibles = useMemo(() => {
     const buscado = texto.trim().toLowerCase();
     return todas.filter((f) => {
-      if (periodo !== "todos" && primeroDelMes(f.fechaEmision) !== periodo) return false;
+      if (!enPeriodo(periodo, primeroDelMes(f.fechaEmision))) return false;
       if (!esDeLaUnidad(cubiertas, f.id, f.contratoId, contrato)) return false;
       const k = cobranzas.get(f.id) ?? sinCobranza;
       if (filtro === "vigente" || filtro === "consumida" || filtro === "vencida") {
@@ -234,7 +234,7 @@ function Contenidos({
                 etiqueta="Período"
                 valor={periodo}
                 alCambiar={setPeriodo}
-                grupos={[{ opciones: [{ id: "todos", titulo: "Todos los meses" }] }, { titulo: "Un mes", opciones: meses }]}
+                grupos={gruposDePeriodo(meses)}
               />
             </CampoFiltro>
             <CampoFiltro etiqueta="Contrato">

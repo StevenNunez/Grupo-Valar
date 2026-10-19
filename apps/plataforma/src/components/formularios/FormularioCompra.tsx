@@ -309,7 +309,7 @@ export function FormularioCompra({
         descripcion={
           editando
             ? `${compra.id} · cada cambio queda registrado con tu nombre y la hora.`
-            : "Una compra sin orden de compra, al contado: el documento y sus líneas. Para una OC, usa «Registrar OC»."
+            : "Una compra sin orden de compra, al contado: el documento y sus líneas."
         }
         abierto
         alCerrar={alCerrar}

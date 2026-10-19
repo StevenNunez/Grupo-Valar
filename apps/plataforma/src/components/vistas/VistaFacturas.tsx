@@ -11,7 +11,7 @@ import { AccionesFila, DialogoHistorial, useEdicion } from "../ui/Historial";
 import { useConsulta } from "@/lib/consulta";
 import { cargarContratosBreve, type ContratoBreve } from "@/lib/contratos";
 import { esDeLaUnidad, opcionesDeCiclos, unidadesCubiertas } from "@/lib/unidades";
-import { diasDesde, formatearFecha, formatearMonto, mesLargo } from "@/lib/formato";
+import { diasDesde, formatearFecha, formatearMonto, mesLargo, enPeriodo, gruposDePeriodo } from "@/lib/formato";
 import { cargarCiclo, cargarFacturas, nombreEdp, type Ciclo, type EstadoCobro, type Factura } from "@/lib/ingresos";
 import { useUsuario } from "@/lib/sesion";
 
@@ -139,11 +139,11 @@ function Contenidos({
 
   // Período y contrato recortan las facturas y también lo que falta por facturar.
   const delRecorte = useMemo(
-    () => todas.filter((f) => (periodo === "todos" || primeroDelMes(f.fechaEmision) === periodo) && esDeLaUnidad(cubiertas, f.id, f.contratoId, contrato)),
+    () => todas.filter((f) => enPeriodo(periodo, primeroDelMes(f.fechaEmision)) && esDeLaUnidad(cubiertas, f.id, f.contratoId, contrato)),
     [todas, cubiertas, periodo, contrato],
   );
   const faltantes = useMemo(
-    () => ciclos.filter((c) => sinFacturar(c) && (periodo === "todos" || primeroDelMes(c.periodo) === periodo) && (contrato === "todos" || c.unidadId === contrato)),
+    () => ciclos.filter((c) => sinFacturar(c) && enPeriodo(periodo, primeroDelMes(c.periodo)) && (contrato === "todos" || c.unidadId === contrato)),
     [ciclos, periodo, contrato],
   );
 
@@ -213,7 +213,7 @@ function Contenidos({
                 etiqueta="Período"
                 valor={periodo}
                 alCambiar={setPeriodo}
-                grupos={[{ opciones: [{ id: "todos", titulo: "Todos los meses" }] }, { titulo: "Un mes", opciones: meses }]}
+                grupos={gruposDePeriodo(meses)}
               />
             </CampoFiltro>
             <CampoFiltro etiqueta="Contrato">

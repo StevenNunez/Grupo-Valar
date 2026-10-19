@@ -133,7 +133,6 @@ function borradorDe(
   orden: Orden | null,
   contratos: ContratoBreve[],
   usuario: Usuario,
-  registrar: boolean,
 ): BorradorOrden {
   if (!orden) {
     return {
@@ -162,8 +161,7 @@ function borradorDe(
       condiciones_pago: emisorOC.condicionesPagoPorDefecto,
       solicitado_por: "",
       retira: "",
-      // La que ya se mandó desde la planilla de Drive no pasa por borrador.
-      estado: registrar ? "emitida" : "borrador",
+      estado: "borrador",
       observaciones: "",
     };
   }
@@ -229,7 +227,6 @@ export function FormularioOrden({
   categorias,
   proveedores,
   usuario,
-  registrar = false,
   alCerrar,
   alGuardado,
 }: {
@@ -239,14 +236,11 @@ export function FormularioOrden({
   /** El maestro de Abastecimiento: de acá se copian los datos del proveedor. */
   proveedores: Proveedor[];
   usuario: Usuario;
-  /** Registrar una OC que ya se emitió fuera de la plataforma (la planilla de
-      Drive): nace emitida y el número se escribe como está en el PDF. */
-  registrar?: boolean;
   alCerrar: () => void;
   /** Con el código interno de la orden, para poder adjuntarle el PDF. */
   alGuardado: (ordenId?: string) => void;
 }) {
-  const f = useFormulario<BorradorOrden>(borradorDe(orden, contratos, usuario, registrar));
+  const f = useFormulario<BorradorOrden>(borradorDe(orden, contratos, usuario));
   const editando = orden !== null;
   // Solo Soporte borra una orden con recepciones o facturas (lo vuelve a exigir la base).
   const esSoporte = usuario.general === "soporte";
@@ -260,7 +254,7 @@ export function FormularioOrden({
      ítems (todos con IVA cero). */
   const [exenta, setExenta] = useState(false);
 
-  const claveGuardado = editando ? null : `oc-borrador:${usuario.id}:${registrar ? "registrar" : "nueva"}`;
+  const claveGuardado = editando ? null : `oc-borrador:${usuario.id}:nueva`;
   /* La que quedó de antes, mientras no se decida qué hacer con ella. Hasta
      entonces no se pisa: lo nuevo se guarda recién cuando se recupera o se
      descarta, para no perderla por abrir el formulario sin querer. */
@@ -285,9 +279,8 @@ export function FormularioOrden({
 
   function recuperar() {
     if (!pendiente) return;
-    // El número propuesto se recalcula: el que tenía puede ya estar usado. El
-    // de una OC registrada desde Drive sí se conserva, porque se tecleó.
-    f.setDatos((d) => ({ ...pendiente.datos, numero: registrar ? pendiente.datos.numero : d.numero }));
+    // El número propuesto se recalcula: el que tenía puede ya estar usado.
+    f.setDatos((d) => ({ ...pendiente.datos, numero: d.numero }));
     setLineas(pendiente.lineas);
     setPendiente(null);
   }
@@ -522,13 +515,11 @@ export function FormularioOrden({
   return (
     <>
       <Dialogo
-        titulo={editando ? `Orden ${orden.numero}` : registrar ? "Registrar OC emitida" : "Nueva orden de compra"}
+        titulo={editando ? `Orden ${orden.numero}` : "Nueva orden de compra"}
         descripcion={
           editando
             ? "El estado se actualiza solo según lo que se vaya recibiendo y facturando."
-            : registrar
-              ? "Para la OC que ya se emitió desde la planilla de Drive. Escribe el número como aparece en el PDF y pega sus ítems; al guardar se abre para adjuntar el PDF."
-              : "El número viene propuesto con el siguiente de la serie. Puedes cambiarlo."
+            : "El número viene propuesto con el siguiente de la serie. Puedes cambiarlo."
         }
         abierto
         alCerrar={alCerrar}
@@ -961,7 +952,7 @@ export function FormularioOrden({
             error={f.error}
             guardando={f.guardando}
             alCancelar={alCerrar}
-            textoGuardar={editando ? "Guardar cambios" : registrar ? "Registrar orden" : "Crear orden"}
+            textoGuardar={editando ? "Guardar cambios" : "Crear orden"}
             alEliminar={editando ? borrado.abrir : undefined}
           />
         </form>

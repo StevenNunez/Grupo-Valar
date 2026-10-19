@@ -5,7 +5,7 @@ import { useFiltro } from "@/lib/vista-guardada";
 import { useMemo, type FormEvent } from "react";
 import { actualizar, crearConId } from "@/lib/crud";
 import { useConsulta } from "@/lib/consulta";
-import { formatearMonto, formatearNumero, formatearPesos, mesLargo } from "@/lib/formato";
+import { formatearMonto, formatearNumero, formatearPesos, mesLargo, enPeriodo, gruposDePeriodo } from "@/lib/formato";
 import { errorDeHaberes, haberesEnCero, haberesParaGuardar, type Haberes } from "@/lib/haberes";
 import { cargarNominasOficina, type NominaOficina } from "@/lib/oficina-central";
 import { cargarFiniquitos, type Finiquito } from "@/lib/finiquitos";
@@ -101,8 +101,8 @@ function Contenidos({ filas: todas, finiquitos: todosFiniquitos, edicion, alCamb
   );
 
   // Oficina Central no cuelga de un contrato: el filtro es el período y el estatus.
-  const delPeriodo = mes === "todos" ? todas : todas.filter((f) => delMes(f.periodo) === mes);
-  const finiquitosDelPeriodo = mes === "todos" ? todosFiniquitos : todosFiniquitos.filter((f) => delMes(f.periodo) === mes);
+  const delPeriodo = todas.filter((f) => enPeriodo(mes, delMes(f.periodo)));
+  const finiquitosDelPeriodo = todosFiniquitos.filter((f) => enPeriodo(mes, delMes(f.periodo)));
 
   const visibles = estatus === "hhExtra"
     ? delPeriodo.filter((f) => f.horas_extra_cantidad > 0 || f.horas_extra_monto > 0)
@@ -118,7 +118,7 @@ function Contenidos({ filas: todas, finiquitos: todosFiniquitos, edicion, alCamb
   const conReserva = finiquitosVisibles.filter((f) => f.conReserva);
   const horas = suma("horas_hombre");
   const costoHhExtra = suma("horas_extra_monto");
-  const cuando = mes === "todos" ? "Acumulado" : mesLargo(mes);
+  const cuando = mes === "todos" ? "Acumulado" : mes === "cerrados" ? "Meses cerrados" : mesLargo(mes);
   // La dotación del último mes es la foto de hoy; sumar meses contaría a la misma persona varias veces.
   const ultimo = visibles.reduce<NominaOficina | null>((u, f) => (u === null || f.periodo > u.periodo ? f : u), null);
 
@@ -141,7 +141,7 @@ function Contenidos({ filas: todas, finiquitos: todosFiniquitos, edicion, alCamb
         filtros={<>
           <CampoFiltro etiqueta="Período">
             <Desplegable etiqueta="Período" valor={mes} alCambiar={setMes}
-              grupos={[{ opciones: [{ id: "todos", titulo: "Todos los meses" }] }, { titulo: "Un mes", opciones: meses }]} />
+              grupos={gruposDePeriodo(meses)} />
           </CampoFiltro>
           <CampoFiltro etiqueta="Estatus">
             <Filtro etiqueta="Estatus" opciones={estatusPersonal} valor={estatus} alCambiar={setEstatus} />

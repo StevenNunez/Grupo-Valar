@@ -80,3 +80,41 @@ export function diasHastaFecha(iso: string, referencia = new Date()) {
   const origen = Date.UTC(referencia.getFullYear(), referencia.getMonth(), referencia.getDate());
   return Math.round((destino - origen) / 86_400_000);
 }
+
+/** El primer día del mes que está corriendo, "2026-10-01". */
+export function mesEnCurso() {
+  const hoy = new Date();
+  return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-01`;
+}
+
+/**
+ * ¿Entra este mes (primer día, "2026-08-01") en el período elegido?
+ * "todos" = cualquiera; "cerrados" = cualquiera anterior al mes en curso;
+ * si no, el mes exacto.
+ */
+export function enPeriodo(seleccion: string, mes: string) {
+  if (seleccion === "todos") return true;
+  if (seleccion === "cerrados") return mes < mesEnCurso();
+  return mes === seleccion;
+}
+
+/**
+ * Los grupos del selector de período de Egresos: el mes que está corriendo
+ * ("Período activo", viene a medias) separado de los meses ya cerrados, para
+ * que uno no se confunda con el otro al filtrar.
+ */
+export function gruposDePeriodo(meses: { id: string; titulo: string }[]) {
+  const enCurso = mesEnCurso();
+  const activo = meses.filter((m) => m.id >= enCurso);
+  const cerrados = meses.filter((m) => m.id < enCurso);
+  return [
+    {
+      opciones: [
+        { id: "todos", titulo: "Todos los meses" },
+        { id: "cerrados", titulo: "Todos los meses cerrados" },
+      ],
+    },
+    ...(activo.length > 0 ? [{ titulo: "Período activo (en curso)", opciones: activo }] : []),
+    ...(cerrados.length > 0 ? [{ titulo: "Meses cerrados", opciones: cerrados }] : []),
+  ];
+}

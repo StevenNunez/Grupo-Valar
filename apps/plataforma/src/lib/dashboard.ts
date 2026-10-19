@@ -3,6 +3,7 @@
 import { mesCorto } from "./formato";
 import { supabase } from "./supabase";
 import { anexoRaiz, cargarAnexos, etiquetaAnexo } from "./anexos";
+import { cargarPersonal } from "./egresos";
 import { cargarFiniquitos } from "./finiquitos";
 import { cargarEgresosOficina, cargarNominasOficina, type EgresoOficina } from "./oficina-central";
 
@@ -39,6 +40,13 @@ export type FilaMes = {
   ventaExtraordinaria: number;
   cobrado: number;
   costo: number;
+  /**
+   * De `costo`, lo extraordinario del personal: HH de parada de planta y el
+   * resto de las HH extra (reemplazos, licencias, feriados compensados…).
+   * Lo ordinario es el resto. Compras y servicios hoy no se marcan.
+   */
+  costoParadaPlanta: number;
+  costoOtrosExtra: number;
   reembolsable: number;
   margen: number;
   margenPct: number | null;
@@ -75,10 +83,11 @@ export type DatosDashboard = {
   categorias: FilaCategoria[];
   oficina: EgresoOficina[];
   /**
-   * Finiquitos pagados de los contratos. Son informativos (0082): NO entran al
-   * costo ni al resultado mensual; se muestran aparte y se imputan al cerrar el contrato.
+   * Finiquitos pagados, de contratos (`contratoId`) y de Oficina Central (nulo).
+   * Son informativos (0082): NO entran al costo ni al resultado de un contrato;
+   * sí cuentan en el resultado de la empresa y se imputan al cerrar el contrato.
    */
-  finiquitos: { contratoId: string; anexoId: string | null; periodo: string; total: number }[];
+  finiquitos: { contratoId: string | null; anexoId: string | null; periodo: string; total: number }[];
   /** Costo de la nómina de Oficina Central por mes. Vacío para quien no ve sueldos. */
   personalOficina: { periodo: string; costo: number }[];
 };
@@ -117,9 +126,11 @@ type Acum = {
   extraordinaria: number;
   cobrado: number;
   costo: number;
+  parada: number;
+  otrosExtra: number;
   reembolsable: number;
 };
-const acumVacio = (): Acum => ({ venta: 0, ordinaria: 0, extraordinaria: 0, cobrado: 0, costo: 0, reembolsable: 0 });
+const acumVacio = (): Acum => ({ venta: 0, ordinaria: 0, extraordinaria: 0, cobrado: 0, costo: 0, parada: 0, otrosExtra: 0, reembolsable: 0 });
 
 /**
  * El período de un movimiento puede venir con cualquier día del mes (un EP
@@ -153,7 +164,7 @@ function unirResumenPorMes(filas: FilaResumenSQL[]): FilaResumenSQL[] {
 }
 
 export async function cargarDashboard(): Promise<DatosDashboard> {
-  const [resumen, categorias, oficina, nominas, anexos, alias, edpsAnexo, costosAnexo, finiquitos] = await Promise.all([
+  const [resumen, categorias, oficina, nominas, anexos, alias, edpsAnexo, costosAnexo, finiquitos, finiquitosOficina, personal] = await Promise.all([
     supabase.from("resumen_mensual").select("*").order("periodo"),
     supabase.from("costos_por_categoria").select("*"),
     cargarEgresosOficina(),
@@ -169,6 +180,9 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
     supabase.from("costos_unificados").select("contrato_id, anexo_id, categoria_id, categoria, familia, periodo, tipo, neto").not("anexo_id", "is", null),
     /* Quien no ve personal recibe la lista vacía; si la tabla falla, el Dashboard sale igual. */
     cargarFiniquitos("contratos").catch(() => []),
+    cargarFiniquitos("oficina").catch(() => []),
+    /* De acá sale el costo extraordinario (HH por motivo). Sin acceso a personal llega vacío. */
+    cargarPersonal().catch(() => []),
   ]);
 
   const fallo = resumen.error ?? categorias.error;
@@ -238,6 +252,8 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
       ventaExtraordinaria: r.venta_extraordinaria,
       cobrado: r.cobrado,
       costo: r.costo,
+      costoParadaPlanta: 0,
+      costoOtrosExtra: 0,
       reembolsable: r.reembolsable,
       margen: r.margen,
       margenPct: r.margen_pct === null ? null : Number(r.margen_pct),
@@ -245,6 +261,28 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
     };
     baseDe.set(`${r.contrato_id}|${r.periodo}`, fila);
     meses.push(fila);
+  }
+
+  /* Costo extraordinario del personal: parada de planta aparte, y el resto de
+     las HH extra (reemplazos, licencias, feriados compensados…) como "otros".
+     El costo total ya los incluye; acá solo se separan. Lo de un anexo se mueve
+     a su unidad más abajo, igual que el resto de las cifras. */
+  for (const p of personal) {
+    if (!p.periodo) continue;
+    const mes = primeroDelMes(p.periodo);
+    const parada = Math.min(p.montosHh.monto_hh_parada_planta, p.horasExtraMonto);
+    const otros = Math.max(0, p.horasExtraMonto - parada);
+    if (parada === 0 && otros === 0) continue;
+    const base = baseDe.get(`${p.contratoId}|${mes}`);
+    if (base) {
+      base.costoParadaPlanta += parada;
+      base.costoOtrosExtra += otros;
+    }
+    if (p.anexoId) {
+      const a = celda(unidadDe(p.contratoId, p.anexoId), mes);
+      a.parada += parada;
+      a.otrosExtra += otros;
+    }
   }
 
   const recalcular = (f: FilaMes) => {
@@ -262,6 +300,8 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
         base.ventaExtraordinaria -= a.extraordinaria;
         base.cobrado -= a.cobrado;
         base.costo -= a.costo;
+        base.costoParadaPlanta -= a.parada;
+        base.costoOtrosExtra -= a.otrosExtra;
         base.reembolsable -= a.reembolsable;
         recalcular(base);
       }
@@ -279,6 +319,8 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
         ventaExtraordinaria: a.extraordinaria,
         cobrado: a.cobrado,
         costo: a.costo,
+        costoParadaPlanta: a.parada,
+        costoOtrosExtra: a.otrosExtra,
         reembolsable: a.reembolsable,
         margen: 0,
         margenPct: null,
@@ -363,9 +405,12 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
     oficina,
     anexosDisponibles,
     cerrados,
-    finiquitos: finiquitos.flatMap((f) =>
-      f.contratoId ? [{ contratoId: f.contratoId, anexoId: f.anexoId, periodo: primeroDelMes(f.periodo), total: f.total }] : [],
-    ),
+    finiquitos: [...finiquitos, ...finiquitosOficina].map((f) => ({
+      contratoId: f.contratoId,
+      anexoId: f.anexoId,
+      periodo: primeroDelMes(f.periodo),
+      total: f.total,
+    })),
     personalOficina: nominas.map((n) => ({ periodo: primeroDelMes(n.periodo), costo: n.costo_total })),
     /* Un ítem suelto (sin orden ni factura, p. ej. de una OC borrada) llega con
        periodo nulo: no pertenece a ningún mes y no debe tumbar el Dashboard. */
@@ -378,7 +423,15 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
 
 export type Totales = {
   venta: number;
+  ventaOrdinaria: number;
+  ventaExtraordinaria: number;
   costo: number;
+  /** Costo de HH en parada de planta (extraordinario). */
+  costoParadaPlanta: number;
+  /** Otros extraordinarios del personal: reemplazos, licencias, feriados compensados… */
+  costoOtrosExtra: number;
+  /** Costo ordinario: lo que queda al restar los extraordinarios. */
+  costoOrdinario: number;
   margen: number;
   margenPct: number;
   reembolsable: number;
@@ -388,9 +441,16 @@ export type Totales = {
 export function sumar(filas: FilaMes[]): Totales {
   const venta = filas.reduce((t, f) => t + f.venta, 0);
   const costo = filas.reduce((t, f) => t + f.costo, 0);
+  const costoParadaPlanta = filas.reduce((t, f) => t + (f.costoParadaPlanta ?? 0), 0);
+  const costoOtrosExtra = filas.reduce((t, f) => t + (f.costoOtrosExtra ?? 0), 0);
   return {
     venta,
+    ventaOrdinaria: filas.reduce((t, f) => t + (f.ventaOrdinaria ?? 0), 0),
+    ventaExtraordinaria: filas.reduce((t, f) => t + (f.ventaExtraordinaria ?? 0), 0),
     costo,
+    costoParadaPlanta,
+    costoOtrosExtra,
+    costoOrdinario: costo - costoParadaPlanta - costoOtrosExtra,
     margen: venta - costo,
     margenPct: venta > 0 ? ((venta - costo) / venta) * 100 : 0,
     reembolsable: filas.reduce((t, f) => t + f.reembolsable, 0),
@@ -759,4 +819,31 @@ export function nivelPorMes(alertas: Alerta[]) {
     if (porMes.get(a.periodo) !== "critico") porMes.set(a.periodo, a.nivel);
   }
   return porMes;
+}
+
+/* ── Personal: ordinario y extraordinario ─────────────────────────────────── */
+
+export type PersonalDividido = { total: number; ordinario: number; paradaPlanta: number; otrosExtra: number };
+
+/**
+ * El costo de la familia Personal abierto en ordinario y extraordinario, para
+ * los mismos contratos y meses que se están mirando. Lo extraordinario sale de
+ * `Totales` (HH extra por motivo); lo ordinario es el resto del Personal.
+ */
+export function dividirPersonal(
+  categorias: FilaCategoria[],
+  contratoFiltro: string | string[],
+  periodosVisibles: string[],
+  totales: Totales,
+): PersonalDividido {
+  const unidades = typeof contratoFiltro === "string" ? (contratoFiltro === "todos" ? null : [contratoFiltro]) : contratoFiltro;
+  let total = 0;
+  for (const c of categorias) {
+    if (c.familia !== "personal") continue;
+    if (unidades && !unidades.includes(c.contratoId)) continue;
+    if (c.periodo !== null && !periodosVisibles.includes(c.periodo)) continue;
+    total += c.realOrdinario;
+  }
+  const extra = totales.costoParadaPlanta + totales.costoOtrosExtra;
+  return { total, ordinario: Math.max(0, total - extra), paradaPlanta: totales.costoParadaPlanta, otrosExtra: totales.costoOtrosExtra };
 }

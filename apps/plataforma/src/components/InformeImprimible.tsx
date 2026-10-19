@@ -9,6 +9,7 @@ import {
   type CategoriaAcumulada,
   type Contrato,
   type Evolucion,
+  type PersonalDividido,
   type Totales,
 } from "@/lib/dashboard";
 import { formatearFecha, formatearPesos, mesLargo } from "@/lib/formato";
@@ -36,6 +37,9 @@ export function InformeImprimible({
   contratos,
   evolucion,
   categorias,
+  personal,
+  paralelos,
+  soloOficina = false,
   meta,
   alcance,
   emitidoPor,
@@ -44,6 +48,16 @@ export function InformeImprimible({
   contratos: Contrato[];
   evolucion: Evolucion[];
   categorias: CategoriaAcumulada[];
+  /** Personal abierto en ordinario y extraordinario, con los mismos filtros. */
+  personal: PersonalDividido;
+  /** Oficina Central (nulo si no está en el filtro) y finiquitos del período. */
+  paralelos: {
+    oficina: { operativos: number; activos: number; movimientos: number } | null;
+    finiquitos: number;
+    consolidado: number | null;
+  };
+  /** Solo se marcó Oficina Central: no hay resultado de contratos que imprimir. */
+  soloOficina?: boolean;
   meta: number;
   /** Qué se está mirando: "Todos los contratos · últimos 3 meses". */
   alcance: string;
@@ -85,6 +99,7 @@ export function InformeImprimible({
         {alcance} · Cifras netas de IVA · Emitido el {formatearFecha(hoy())} por {emitidoPor}
       </p>
 
+      {!soloOficina && (<>
       {/* Consolidado */}
       <section className="mt-6">
         <Titulo>Resultado del período</Titulo>
@@ -178,6 +193,7 @@ export function InformeImprimible({
               <th className="py-2">Mes</th>
               <th className="py-2 text-right">Ventas</th>
               <th className="py-2 text-right">Costos</th>
+              <th className="py-2 text-right">De ello extraord.</th>
               <th className="py-2 text-right">Resultado</th>
               <th className="py-2 text-right">Rent.</th>
               <th className="py-2 text-right">Contra la meta</th>
@@ -194,6 +210,11 @@ export function InformeImprimible({
                   </td>
                   <td className="py-2 text-right tabular-nums">
                     {formatearPesos(m.consolidado.costo)}
+                  </td>
+                  <td className="py-2 text-right tabular-nums text-ink-soft">
+                    {m.consolidado.costoParadaPlanta + m.consolidado.costoOtrosExtra > 0
+                      ? formatearPesos(m.consolidado.costoParadaPlanta + m.consolidado.costoOtrosExtra)
+                      : "—"}
                   </td>
                   <td className="py-2 text-right tabular-nums">
                     {formatearPesos(m.consolidado.margen)}
@@ -221,6 +242,12 @@ export function InformeImprimible({
           <p className="mt-1 text-[11px] text-ink-soft">
             Acumulado del período contra el presupuesto mensual del contrato.
           </p>
+          {personal.total > 0 && (
+            <p className="mt-1 text-[11px] text-ink-soft">
+              Personal: ordinario {formatearPesos(personal.ordinario)} · extraordinario{" "}
+              {formatearPesos(personal.paradaPlanta + personal.otrosExtra)}.
+            </p>
+          )}
           <table className="mt-3 w-full border-collapse text-sm">
             <thead>
               <tr className="border-b-2 border-ink text-left text-[10px] font-semibold uppercase tracking-[0.1em]">
@@ -247,6 +274,76 @@ export function InformeImprimible({
               ))}
             </tbody>
           </table>
+        </section>
+      )}
+
+      </>)}
+
+      {/* Ordinario y extraordinario */}
+      {!soloOficina && (
+        <section className="mt-7 break-inside-avoid">
+          <Titulo>Ordinario y extraordinario</Titulo>
+          <table className="mt-3 w-full border-collapse text-sm">
+            <thead>
+              <tr className="border-b-2 border-ink text-left text-[10px] font-semibold uppercase tracking-[0.1em]">
+                <th className="py-2"><span className="sr-only">Concepto</span></th>
+                <th className="py-2 text-right">Ordinario</th>
+                <th className="py-2 text-right">Extraordinario</th>
+                <th className="py-2 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-mist">
+                <td className="py-2 font-semibold">Ventas netas</td>
+                <td className="py-2 text-right tabular-nums">{formatearPesos(total.ventaOrdinaria)}</td>
+                <td className="py-2 text-right tabular-nums">{formatearPesos(total.ventaExtraordinaria)}</td>
+                <td className="py-2 text-right tabular-nums">{formatearPesos(total.venta)}</td>
+              </tr>
+              <tr className="border-b border-mist">
+                <td className="py-2 font-semibold">Costos</td>
+                <td className="py-2 text-right tabular-nums">{formatearPesos(total.costoOrdinario)}</td>
+                <td className="py-2 text-right tabular-nums">{formatearPesos(total.costoParadaPlanta + total.costoOtrosExtra)}</td>
+                <td className="py-2 text-right tabular-nums">{formatearPesos(total.costo)}</td>
+              </tr>
+              <tr className="border-b border-mist text-ink-soft">
+                <td className="py-1.5 pl-4 text-xs">HH de parada de planta</td>
+                <td className="py-1.5 text-right text-xs">—</td>
+                <td className="py-1.5 text-right text-xs tabular-nums">{formatearPesos(total.costoParadaPlanta)}</td>
+                <td />
+              </tr>
+              <tr className="border-b border-mist text-ink-soft">
+                <td className="py-1.5 pl-4 text-xs">Otros extraordinarios (reemplazos, licencias, feriados compensados…)</td>
+                <td className="py-1.5 text-right text-xs">—</td>
+                <td className="py-1.5 text-right text-xs tabular-nums">{formatearPesos(total.costoOtrosExtra)}</td>
+                <td />
+              </tr>
+              <tr className="font-semibold">
+                <td className="py-2">Resultado</td>
+                <td className="py-2 text-right tabular-nums">{formatearPesos(total.ventaOrdinaria - total.costoOrdinario)}</td>
+                <td className="py-2 text-right tabular-nums">{formatearPesos(total.ventaExtraordinaria - total.costoParadaPlanta - total.costoOtrosExtra)}</td>
+                <td className="py-2 text-right tabular-nums">{formatearPesos(total.margen)}</td>
+              </tr>
+            </tbody>
+          </table>
+          {personal.total > 0 && (
+            <p className="mt-2 text-[11px] text-ink-soft">
+              Personal {formatearPesos(personal.total)}: ordinario {formatearPesos(personal.ordinario)} · parada de planta{" "}
+              {formatearPesos(personal.paradaPlanta)} · otros extraordinarios {formatearPesos(personal.otrosExtra)}.
+            </p>
+          )}
+        </section>
+      )}
+
+      {/* Oficina Central y finiquitos: aparte del resultado de los contratos */}
+      {(paralelos.oficina || paralelos.finiquitos > 0) && (
+        <section className="mt-7 break-inside-avoid border-t-2 border-ink pt-4">
+          <Titulo>{paralelos.oficina ? "Oficina Central y finiquitos" : "Finiquitos"}</Titulo>
+          <div className="mt-3 grid grid-cols-4 gap-4">
+            {paralelos.oficina && <Cifra etiqueta="Gastos operativos" valor={formatearPesos(paralelos.oficina.operativos)} nota={`${paralelos.oficina.movimientos} movimientos`} />}
+            {paralelos.oficina && <Cifra etiqueta="Compra de activos" valor={formatearPesos(paralelos.oficina.activos)} nota="Fuera del resultado" />}
+            <Cifra etiqueta="Finiquitos (informativo)" valor={formatearPesos(paralelos.finiquitos)} nota="No son costo del contrato" />
+            {paralelos.consolidado !== null && <Cifra etiqueta="Resultado consolidado" valor={formatearPesos(paralelos.consolidado)} nota="Contratos − oficina − finiquitos" />}
+          </div>
         </section>
       )}
 
