@@ -451,12 +451,14 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
 
 /**
  * Ordinario contra extraordinario. Sirve para cruzar el estado de pago
- * extraordinario con lo que realmente costó la parada de planta y los demás
- * extraordinarios: sin esto, un indicador bajo no se puede explicar.
- * El costo extraordinario hoy sale solo del personal (HH extra por motivo).
+ * extraordinario con lo que realmente costó la parada de planta: sin esto, un
+ * indicador bajo no se puede explicar. El único costo extraordinario son las HH
+ * de parada de planta; todo lo demás (incluidas las otras HH extra) es ordinario.
  */
 function PanelOrdinarioExtra({ total }: { total: Totales }) {
-  const costoExtra = total.costoParadaPlanta + total.costoOtrosExtra;
+  const costoExtra = total.costoParadaPlanta;
+  /* Cuánto del EP extraordinario se fue en la parada de planta. */
+  const usoExtra = total.ventaExtraordinaria > 0 ? (costoExtra / total.ventaExtraordinaria) * 100 : null;
   const resultadoOrd = total.ventaOrdinaria - total.costoOrdinario;
   const resultadoExtra = total.ventaExtraordinaria - costoExtra;
   const pct = (resultado: number, venta: number) => (venta > 0 ? `${((resultado / venta) * 100).toFixed(1)}%` : "—");
@@ -465,8 +467,7 @@ function PanelOrdinarioExtra({ total }: { total: Totales }) {
   const filas: { titulo: string; ordinario: string; extra: string; total: string; fuerte?: boolean; sangria?: boolean; negativoOrd?: number; negativoExtra?: number }[] = [
     { titulo: "Ventas netas", ordinario: formatearMonto(total.ventaOrdinaria), extra: formatearMonto(total.ventaExtraordinaria), total: formatearMonto(total.venta) },
     { titulo: "Costos", ordinario: formatearMonto(total.costoOrdinario), extra: formatearMonto(costoExtra), total: formatearMonto(total.costo) },
-    { titulo: "HH de parada de planta", ordinario: "—", extra: formatearMonto(total.costoParadaPlanta), total: formatearMonto(total.costoParadaPlanta), sangria: true },
-    { titulo: "Otros extraordinarios (reemplazos, licencias, feriados compensados…)", ordinario: "—", extra: formatearMonto(total.costoOtrosExtra), total: formatearMonto(total.costoOtrosExtra), sangria: true },
+    { titulo: "De ello: HH de parada de planta", ordinario: "—", extra: formatearMonto(total.costoParadaPlanta), total: formatearMonto(total.costoParadaPlanta), sangria: true },
     { titulo: "Resultado", ordinario: formatearMonto(resultadoOrd), extra: formatearMonto(resultadoExtra), total: formatearMonto(total.margen), fuerte: true, negativoOrd: resultadoOrd, negativoExtra: resultadoExtra },
     { titulo: "Rentabilidad s/ ventas", ordinario: pct(resultadoOrd, total.ventaOrdinaria), extra: pct(resultadoExtra, total.ventaExtraordinaria), total: `${total.margenPct.toFixed(1)}%`, fuerte: true },
   ];
@@ -475,8 +476,9 @@ function PanelOrdinarioExtra({ total }: { total: Totales }) {
     <section aria-labelledby="ord-extra" className="mb-6 rounded-2xl border border-mist-deep bg-white p-6 lg:p-8">
       <h2 id="ord-extra" className="font-display text-lg font-semibold text-ink">Ordinario y extraordinario</h2>
       <p className="mb-5 mt-1 text-sm text-ink-soft">
-        Para contrastar el estado de pago extraordinario con el costo real de la parada de planta y los otros extraordinarios.
-        El costo extraordinario sale del personal (horas extra por motivo); las compras y servicios se cuentan como ordinarios.
+        Para contrastar el estado de pago extraordinario con el costo real de la parada de planta.
+        Solo las HH de parada de planta son costo extraordinario; todo lo demás (planta, reemplazos, licencias, feriados
+        compensados, compras y servicios) es ordinario.
       </p>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[34rem] text-sm">
@@ -499,6 +501,23 @@ function PanelOrdinarioExtra({ total }: { total: Totales }) {
             ))}
           </tbody>
         </table>
+      </div>
+      {/* Lo extraordinario de un vistazo: cuánto del EP extraordinario se fue en la parada. */}
+      <div className="mt-5 rounded-xl bg-mist/50 p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+          <span className="font-semibold text-ink">Parada de planta contra el EP extraordinario</span>
+          <span className={`font-semibold ${usoExtra !== null && usoExtra > 100 ? "text-[#a52f24]" : "text-ink"}`}>
+            {usoExtra === null ? (costoExtra > 0 ? "Sin EP extraordinario" : "Sin parada de planta") : `${usoExtra.toFixed(0)}% del EP`}
+          </span>
+        </div>
+        <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-white" role="img"
+          aria-label={usoExtra === null ? "Sin datos para comparar" : `La parada de planta equivale al ${usoExtra.toFixed(0)}% del EP extraordinario`}>
+          <span className="block h-full rounded-full" style={{ width: `${Math.min(usoExtra ?? 0, 100)}%`, background: usoExtra !== null && usoExtra > 100 ? "#a52f24" : "#9c5518" }} />
+        </div>
+        <p className="mt-2 text-xs text-ink-soft">
+          EP extraordinario {formatearMonto(total.ventaExtraordinaria)} · parada de planta {formatearMonto(costoExtra)}
+          {total.ventaExtraordinaria > 0 ? ` · resultado extraordinario ${formatearMonto(total.ventaExtraordinaria - costoExtra)}` : ""}
+        </p>
       </div>
     </section>
   );
@@ -917,10 +936,10 @@ function TablaEvolucion({ evolucion, meta }: { evolucion: Evolucion[]; meta: num
     },
     {
       clave: "extra",
-      titulo: "De ello extraordinario",
+      titulo: "De ello parada de planta",
       derecha: true,
       celda: (f) => {
-        const extra = f.consolidado.costoParadaPlanta + f.consolidado.costoOtrosExtra;
+        const extra = f.consolidado.costoParadaPlanta;
         return <span className="text-ink-soft">{extra > 0 ? formatearMonto(extra) : "—"}</span>;
       },
     },
@@ -1100,9 +1119,8 @@ function TablaCategorias({
       <p className="mt-4 rounded-xl bg-mist/50 p-4 text-sm text-ink-soft">
         <strong className="text-ink">Personal {formatearMonto(personal.total)}</strong> = ordinario{" "}
         <strong className="text-ink">{formatearMonto(personal.ordinario)}</strong> + parada de planta{" "}
-        <strong className="text-ink">{formatearMonto(personal.paradaPlanta)}</strong> + otros extraordinarios{" "}
-        <strong className="text-ink">{formatearMonto(personal.otrosExtra)}</strong>
-        {" "}(reemplazos, licencias, feriados compensados…).
+        <strong className="text-ink">{formatearMonto(personal.paradaPlanta)}</strong>
+        {" "}(solo la parada de planta es extraordinaria).
       </p>
     )}
     </>

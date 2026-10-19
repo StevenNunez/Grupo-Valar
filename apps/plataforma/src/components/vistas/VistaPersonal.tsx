@@ -170,10 +170,9 @@ function Contenidos({
   const aporte = visibles.reduce((t, f) => t + f.aportePatronal, 0);
   const costoHhExtra = visibles.reduce((t, f) => t + f.horasExtraMonto, 0);
   const costo = visibles.reduce((t, f) => t + f.costoTotal, 0);
-  /* Planta (ordinario) contra extraordinario: parada de planta aparte y el resto de las HH extra. */
+  /* Solo la parada de planta es extraordinaria; el resto (planta y otras HH extra) es ordinario. */
   const costoParada = visibles.reduce((t, f) => t + Math.min(f.montosHh.monto_hh_parada_planta, f.horasExtraMonto), 0);
-  const costoOtrosExtra = costoHhExtra - costoParada;
-  const costoPlanta = costo - costoHhExtra;
+  const costoOrdinario = costo - costoParada;
   const finiquitos = finiquitosVisibles.reduce((t, f) => t + f.total, 0);
   const conReserva = finiquitosVisibles.filter((f) => f.conReserva);
   const horas = visibles.reduce((t, f) => t + f.horasHombre, 0);
@@ -204,9 +203,9 @@ function Contenidos({
             nota: `${cuando} · haberes ${formatearMonto(remuneraciones)} · aporte patronal ${formatearMonto(aporte)} · sin finiquitos`,
           },
           {
-            etiqueta: "Costo extraordinario",
-            valor: formatearMonto(costoHhExtra),
-            nota: `${cuando} · parada de planta ${formatearMonto(costoParada)} · otros (reemplazos, licencias, feriados) ${formatearMonto(costoOtrosExtra)} · planta ordinaria ${formatearMonto(costoPlanta)}`,
+            etiqueta: "Parada de planta",
+            valor: formatearMonto(costoParada),
+            nota: `${cuando} · extraordinario · el resto, ${formatearMonto(costoOrdinario)}, es ordinario (incluye otras HH extra)`,
           },
           {
             etiqueta: "Dotación actual",

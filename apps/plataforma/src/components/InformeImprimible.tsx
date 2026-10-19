@@ -193,7 +193,7 @@ export function InformeImprimible({
               <th className="py-2">Mes</th>
               <th className="py-2 text-right">Ventas</th>
               <th className="py-2 text-right">Costos</th>
-              <th className="py-2 text-right">De ello extraord.</th>
+              <th className="py-2 text-right">De ello parada</th>
               <th className="py-2 text-right">Resultado</th>
               <th className="py-2 text-right">Rent.</th>
               <th className="py-2 text-right">Contra la meta</th>
@@ -212,9 +212,7 @@ export function InformeImprimible({
                     {formatearPesos(m.consolidado.costo)}
                   </td>
                   <td className="py-2 text-right tabular-nums text-ink-soft">
-                    {m.consolidado.costoParadaPlanta + m.consolidado.costoOtrosExtra > 0
-                      ? formatearPesos(m.consolidado.costoParadaPlanta + m.consolidado.costoOtrosExtra)
-                      : "—"}
+                    {m.consolidado.costoParadaPlanta > 0 ? formatearPesos(m.consolidado.costoParadaPlanta) : "—"}
                   </td>
                   <td className="py-2 text-right tabular-nums">
                     {formatearPesos(m.consolidado.margen)}
@@ -245,7 +243,7 @@ export function InformeImprimible({
           {personal.total > 0 && (
             <p className="mt-1 text-[11px] text-ink-soft">
               Personal: ordinario {formatearPesos(personal.ordinario)} · extraordinario{" "}
-              {formatearPesos(personal.paradaPlanta + personal.otrosExtra)}.
+              {formatearPesos(personal.paradaPlanta)} (parada de planta).
             </p>
           )}
           <table className="mt-3 w-full border-collapse text-sm">
@@ -302,7 +300,7 @@ export function InformeImprimible({
               <tr className="border-b border-mist">
                 <td className="py-2 font-semibold">Costos</td>
                 <td className="py-2 text-right tabular-nums">{formatearPesos(total.costoOrdinario)}</td>
-                <td className="py-2 text-right tabular-nums">{formatearPesos(total.costoParadaPlanta + total.costoOtrosExtra)}</td>
+                <td className="py-2 text-right tabular-nums">{formatearPesos(total.costoParadaPlanta)}</td>
                 <td className="py-2 text-right tabular-nums">{formatearPesos(total.costo)}</td>
               </tr>
               <tr className="border-b border-mist text-ink-soft">
@@ -311,16 +309,10 @@ export function InformeImprimible({
                 <td className="py-1.5 text-right text-xs tabular-nums">{formatearPesos(total.costoParadaPlanta)}</td>
                 <td />
               </tr>
-              <tr className="border-b border-mist text-ink-soft">
-                <td className="py-1.5 pl-4 text-xs">Otros extraordinarios (reemplazos, licencias, feriados compensados…)</td>
-                <td className="py-1.5 text-right text-xs">—</td>
-                <td className="py-1.5 text-right text-xs tabular-nums">{formatearPesos(total.costoOtrosExtra)}</td>
-                <td />
-              </tr>
               <tr className="font-semibold">
                 <td className="py-2">Resultado</td>
                 <td className="py-2 text-right tabular-nums">{formatearPesos(total.ventaOrdinaria - total.costoOrdinario)}</td>
-                <td className="py-2 text-right tabular-nums">{formatearPesos(total.ventaExtraordinaria - total.costoParadaPlanta - total.costoOtrosExtra)}</td>
+                <td className="py-2 text-right tabular-nums">{formatearPesos(total.ventaExtraordinaria - total.costoParadaPlanta)}</td>
                 <td className="py-2 text-right tabular-nums">{formatearPesos(total.margen)}</td>
               </tr>
             </tbody>
@@ -328,7 +320,7 @@ export function InformeImprimible({
           {personal.total > 0 && (
             <p className="mt-2 text-[11px] text-ink-soft">
               Personal {formatearPesos(personal.total)}: ordinario {formatearPesos(personal.ordinario)} · parada de planta{" "}
-              {formatearPesos(personal.paradaPlanta)} · otros extraordinarios {formatearPesos(personal.otrosExtra)}.
+              {formatearPesos(personal.paradaPlanta)} (única parte extraordinaria).
             </p>
           )}
         </section>

@@ -41,12 +41,11 @@ export type FilaMes = {
   cobrado: number;
   costo: number;
   /**
-   * De `costo`, lo extraordinario del personal: HH de parada de planta y el
-   * resto de las HH extra (reemplazos, licencias, feriados compensados…).
-   * Lo ordinario es el resto. Compras y servicios hoy no se marcan.
+   * De `costo`, lo extraordinario: las HH de parada de planta (personal). Todo
+   * lo demás —planta, reemplazos, licencias, feriados compensados, compras,
+   * servicios— es ordinario.
    */
   costoParadaPlanta: number;
-  costoOtrosExtra: number;
   reembolsable: number;
   margen: number;
   margenPct: number | null;
@@ -127,10 +126,9 @@ type Acum = {
   cobrado: number;
   costo: number;
   parada: number;
-  otrosExtra: number;
   reembolsable: number;
 };
-const acumVacio = (): Acum => ({ venta: 0, ordinaria: 0, extraordinaria: 0, cobrado: 0, costo: 0, parada: 0, otrosExtra: 0, reembolsable: 0 });
+const acumVacio = (): Acum => ({ venta: 0, ordinaria: 0, extraordinaria: 0, cobrado: 0, costo: 0, parada: 0, reembolsable: 0 });
 
 /**
  * El período de un movimiento puede venir con cualquier día del mes (un EP
@@ -253,7 +251,6 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
       cobrado: r.cobrado,
       costo: r.costo,
       costoParadaPlanta: 0,
-      costoOtrosExtra: 0,
       reembolsable: r.reembolsable,
       margen: r.margen,
       margenPct: r.margen_pct === null ? null : Number(r.margen_pct),
@@ -263,26 +260,17 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
     meses.push(fila);
   }
 
-  /* Costo extraordinario del personal: parada de planta aparte, y el resto de
-     las HH extra (reemplazos, licencias, feriados compensados…) como "otros".
-     El costo total ya los incluye; acá solo se separan. Lo de un anexo se mueve
-     a su unidad más abajo, igual que el resto de las cifras. */
+  /* Costo extraordinario: solo las HH de parada de planta. El costo total ya las
+     incluye; acá solo se separan. Lo de un anexo se mueve a su unidad más abajo,
+     igual que el resto de las cifras. */
   for (const p of personal) {
     if (!p.periodo) continue;
     const mes = primeroDelMes(p.periodo);
     const parada = Math.min(p.montosHh.monto_hh_parada_planta, p.horasExtraMonto);
-    const otros = Math.max(0, p.horasExtraMonto - parada);
-    if (parada === 0 && otros === 0) continue;
+    if (parada === 0) continue;
     const base = baseDe.get(`${p.contratoId}|${mes}`);
-    if (base) {
-      base.costoParadaPlanta += parada;
-      base.costoOtrosExtra += otros;
-    }
-    if (p.anexoId) {
-      const a = celda(unidadDe(p.contratoId, p.anexoId), mes);
-      a.parada += parada;
-      a.otrosExtra += otros;
-    }
+    if (base) base.costoParadaPlanta += parada;
+    if (p.anexoId) celda(unidadDe(p.contratoId, p.anexoId), mes).parada += parada;
   }
 
   const recalcular = (f: FilaMes) => {
@@ -301,7 +289,6 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
         base.cobrado -= a.cobrado;
         base.costo -= a.costo;
         base.costoParadaPlanta -= a.parada;
-        base.costoOtrosExtra -= a.otrosExtra;
         base.reembolsable -= a.reembolsable;
         recalcular(base);
       }
@@ -320,7 +307,6 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
         cobrado: a.cobrado,
         costo: a.costo,
         costoParadaPlanta: a.parada,
-        costoOtrosExtra: a.otrosExtra,
         reembolsable: a.reembolsable,
         margen: 0,
         margenPct: null,
@@ -426,11 +412,9 @@ export type Totales = {
   ventaOrdinaria: number;
   ventaExtraordinaria: number;
   costo: number;
-  /** Costo de HH en parada de planta (extraordinario). */
+  /** Costo de HH en parada de planta: el único costo extraordinario. */
   costoParadaPlanta: number;
-  /** Otros extraordinarios del personal: reemplazos, licencias, feriados compensados… */
-  costoOtrosExtra: number;
-  /** Costo ordinario: lo que queda al restar los extraordinarios. */
+  /** Costo ordinario: todo lo demás (incluye las otras HH extra). */
   costoOrdinario: number;
   margen: number;
   margenPct: number;
@@ -442,15 +426,13 @@ export function sumar(filas: FilaMes[]): Totales {
   const venta = filas.reduce((t, f) => t + f.venta, 0);
   const costo = filas.reduce((t, f) => t + f.costo, 0);
   const costoParadaPlanta = filas.reduce((t, f) => t + (f.costoParadaPlanta ?? 0), 0);
-  const costoOtrosExtra = filas.reduce((t, f) => t + (f.costoOtrosExtra ?? 0), 0);
   return {
     venta,
     ventaOrdinaria: filas.reduce((t, f) => t + (f.ventaOrdinaria ?? 0), 0),
     ventaExtraordinaria: filas.reduce((t, f) => t + (f.ventaExtraordinaria ?? 0), 0),
     costo,
     costoParadaPlanta,
-    costoOtrosExtra,
-    costoOrdinario: costo - costoParadaPlanta - costoOtrosExtra,
+    costoOrdinario: costo - costoParadaPlanta,
     margen: venta - costo,
     margenPct: venta > 0 ? ((venta - costo) / venta) * 100 : 0,
     reembolsable: filas.reduce((t, f) => t + f.reembolsable, 0),
@@ -823,7 +805,7 @@ export function nivelPorMes(alertas: Alerta[]) {
 
 /* ── Personal: ordinario y extraordinario ─────────────────────────────────── */
 
-export type PersonalDividido = { total: number; ordinario: number; paradaPlanta: number; otrosExtra: number };
+export type PersonalDividido = { total: number; ordinario: number; paradaPlanta: number };
 
 /**
  * El costo de la familia Personal abierto en ordinario y extraordinario, para
@@ -844,6 +826,5 @@ export function dividirPersonal(
     if (c.periodo !== null && !periodosVisibles.includes(c.periodo)) continue;
     total += c.realOrdinario;
   }
-  const extra = totales.costoParadaPlanta + totales.costoOtrosExtra;
-  return { total, ordinario: Math.max(0, total - extra), paradaPlanta: totales.costoParadaPlanta, otrosExtra: totales.costoOtrosExtra };
+  return { total, ordinario: Math.max(0, total - totales.costoParadaPlanta), paradaPlanta: totales.costoParadaPlanta };
 }
