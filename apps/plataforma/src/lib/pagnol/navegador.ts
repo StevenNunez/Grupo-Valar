@@ -1,7 +1,7 @@
 "use client";
 
 import { supabase } from "../supabase";
-import type { MaterialPagnol, PanolPagnol, ProveedorPagnol, Resultado, ResumenEnvio } from "./tipos";
+import type { ActivoPagnol, ExistenciasPagnol, MaterialPagnol, PanolPagnol, ProveedorPagnol, Resultado, ResumenEnvio } from "./tipos";
 
 /**
  * El lado del navegador de la búsqueda en Pagnol. No habla con Pagnol: habla
@@ -60,3 +60,13 @@ export const anularRecepcionConPagnol = (recepcionId: string) =>
 /** Reprocesa los avisos de stock bajo que quedaron en la bandeja. */
 export const procesarReposicionPendiente = () =>
   llamar<{ ok: true; revisados: number; listos: number }>("/api/pagnol/reposicion/", "POST");
+
+/* ── Catálogo de Pagnol en Artículos ──────────────────────────────────────── */
+
+export const catalogoDePagnol = {
+  materiales: () => llamar<Resultado<MaterialPagnol>>("/api/pagnol/catalogo/?recurso=materiales", "GET"),
+  activos: () => llamar<Resultado<ActivoPagnol>>("/api/pagnol/catalogo/?recurso=activos", "GET"),
+};
+
+export const existenciasDeMaterial = (id: string) =>
+  llamar<{ ok: true; existencias: ExistenciasPagnol }>(`/api/pagnol/existencias/?id=${encodeURIComponent(id)}`, "GET");

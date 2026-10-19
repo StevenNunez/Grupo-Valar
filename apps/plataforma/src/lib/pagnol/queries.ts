@@ -1,7 +1,7 @@
 import "server-only";
 
 import { clientePagnol, PagnolNoConfigurado } from "./client";
-import type { MaterialPagnol, ProveedorPagnol, Resultado } from "./tipos";
+import type { ActivoPagnol, ExistenciasPagnol, MaterialPagnol, ProveedorPagnol, Resultado } from "./tipos";
 
 /**
  * Lo que la plataforma le pregunta a Pagnol. Cada función devuelve el
@@ -50,6 +50,57 @@ export async function buscarProveedores(q: string, cursor?: string): Promise<Res
     });
     if (error || !data) return { ok: false, error: mensajeDeError(response.status) };
     return { ok: true, datos: data.data, siguiente: data.next_cursor };
+  } catch (e) {
+    return { ok: false, error: mensajeDeError(null, e) };
+  }
+}
+
+/**
+ * Todo el catálogo de un recurso, para las pantallas que filtran en el
+ * navegador (Artículos). Valar tiene cientos de filas, no miles: se trae en
+ * páginas de 100 y se guarda en la caché con el tag del recurso, que el
+ * webhook limpia cuando algo cambia en Pagnol.
+ */
+const PAGINAS_MAXIMAS = 30;
+
+async function todasLasPaginas<T>(
+  tag: "pagnol:materiales" | "pagnol:activos",
+  pedir: (cursor: string | undefined) => Promise<{ data?: { data: T[]; next_cursor: string | null }; estado: number }>,
+): Promise<Resultado<T>> {
+  try {
+    const filas: T[] = [];
+    let cursor: string | undefined;
+    for (let pagina = 0; pagina < PAGINAS_MAXIMAS; pagina += 1) {
+      const { data, estado } = await pedir(cursor);
+      if (!data) return { ok: false, error: mensajeDeError(estado) };
+      filas.push(...data.data);
+      if (!data.next_cursor) return { ok: true, datos: filas, siguiente: null };
+      cursor = data.next_cursor;
+    }
+    return { ok: true, datos: filas, siguiente: cursor ?? null };
+  } catch (e) {
+    return { ok: false, error: mensajeDeError(null, e) };
+  }
+}
+
+export const todosLosMateriales = () =>
+  todasLasPaginas<MaterialPagnol>("pagnol:materiales", async (cursor) => {
+    const { data, response } = await clientePagnol("pagnol:materiales", 120).GET("/materiales", { params: { query: { limit: 100, cursor } } });
+    return { data, estado: response.status };
+  });
+
+export const todosLosActivos = () =>
+  todasLasPaginas<ActivoPagnol>("pagnol:activos", async (cursor) => {
+    const { data, response } = await clientePagnol("pagnol:activos", 120).GET("/activos", { params: { query: { limit: 100, cursor } } });
+    return { data, estado: response.status };
+  });
+
+/** Dónde está el stock de un material: por pañol y contrato. */
+export async function existenciasDe(id: string): Promise<{ ok: true; existencias: ExistenciasPagnol } | { ok: false; error: string }> {
+  try {
+    const { data, response } = await clientePagnol("pagnol:materiales", 60).GET("/materiales/{id}/existencias", { params: { path: { id } } });
+    if (!data) return { ok: false, error: mensajeDeError(response.status) };
+    return { ok: true, existencias: data };
   } catch (e) {
     return { ok: false, error: mensajeDeError(null, e) };
   }

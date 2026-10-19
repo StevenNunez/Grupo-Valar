@@ -15,6 +15,7 @@ import {
 } from "../ui/Formulario";
 import { Tabla, type Columna } from "../ui/Tabla";
 import { Contenido, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
+import { ActivosDePagnol, MaterialesDePagnol } from "./CatalogoPagnol";
 import { BotonNuevo, DialogoHistorial, useEdicion } from "../ui/Historial";
 import { useConsulta } from "@/lib/consulta";
 import { formatearFecha, formatearNumero, formatearPesos } from "@/lib/formato";
@@ -47,33 +48,65 @@ import {
 
 type Filtrado = "todos" | Familia | "sin_tecnico" | "bajo_minimo";
 
+type Pestana = "materiales" | "activos" | "tecnicos";
+
+/**
+ * Artículos tiene dos fuentes. Lo que Valar tiene (materiales y activos, con su
+ * stock, contrato y pañol) sale de Pagnol, que es la fuente de verdad y no se
+ * copia. Lo que Pagnol no sabe —cómo lo llama el proveedor— se guarda aquí,
+ * en «Nombres técnicos».
+ */
 export function VistaArticulos() {
   const { estado, recargar } = useConsulta<Articulo[]>(cargarArticulos);
   const edicion = useEdicion<Articulo>("articulos");
+  const [pestana, setPestana] = useFiltro<Pestana>("articulos:pestana", "materiales");
 
   return (
     <>
       <Encabezado
         titulo="Artículos"
-        descripcion="Qué compra Valar y cómo se llama cada cosa. El nombre técnico es el que entiende el proveedor: es el que sale impreso en la solicitud de cotización."
-        acciones={<BotonNuevo permiso="articulos.editar" onClick={edicion.abrirNuevo}>Nuevo artículo</BotonNuevo>}
+        descripcion={
+          pestana === "tecnicos"
+            ? "Cómo se llama cada cosa para el proveedor. El nombre técnico es el que sale impreso en la solicitud de cotización."
+            : "Lo que Valar tiene, tal como está en Pagnol: materiales con su stock y activos con su contrato y su pañol. Se actualiza solo cuando algo se agrega o se gasta."
+        }
+        acciones={
+          pestana === "tecnicos" ? <BotonNuevo permiso="articulos.editar" onClick={edicion.abrirNuevo}>Nuevo artículo</BotonNuevo> : undefined
+        }
       />
 
-      <Contenido consulta={estado}>
-        {(datos) => (
-          <>
-            <Contenidos filas={datos} edicion={edicion} />
-            {edicion.editando && (
-              <FormularioArticulo
-                articulo={edicion.registro}
-                articulos={datos}
-                alCerrar={edicion.cerrar}
-                alGuardado={recargar}
-              />
-            )}
-          </>
-        )}
-      </Contenido>
+      <div className="mb-6">
+        <Filtro
+          etiqueta="Qué ver"
+          opciones={[
+            { id: "materiales" as Pestana, titulo: "Materiales (Pagnol)" },
+            { id: "activos" as Pestana, titulo: "Activos (Pagnol)" },
+            { id: "tecnicos" as Pestana, titulo: "Nombres técnicos" },
+          ]}
+          valor={pestana}
+          alCambiar={setPestana}
+        />
+      </div>
+
+      {pestana === "materiales" && <MaterialesDePagnol />}
+      {pestana === "activos" && <ActivosDePagnol />}
+      {pestana === "tecnicos" && (
+        <Contenido consulta={estado}>
+          {(datos) => (
+            <>
+              <Contenidos filas={datos} edicion={edicion} />
+              {edicion.editando && (
+                <FormularioArticulo
+                  articulo={edicion.registro}
+                  articulos={datos}
+                  alCerrar={edicion.cerrar}
+                  alGuardado={recargar}
+                />
+              )}
+            </>
+          )}
+        </Contenido>
+      )}
 
       {edicion.historial && (
         <DialogoHistorial

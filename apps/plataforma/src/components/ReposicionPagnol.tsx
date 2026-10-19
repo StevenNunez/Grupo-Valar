@@ -65,6 +65,8 @@ export function ReposicionPagnol() {
   const procesa = puede(usuario, "solped.crear");
   const [datos, setDatos] = useState<Datos | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
+  /** Lo que pasó al elegir el contrato de un pañol: va debajo de la lista, a la vista. */
+  const [guardado, setGuardado] = useState<{ ok: boolean; texto: string } | null>(null);
   const [trabajando, setTrabajando] = useState(false);
   const [version, setVersion] = useState(0);
 
@@ -80,13 +82,22 @@ export function ReposicionPagnol() {
   const releer = () => setVersion((v) => v + 1);
 
   async function asignar(panol: PanolPagnol, contratoId: string) {
-    setMensaje(null);
+    setGuardado(null);
     const { error } = contratoId
       ? await supabase
           .from("pagnol_panoles_contratos")
           .upsert({ panol_id: panol.id, panol_nombre: panol.nombre, contrato_id: contratoId }, { onConflict: "empresa_id,panol_id" })
       : await supabase.from("pagnol_panoles_contratos").delete().eq("panol_id", panol.id);
-    if (error) setMensaje(`No se pudo guardar: ${error.message}`);
+    setGuardado(
+      error
+        ? { ok: false, texto: `No se pudo guardar: ${error.message}` }
+        : {
+            ok: true,
+            texto: contratoId
+              ? `Guardado: los avisos de «${panol.nombre}» van a ${nombreContrato.get(contratoId) ?? contratoId}.`
+              : `Guardado: «${panol.nombre}» quedó sin contrato. Sus avisos esperarán en la bandeja.`,
+          },
+    );
     releer();
   }
 
@@ -136,6 +147,12 @@ export function ReposicionPagnol() {
                 </li>
               ))}
             </ul>
+          )}
+          {guardado && (
+            <p role="status" className={`mt-3 rounded-xl px-3 py-2 text-sm ${guardado.ok ? "bg-[#e7f4ec] text-[#1f6b3b]" : "bg-[#fdeeec] text-[#a52f24]"}`}>
+              {guardado.ok ? "✓ " : ""}
+              {guardado.texto}
+            </p>
           )}
           {datos.borradores.length > 0 && (
             <p className="mt-3 text-sm text-ink-soft">
