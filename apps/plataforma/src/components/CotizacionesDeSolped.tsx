@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Chip } from "./ui/Chip";
 import { Combo } from "./ui/Combo";
@@ -464,10 +465,18 @@ function Comparativo({
           </p>
 
           {ordenCreada ? (
-            <p className="mt-4 rounded-xl bg-[#eaf6ef] px-4 py-3 text-sm font-medium text-[#0e7a4f]">
-              Orden {ordenCreada} creada en borrador. Ábrela en Órdenes de Compra para
-              revisarla y emitirla.
-            </p>
+            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl bg-[#eaf6ef] px-4 py-3 text-sm font-medium text-[#0e7a4f]">
+              <p className="min-w-0 flex-1">
+                Orden {ordenCreada} creada en borrador. Ábrela en Órdenes de Compra para
+                revisarla y emitirla.
+              </p>
+              <Link
+                href="/abastecimiento/ordenes/"
+                className="rounded-full bg-cyan px-5 py-2 font-semibold text-white transition-colors hover:bg-cyan-deep"
+              >
+                Ir a Órdenes de Compra
+              </Link>
+            </div>
           ) : !puedeEmitir ? null : (
             <button
               type="button"

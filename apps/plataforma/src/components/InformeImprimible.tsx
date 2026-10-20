@@ -287,36 +287,87 @@ export function InformeImprimible({
                 <th className="py-2"><span className="sr-only">Concepto</span></th>
                 <th className="py-2 text-right">Ordinario</th>
                 <th className="py-2 text-right">Extraordinario</th>
-                <th className="py-2 text-right">Total</th>
               </tr>
             </thead>
             <tbody>
               <tr className="border-b border-mist">
-                <td className="py-2 font-semibold">Ventas netas</td>
+                <td className="py-2 font-semibold">Venta</td>
                 <td className="py-2 text-right tabular-nums">{formatearPesos(total.ventaOrdinaria)}</td>
-                <td className="py-2 text-right tabular-nums">{formatearPesos(total.ventaExtraordinaria)}</td>
-                <td className="py-2 text-right tabular-nums">{formatearPesos(total.venta)}</td>
+                <td className="py-2 text-right tabular-nums">
+                  {formatearPesos(total.ventaExtraordinaria)}
+                  {total.hh.horasCobradas > 0 && <span className="text-ink-soft"> ({total.hh.horasCobradas.toLocaleString("es-CL", { maximumFractionDigits: 1 })} h cobradas)</span>}
+                </td>
               </tr>
               <tr className="border-b border-mist">
-                <td className="py-2 font-semibold">Costos</td>
-                <td className="py-2 text-right tabular-nums">{formatearPesos(total.costoOrdinario)}</td>
-                <td className="py-2 text-right tabular-nums">{formatearPesos(total.costoParadaPlanta)}</td>
-                <td className="py-2 text-right tabular-nums">{formatearPesos(total.costo)}</td>
+                <td className="py-2 font-semibold">Costo</td>
+                <td className="py-2 text-right tabular-nums">
+                  {formatearPesos(total.costoOrdinario)}
+                  {total.hh.sobrecosto > 0 && <span className="text-ink-soft"> (sobrecosto {formatearPesos(total.hh.sobrecosto)})</span>}
+                </td>
+                <td className="py-2 text-right tabular-nums">
+                  {formatearPesos(total.costoParadaPlanta)}
+                  {total.hh.horasParada > 0 && <span className="text-ink-soft"> ({total.hh.horasParada.toLocaleString("es-CL", { maximumFractionDigits: 1 })} h trabajadas)</span>}
+                </td>
               </tr>
-              <tr className="border-b border-mist text-ink-soft">
-                <td className="py-1.5 pl-4 text-xs">HH de parada de planta</td>
-                <td className="py-1.5 text-right text-xs">—</td>
-                <td className="py-1.5 text-right text-xs tabular-nums">{formatearPesos(total.costoParadaPlanta)}</td>
-                <td />
-              </tr>
-              <tr className="font-semibold">
+              <tr className="border-b border-mist font-semibold">
                 <td className="py-2">Resultado</td>
-                <td className="py-2 text-right tabular-nums">{formatearPesos(total.ventaOrdinaria - total.costoOrdinario)}</td>
-                <td className="py-2 text-right tabular-nums">{formatearPesos(total.ventaExtraordinaria - total.costoParadaPlanta)}</td>
-                <td className="py-2 text-right tabular-nums">{formatearPesos(total.margen)}</td>
+                <td className="py-2 text-right tabular-nums">
+                  {formatearPesos(total.ventaOrdinaria - total.costoOrdinario)}
+                  <span className="font-normal text-ink-soft"> ({total.ventaOrdinaria > 0 ? `${(((total.ventaOrdinaria - total.costoOrdinario) / total.ventaOrdinaria) * 100).toFixed(1)}%` : "—"})</span>
+                </td>
+                <td className="py-2 text-right tabular-nums">
+                  {formatearPesos(total.ventaExtraordinaria - total.costoParadaPlanta)}
+                  <span className="font-normal text-ink-soft"> ({total.ventaExtraordinaria > 0 ? `${(((total.ventaExtraordinaria - total.costoParadaPlanta) / total.ventaExtraordinaria) * 100).toFixed(1)}%` : "—"})</span>
+                </td>
               </tr>
+              {total.hh.horasCobradas > 0 && total.hh.horasParada > total.hh.horasCobradas && (
+                <tr className="font-semibold text-[#a52f24]">
+                  <td className="py-2">No cobrado (parada de planta)</td>
+                  <td />
+                  <td className="py-2 text-right tabular-nums">
+                    {formatearPesos((total.hh.horasParada - total.hh.horasCobradas) * (total.ventaExtraordinaria / total.hh.horasCobradas))}
+                    <span className="font-normal"> ({(total.hh.horasParada - total.hh.horasCobradas).toLocaleString("es-CL", { maximumFractionDigits: 1 })} h sin cobrar)</span>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
+          {total.hh.sobrecosto > 0 && (
+            <p className="mt-2 text-[11px] text-ink-soft">
+              Sobrecosto ordinario {formatearPesos(total.hh.sobrecosto)} (HH extra menos parada de planta):{" "}
+              {[
+                ["reemplazos", total.hh.reemplazo],
+                ["feriados compensados", total.hh.feriado],
+                ["apoyo oficina", total.hh.apoyo],
+                ["otras", total.hh.otras],
+                ["sin motivo", total.hh.sinMotivo],
+              ]
+                .filter(([, v]) => (v as number) > 0)
+                .map(([t, v]) => `${t} ${formatearPesos(v as number)}`)
+                .join(" · ")}.
+            </p>
+          )}
+          {(() => {
+            const { hh } = total;
+            const h = (n: number) => `${n.toLocaleString("es-CL", { maximumFractionDigits: 1 })} h`;
+            const resultadoOrd = total.ventaOrdinaria - total.costoOrdinario;
+            const sinCobrar = hh.horasCobradas > 0 ? Math.max(0, hh.horasParada - hh.horasCobradas) : 0;
+            const tarifa = hh.horasCobradas > 0 ? total.ventaExtraordinaria / hh.horasCobradas : 0;
+            const costoHora = hh.horasParada > 0 ? total.costoParadaPlanta / hh.horasParada : 0;
+            const filas: string[] = [];
+            if (hh.sobrecosto > 0 && total.ventaOrdinaria > 0) {
+              filas.push(`Sobrecosto ordinario: ${((hh.sobrecosto / total.ventaOrdinaria) * 100).toFixed(1)}% de la venta ordinaria. Margen ordinario sin el sobrecosto: ${(((resultadoOrd + hh.sobrecosto) / total.ventaOrdinaria) * 100).toFixed(1)}% (hoy ${((resultadoOrd / total.ventaOrdinaria) * 100).toFixed(1)}%).`);
+            }
+            if (sinCobrar > 0) {
+              filas.push(`Parada de planta: ${h(hh.horasParada)} trabajadas, ${h(hh.horasCobradas)} cobradas, ${h(sinCobrar)} sin cobrar. Dejado de ganar ${formatearPesos(sinCobrar * tarifa)} (a ${formatearPesos(tarifa)} la hora cobrada); esas horas costaron ${formatearPesos(sinCobrar * costoHora)}.`);
+            }
+            return filas.length > 0 ? (
+              <div className="mt-3 border-t border-mist pt-2">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.1em]">Desviaciones y su causa</p>
+                {filas.map((f) => <p key={f} className="mt-1 text-[11px] text-ink-soft">{f}</p>)}
+              </div>
+            ) : null;
+          })()}
           {personal.total > 0 && (
             <p className="mt-2 text-[11px] text-ink-soft">
               Personal {formatearPesos(personal.total)}: ordinario {formatearPesos(personal.ordinario)} · parada de planta{" "}

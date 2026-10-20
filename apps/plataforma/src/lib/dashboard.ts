@@ -46,10 +46,39 @@ export type FilaMes = {
    * servicios— es ordinario.
    */
   costoParadaPlanta: number;
+  /** Las HH extra del mes abiertas por motivo; de aquí sale el sobrecosto. */
+  hh: Hh;
   reembolsable: number;
   margen: number;
   margenPct: number | null;
   metaMargen: number;
+};
+
+/**
+ * HH extra de un conjunto de filas. `sobrecosto` es el costo de todas las HH
+ * extra menos las de parada de planta (que son el costo extraordinario); las
+ * cinco claves siguientes lo reparten. `sinMotivo` es lo que se cargó como total
+ * de HH extra sin indicar el motivo.
+ */
+export type Hh = {
+  /** Horas de parada de planta que el EP extraordinario cobra (`cantidad_hh`). */
+  horasCobradas: number;
+  horasParada: number;
+  horasOrdinarias: number;
+  sobrecosto: number;
+  reemplazo: number;
+  feriado: number;
+  apoyo: number;
+  otras: number;
+  sinMotivo: number;
+};
+export const hhVacio = (): Hh => ({
+  horasCobradas: 0, horasParada: 0, horasOrdinarias: 0, sobrecosto: 0, reemplazo: 0, feriado: 0, apoyo: 0, otras: 0, sinMotivo: 0,
+});
+const sumarHh = (a: Hh, b: Hh, signo = 1): Hh => {
+  const r = hhVacio();
+  for (const k of Object.keys(r) as (keyof Hh)[]) r[k] = a[k] + signo * b[k];
+  return r;
 };
 
 export type FilaCategoria = {
@@ -126,9 +155,10 @@ type Acum = {
   cobrado: number;
   costo: number;
   parada: number;
+  hh: Hh;
   reembolsable: number;
 };
-const acumVacio = (): Acum => ({ venta: 0, ordinaria: 0, extraordinaria: 0, cobrado: 0, costo: 0, parada: 0, reembolsable: 0 });
+const acumVacio = (): Acum => ({ venta: 0, ordinaria: 0, extraordinaria: 0, cobrado: 0, costo: 0, parada: 0, hh: hhVacio(), reembolsable: 0 });
 
 /**
  * El período de un movimiento puede venir con cualquier día del mes (un EP
@@ -162,7 +192,7 @@ function unirResumenPorMes(filas: FilaResumenSQL[]): FilaResumenSQL[] {
 }
 
 export async function cargarDashboard(): Promise<DatosDashboard> {
-  const [resumen, categorias, oficina, nominas, anexos, alias, edpsAnexo, costosAnexo, finiquitos, finiquitosOficina, personal] = await Promise.all([
+  const [resumen, categorias, oficina, nominas, anexos, alias, edpsAnexo, costosAnexo, finiquitos, finiquitosOficina, personal, edpsHh] = await Promise.all([
     supabase.from("resumen_mensual").select("*").order("periodo"),
     supabase.from("costos_por_categoria").select("*"),
     cargarEgresosOficina(),
@@ -181,6 +211,8 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
     cargarFiniquitos("oficina").catch(() => []),
     /* De acá sale el costo extraordinario (HH por motivo). Sin acceso a personal llega vacío. */
     cargarPersonal().catch(() => []),
+    /* Las HH que cobra cada EP extraordinario, para contrastarlas con las trabajadas. */
+    supabase.from("estados_pago").select("contrato_id, anexo_id, periodo, datos").eq("tipo_edp", "extraordinario"),
   ]);
 
   const fallo = resumen.error ?? categorias.error;
@@ -251,6 +283,7 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
       cobrado: r.cobrado,
       costo: r.costo,
       costoParadaPlanta: 0,
+      hh: hhVacio(),
       reembolsable: r.reembolsable,
       margen: r.margen,
       margenPct: r.margen_pct === null ? null : Number(r.margen_pct),
@@ -267,10 +300,47 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
     if (!p.periodo) continue;
     const mes = primeroDelMes(p.periodo);
     const parada = Math.min(p.montosHh.monto_hh_parada_planta, p.horasExtraMonto);
-    if (parada === 0) continue;
+    /* Sobrecosto: las HH extra de todos los motivos menos la parada de planta. */
+    const sobrecosto = Math.max(0, p.horasExtraMonto - parada);
+    const reemplazo = p.montosHh.monto_hh_reemplazo;
+    const feriado = p.montosHh.monto_hh_feriado_compensado;
+    const apoyo = p.montosHh.monto_hh_apoyo_oficina;
+    const otras = p.montosHh.monto_hh_otras;
+    const hh: Hh = {
+      horasCobradas: 0,
+      horasParada: p.hhParadaPlanta,
+      horasOrdinarias: p.hhReemplazo + p.hhFeriadoCompensado + p.hhApoyoOficina + p.hhOtras,
+      sobrecosto,
+      reemplazo, feriado, apoyo, otras,
+      sinMotivo: Math.max(0, sobrecosto - reemplazo - feriado - apoyo - otras),
+    };
+    if (parada === 0 && sobrecosto === 0 && hh.horasParada === 0 && hh.horasOrdinarias === 0) continue;
     const base = baseDe.get(`${p.contratoId}|${mes}`);
-    if (base) base.costoParadaPlanta += parada;
-    if (p.anexoId) celda(unidadDe(p.contratoId, p.anexoId), mes).parada += parada;
+    if (base) {
+      base.costoParadaPlanta += parada;
+      base.hh = sumarHh(base.hh, hh);
+    }
+    if (p.anexoId) {
+      const a = celda(unidadDe(p.contratoId, p.anexoId), mes);
+      a.parada += parada;
+      a.hh = sumarHh(a.hh, hh);
+    }
+  }
+
+  /* Horas que el EP extraordinario efectivamente cobra; la diferencia con las
+     trabajadas (Personal) es lo que se dejó de cobrar. */
+  for (const e of (edpsHh.error ? [] : edpsHh.data ?? []) as {
+    contrato_id: string; anexo_id: string | null; periodo: string | null; datos: Record<string, unknown> | null;
+  }[]) {
+    const horasCobradas = Number(e.datos?.cantidad_hh ?? 0);
+    if (!e.periodo || !horasCobradas) continue;
+    const mes = primeroDelMes(e.periodo);
+    const base = baseDe.get(`${e.contrato_id}|${mes}`);
+    if (base) base.hh = { ...base.hh, horasCobradas: base.hh.horasCobradas + horasCobradas };
+    if (e.anexo_id) {
+      const a = celda(unidadDe(e.contrato_id, e.anexo_id), mes);
+      a.hh = { ...a.hh, horasCobradas: a.hh.horasCobradas + horasCobradas };
+    }
   }
 
   const recalcular = (f: FilaMes) => {
@@ -289,6 +359,7 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
         base.cobrado -= a.cobrado;
         base.costo -= a.costo;
         base.costoParadaPlanta -= a.parada;
+        base.hh = sumarHh(base.hh, a.hh, -1);
         base.reembolsable -= a.reembolsable;
         recalcular(base);
       }
@@ -307,6 +378,7 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
         cobrado: a.cobrado,
         costo: a.costo,
         costoParadaPlanta: a.parada,
+        hh: a.hh,
         reembolsable: a.reembolsable,
         margen: 0,
         margenPct: null,
@@ -416,6 +488,8 @@ export type Totales = {
   costoParadaPlanta: number;
   /** Costo ordinario: todo lo demás (incluye las otras HH extra). */
   costoOrdinario: number;
+  /** HH extra por motivo y horas; el sobrecosto es lo ordinario de ellas. */
+  hh: Hh;
   margen: number;
   margenPct: number;
   reembolsable: number;
@@ -433,6 +507,7 @@ export function sumar(filas: FilaMes[]): Totales {
     costo,
     costoParadaPlanta,
     costoOrdinario: costo - costoParadaPlanta,
+    hh: filas.reduce((t, f) => sumarHh(t, f.hh ?? hhVacio()), hhVacio()),
     margen: venta - costo,
     margenPct: venta > 0 ? ((venta - costo) / venta) * 100 : 0,
     reembolsable: filas.reduce((t, f) => t + f.reembolsable, 0),

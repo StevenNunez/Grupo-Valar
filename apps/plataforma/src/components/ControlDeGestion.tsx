@@ -463,61 +463,149 @@ function PanelOrdinarioExtra({ total }: { total: Totales }) {
   const resultadoExtra = total.ventaExtraordinaria - costoExtra;
   const pct = (resultado: number, venta: number) => (venta > 0 ? `${((resultado / venta) * 100).toFixed(1)}%` : "—");
   const color = (n: number) => (n < 0 ? "text-[#a52f24]" : "text-ink");
+  const horas = (n: number) => `${n.toLocaleString("es-CL", { maximumFractionDigits: 1 })} h`;
+  const { hh } = total;
+  /* Lo que se trabajó en parada contra lo que el EP extraordinario cobra. */
+  const sinCobrar = hh.horasCobradas > 0 ? Math.max(0, hh.horasParada - hh.horasCobradas) : 0;
+  const tarifaCobrada = hh.horasCobradas > 0 ? total.ventaExtraordinaria / hh.horasCobradas : 0;
+  const costoPorHora = hh.horasParada > 0 ? costoExtra / hh.horasParada : 0;
+  const pctDe = (parte: number, todo: number) => (todo > 0 ? `${((parte / todo) * 100).toFixed(1)}%` : "—");
 
-  const filas: { titulo: string; ordinario: string; extra: string; total: string; fuerte?: boolean; sangria?: boolean; negativoOrd?: number; negativoExtra?: number }[] = [
-    { titulo: "Ventas netas", ordinario: formatearMonto(total.ventaOrdinaria), extra: formatearMonto(total.ventaExtraordinaria), total: formatearMonto(total.venta) },
-    { titulo: "Costos", ordinario: formatearMonto(total.costoOrdinario), extra: formatearMonto(costoExtra), total: formatearMonto(total.costo) },
-    { titulo: "De ello: HH de parada de planta", ordinario: "—", extra: formatearMonto(total.costoParadaPlanta), total: formatearMonto(total.costoParadaPlanta), sangria: true },
-    { titulo: "Resultado", ordinario: formatearMonto(resultadoOrd), extra: formatearMonto(resultadoExtra), total: formatearMonto(total.margen), fuerte: true, negativoOrd: resultadoOrd, negativoExtra: resultadoExtra },
-    { titulo: "Rentabilidad s/ ventas", ordinario: pct(resultadoOrd, total.ventaOrdinaria), extra: pct(resultadoExtra, total.ventaExtraordinaria), total: `${total.margenPct.toFixed(1)}%`, fuerte: true },
-  ];
+  /* Cada columna cuenta su historia en tres cifras; el detalle va entre paréntesis. */
+  const cifra = (titulo: string, valor: string, detalle: string | null, rojo = false) => (
+    <div key={titulo} className="flex items-baseline justify-between gap-3 border-b border-mist-deep/60 py-3 last:border-0">
+      <dt className="text-sm font-semibold text-ink">{titulo}</dt>
+      <dd className={`text-right font-display text-lg font-semibold ${rojo ? "text-[#a52f24]" : "text-ink"}`}>
+        {valor}
+        {detalle && <span className="ml-2 text-sm font-normal text-ink-soft">({detalle})</span>}
+      </dd>
+    </div>
+  );
+
+  /* Motivos que forman el sobrecosto, con lo que pesa cada uno. */
+  const motivos = [
+    { id: "reemplazo", titulo: "Reemplazos por vacaciones o licencias", valor: hh.reemplazo },
+    { id: "feriado", titulo: "Feriados compensados", valor: hh.feriado },
+    { id: "apoyo", titulo: "Apoyo oficina", valor: hh.apoyo },
+    { id: "otras", titulo: "Otras", valor: hh.otras },
+    { id: "sinMotivo", titulo: "Sin motivo indicado", valor: hh.sinMotivo },
+  ].filter((m) => m.valor > 0);
 
   return (
     <section aria-labelledby="ord-extra" className="mb-6 rounded-2xl border border-mist-deep bg-white p-6 lg:p-8">
       <h2 id="ord-extra" className="font-display text-lg font-semibold text-ink">Ordinario y extraordinario</h2>
       <p className="mb-5 mt-1 text-sm text-ink-soft">
-        Para contrastar el estado de pago extraordinario con el costo real de la parada de planta.
         Solo las HH de parada de planta son costo extraordinario; todo lo demás (planta, reemplazos, licencias, feriados
-        compensados, compras y servicios) es ordinario.
+        compensados, apoyo oficina, compras y servicios) es ordinario.
       </p>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[34rem] text-sm">
-          <thead>
-            <tr className="border-b border-mist-deep text-left text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">
-              <th className="py-2 pr-4 font-semibold"><span className="sr-only">Concepto</span></th>
-              <th className="px-3 py-2 text-right font-semibold">Ordinario</th>
-              <th className="px-3 py-2 text-right font-semibold">Extraordinario</th>
-              <th className="py-2 pl-3 text-right font-semibold">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filas.map((f) => (
-              <tr key={f.titulo} className="border-b border-mist-deep/60 last:border-0">
-                <th scope="row" className={`py-2.5 pr-4 text-left ${f.sangria ? "pl-5 text-xs font-normal text-ink-soft" : "font-semibold text-ink"}`}>{f.titulo}</th>
-                <td className={`px-3 py-2.5 text-right ${f.fuerte ? "font-semibold" : ""} ${f.negativoOrd !== undefined ? color(f.negativoOrd) : f.sangria ? "text-ink-soft" : "text-ink"}`}>{f.ordinario}</td>
-                <td className={`px-3 py-2.5 text-right ${f.fuerte ? "font-semibold" : ""} ${f.negativoExtra !== undefined ? color(f.negativoExtra) : f.sangria ? "text-ink-soft" : "text-ink"}`}>{f.extra}</td>
-                <td className={`py-2.5 pl-3 text-right ${f.fuerte ? "font-semibold" : ""} ${f.sangria ? "text-xs text-ink-soft" : "text-ink"}`}>{f.total}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">Ordinario</h3>
+          <dl>
+            {cifra("Venta", formatearMonto(total.ventaOrdinaria), null)}
+            {cifra("Costo", formatearMonto(total.costoOrdinario), hh.sobrecosto > 0 ? `sobrecosto ${formatearMonto(hh.sobrecosto)}` : null)}
+            {cifra("Resultado", formatearMonto(resultadoOrd), pct(resultadoOrd, total.ventaOrdinaria), resultadoOrd < 0)}
+          </dl>
+        </div>
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">Extraordinario</h3>
+          <dl>
+            {cifra("Venta", formatearMonto(total.ventaExtraordinaria), hh.horasCobradas > 0 ? `${horas(hh.horasCobradas)} cobradas` : null)}
+            {cifra("Costo", formatearMonto(costoExtra), hh.horasParada > 0 ? `${horas(hh.horasParada)} trabajadas` : null)}
+            {cifra("Resultado", formatearMonto(resultadoExtra), pct(resultadoExtra, total.ventaExtraordinaria), resultadoExtra < 0)}
+            {sinCobrar > 0 && cifra("No cobrado", formatearMonto(sinCobrar * tarifaCobrada), `${horas(sinCobrar)} sin cobrar`, true)}
+          </dl>
+        </div>
       </div>
-      {/* Lo extraordinario de un vistazo: cuánto del EP extraordinario se fue en la parada. */}
-      <div className="mt-5 rounded-xl bg-mist/50 p-4">
-        <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
-          <span className="font-semibold text-ink">Parada de planta contra el EP extraordinario</span>
-          <span className={`font-semibold ${usoExtra !== null && usoExtra > 100 ? "text-[#a52f24]" : "text-ink"}`}>
-            {usoExtra === null ? (costoExtra > 0 ? "Sin EP extraordinario" : "Sin parada de planta") : `${usoExtra.toFixed(0)}% del EP`}
-          </span>
+
+      {/* Qué causa las desviaciones: de dónde sale el sobrecosto y cuánto pesa la parada contra su EP. */}
+      <div className="mt-6 border-t border-mist-deep pt-5">
+        <h3 className="font-display text-base font-semibold text-ink">Desviaciones y su causa</h3>
+        <div className="mt-4 grid gap-6 lg:grid-cols-2">
+          <div className="rounded-xl bg-mist/50 p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+              <span className="font-semibold text-ink">Sobrecosto ordinario · horas extra no cobradas</span>
+              <span className={`font-semibold ${hh.sobrecosto > 0 ? "text-[#a52f24]" : "text-ink"}`}>{formatearMonto(hh.sobrecosto)}</span>
+            </div>
+            <p className="mt-1 text-xs text-ink-soft">
+              HH extra que no van en el estado de pago extraordinario (todo menos parada de planta)
+              {hh.sobrecosto > 0 ? ` · ${pctDe(hh.sobrecosto, total.costoOrdinario)} del costo ordinario · ${horas(hh.horasOrdinarias)} extra` : ""}.
+            </p>
+            {hh.sobrecosto > 0 && total.ventaOrdinaria > 0 && (
+              <dl className="mt-3 grid gap-2 rounded-lg bg-white p-3 text-sm sm:grid-cols-2">
+                <div>
+                  <dt className="text-xs text-ink-soft">Pesa sobre la venta ordinaria</dt>
+                  <dd className="font-semibold text-[#a52f24]">{pctDe(hh.sobrecosto, total.ventaOrdinaria)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-ink-soft">Margen ordinario sin el sobrecosto</dt>
+                  <dd className="font-semibold text-ink">
+                    {pct(resultadoOrd + hh.sobrecosto, total.ventaOrdinaria)}
+                    <span className="ml-1 text-xs font-normal text-ink-soft">
+                      (hoy {pct(resultadoOrd, total.ventaOrdinaria)} · {formatearMonto(resultadoOrd + hh.sobrecosto)})
+                    </span>
+                  </dd>
+                </div>
+              </dl>
+            )}
+            {motivos.length === 0 ? (
+              <p className="mt-3 text-sm text-ink-soft">Sin horas extra ordinarias en el período.</p>
+            ) : (
+              <ul className="mt-3 flex flex-col gap-2">
+                {motivos.map((m) => (
+                  <li key={m.id} className="text-sm">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="text-ink">{m.titulo}</span>
+                      <span className="font-semibold tabular-nums text-ink">
+                        {formatearMonto(m.valor)}
+                        <span className="ml-2 text-xs font-normal text-ink-soft">{pctDe(m.valor, hh.sobrecosto)}</span>
+                      </span>
+                    </div>
+                    <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white" aria-hidden="true">
+                      <span className="block h-full rounded-full bg-[#9c5518]" style={{ width: `${hh.sobrecosto > 0 ? Math.min((m.valor / hh.sobrecosto) * 100, 100) : 0}%` }} />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Lo extraordinario de un vistazo: cuánto del EP extraordinario se fue en la parada. */}
+          <div className="rounded-xl bg-mist/50 p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+              <span className="font-semibold text-ink">Parada de planta contra el EP extraordinario</span>
+              <span className={`font-semibold ${usoExtra !== null && usoExtra > 100 ? "text-[#a52f24]" : "text-ink"}`}>
+                {usoExtra === null ? (costoExtra > 0 ? "Sin EP extraordinario" : "Sin parada de planta") : `${usoExtra.toFixed(0)}% del EP`}
+              </span>
+            </div>
+            <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-white" role="img"
+              aria-label={usoExtra === null ? "Sin datos para comparar" : `La parada de planta equivale al ${usoExtra.toFixed(0)}% del EP extraordinario`}>
+              <span className="block h-full rounded-full" style={{ width: `${Math.min(usoExtra ?? 0, 100)}%`, background: usoExtra !== null && usoExtra > 100 ? "#a52f24" : "#9c5518" }} />
+            </div>
+            {sinCobrar > 0 && (
+              <dl className="mt-3 grid gap-2 rounded-lg bg-white p-3 text-sm sm:grid-cols-2">
+                <div>
+                  <dt className="text-xs text-ink-soft">Horas trabajadas · cobradas · sin cobrar</dt>
+                  <dd className="font-semibold text-ink">
+                    {horas(hh.horasParada)} · {horas(hh.horasCobradas)} · <span className="text-[#a52f24]">{horas(sinCobrar)}</span>
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-ink-soft">Dejado de ganar (a {formatearMonto(tarifaCobrada)} la hora cobrada)</dt>
+                  <dd className="font-semibold text-[#a52f24]">
+                    {formatearMonto(sinCobrar * tarifaCobrada)}
+                    <span className="ml-1 text-xs font-normal text-ink-soft">(esas horas costaron {formatearMonto(sinCobrar * costoPorHora)})</span>
+                  </dd>
+                </div>
+              </dl>
+            )}
+            <p className="mt-2 text-xs text-ink-soft">
+              EP extraordinario {formatearMonto(total.ventaExtraordinaria)} · parada de planta {formatearMonto(costoExtra)}
+              {total.ventaExtraordinaria > 0 ? ` · ${resultadoExtra >= 0 ? "sobra" : "falta"} ${formatearMonto(Math.abs(resultadoExtra))}` : ""}
+            </p>
+          </div>
         </div>
-        <div className="mt-3 h-2.5 w-full overflow-hidden rounded-full bg-white" role="img"
-          aria-label={usoExtra === null ? "Sin datos para comparar" : `La parada de planta equivale al ${usoExtra.toFixed(0)}% del EP extraordinario`}>
-          <span className="block h-full rounded-full" style={{ width: `${Math.min(usoExtra ?? 0, 100)}%`, background: usoExtra !== null && usoExtra > 100 ? "#a52f24" : "#9c5518" }} />
-        </div>
-        <p className="mt-2 text-xs text-ink-soft">
-          EP extraordinario {formatearMonto(total.ventaExtraordinaria)} · parada de planta {formatearMonto(costoExtra)}
-          {total.ventaExtraordinaria > 0 ? ` · resultado extraordinario ${formatearMonto(total.ventaExtraordinaria - costoExtra)}` : ""}
-        </p>
       </div>
     </section>
   );
