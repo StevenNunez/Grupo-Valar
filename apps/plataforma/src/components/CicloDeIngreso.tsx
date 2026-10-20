@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Chip, type Tono } from "./ui/Chip";
+import { Confirmacion, useBorrado } from "./ui/Formulario";
 import { RespaldosDeFicha } from "./ui/RespaldosDeFicha";
 import { camposDe, mostrarValor, type CampoContrato } from "@/lib/campos";
 import { actualizar } from "@/lib/crud";
@@ -244,6 +245,10 @@ function PasoEdp({
   const aprobado = ciclo.estado !== "presentado" && ciclo.estado !== "rechazado";
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const borrado = useBorrado("estados_pago", ciclo.id, () => {
+    borrado.cerrar();
+    alCambiar();
+  });
 
   async function aprobar() {
     setError(null);
@@ -304,12 +309,23 @@ function PasoEdp({
         >
           Adjuntar respaldo
         </BotonChico>
+        <BotonChico escribe onClick={borrado.abrir}>Eliminar</BotonChico>
         {!aprobado && (
           <BotonChico escribe onClick={() => void aprobar()} destacado disabled={guardando}>
             {guardando ? "Guardando…" : "Marcar como aprobado"}
           </BotonChico>
         )}
       </div>
+
+      <Confirmacion
+        abierto={borrado.confirmando}
+        titulo="Eliminar estado de pago"
+        detalle={`Se va a eliminar ${ciclo.id}. Si tiene una factura u orden asociada, queda sin su EP de origen.`}
+        error={borrado.error}
+        procesando={borrado.borrando}
+        alCancelar={borrado.cerrar}
+        alConfirmar={borrado.confirmar}
+      />
     </Paso>
   );
 }
