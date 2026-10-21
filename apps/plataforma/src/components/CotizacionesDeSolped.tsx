@@ -50,7 +50,7 @@ import {
 import { crear } from "@/lib/crud";
 import { formatearFecha, formatearNumero, formatearPesos } from "@/lib/formato";
 import { cargarDestinatarios, siguienteNumero, type Destinatario } from "@/lib/ordenes";
-import { emisorOC } from "@/lib/empresa";
+import { useEmpresa } from "@/lib/empresa-cliente";
 import { puede, useUsuario } from "@/lib/sesion";
 
 /**
@@ -2304,17 +2304,19 @@ function DialogoEnviar({
   alEnviada: () => void;
 }) {
   const usuario = useUsuario();
+  const datos = useEmpresa();
   const numero = cotizacion.numero ?? cotizacion.id;
 
   const [para, setPara] = useState(cotizacion.correoProveedor ?? proveedor?.correo ?? "");
   const [asunto, setAsunto] = useState(
-    `Solicitud de cotización ${numero} · ${solped.numero} · ${emisorOC.razonSocial}`,
+    `Solicitud de cotización ${numero} · ${solped.numero} · ${datos.nombreEnOrdenes}`,
   );
   const [mensaje, setMensaje] = useState(() =>
     mensajeInicialSolicitud({
       contacto: cotizacion.contactoProveedor,
       fechaRequerida: solped.fechaRequerida,
       nombre: usuario.nombre,
+      empresa: datos.nombreEnOrdenes,
     }),
   );
   const [cc, setCc] = useState<string[]>([]);
@@ -2659,6 +2661,7 @@ function mensajeInicialSolicitud(d: {
   contacto: string | null;
   fechaRequerida: string | null;
   nombre: string;
+  empresa: string;
 }) {
   return [
     d.contacto ? `Estimado/a ${d.contacto}:` : "Estimados:",
@@ -2668,7 +2671,7 @@ function mensajeInicialSolicitud(d: {
     "",
     "Saludos,",
     d.nombre,
-    emisorOC.razonSocial,
+    d.empresa,
   ]
     .filter((l) => l !== null)
     .join("\n");

@@ -2,7 +2,7 @@
 
 import { LogoMark } from "./Logo";
 import { camposDe, mostrarValor, type CampoContrato } from "@/lib/campos";
-import { empresa, emisorOC } from "@/lib/empresa";
+import { useEmpresa } from "@/lib/empresa-cliente";
 import { formatearFecha, formatearPesos, formatearUf, mesLargo } from "@/lib/formato";
 import { nombreEdp, nombreEstadoEP, type Ciclo } from "@/lib/ingresos";
 import { camposEdp, clavesEdp, comportamientoEdp } from "@/lib/plantillas-edp";
@@ -38,6 +38,7 @@ import { camposEdp, clavesEdp, comportamientoEdp } from "@/lib/plantillas-edp";
 /* ── El estado de pago ────────────────────────────────────────────────────── */
 
 export function EstadoPagoImprimible({ ciclo, campos }: { ciclo: Ciclo; campos: CampoContrato[] }) {
+  const datos = useEmpresa();
   const plantilla = ciclo.plantillaEdp;
   const particulares = camposEdp(plantilla, ciclo.tipoEdp, ciclo.camposEdp, ciclo.datos);
   const clavesParticulares = clavesEdp(plantilla, ciclo.camposEdp);
@@ -73,11 +74,11 @@ export function EstadoPagoImprimible({ ciclo, campos }: { ciclo: Ciclo; campos: 
     <Hoja titulo="ESTADO DE PAGO" folio={`N° ${ciclo.numero}`}>
       <div className="mt-6 grid gap-8 sm:grid-cols-2">
         <Bloque titulo="Presenta">
-          <Dato etiqueta="Razón social" valor={empresa.razonSocial} />
-          <Dato etiqueta="Rut" valor={empresa.rut} />
-          <Dato etiqueta="Dirección" valor={emisorOC.direccion} />
-          <Dato etiqueta="Ciudad" valor={`${emisorOC.ciudad}, ${emisorOC.region}`} />
-          <Dato etiqueta="Correo" valor={empresa.email} />
+          <Dato etiqueta="Razón social" valor={datos.razonSocial} />
+          <Dato etiqueta="Rut" valor={datos.rut} />
+          <Dato etiqueta="Dirección" valor={datos.direccion} />
+          <Dato etiqueta="Ciudad" valor={`${datos.ciudad}, ${datos.region}`} />
+          <Dato etiqueta="Correo" valor={datos.email} />
         </Bloque>
 
         <Bloque titulo="Mandante">
@@ -172,7 +173,7 @@ export function EstadoPagoImprimible({ ciclo, campos }: { ciclo: Ciclo; campos: 
 
       <Firmas
         firmas={[
-          ["Presenta", empresa.representante],
+          ["Presenta", datos.representante],
           ["Recibe conforme", ciclo.cliente],
         ]}
       />
@@ -188,6 +189,7 @@ export function EstadoPagoImprimible({ ciclo, campos }: { ciclo: Ciclo; campos: 
  * apuntan a esta orden; si no se pasan, solo el de la ficha.
  */
 export function OrdenDelMandanteImprimible({ ciclo, cubiertos = [ciclo] }: { ciclo: Ciclo; cubiertos?: Ciclo[] }) {
+  const datos = useEmpresa();
   const presentado = cubiertos.reduce((t, c) => t + c.montoNeto, 0);
   const corta =
     ciclo.montoAutorizado !== null && ciclo.montoAutorizado < presentado
@@ -210,9 +212,9 @@ export function OrdenDelMandanteImprimible({ ciclo, cubiertos = [ciclo] }: { cic
         </Bloque>
 
         <Bloque titulo="Recibe">
-          <Dato etiqueta="Razón social" valor={empresa.razonSocial} />
-          <Dato etiqueta="Rut" valor={empresa.rut} />
-          <Dato etiqueta="Dirección" valor={emisorOC.direccion} />
+          <Dato etiqueta="Razón social" valor={datos.razonSocial} />
+          <Dato etiqueta="Rut" valor={datos.rut} />
+          <Dato etiqueta="Dirección" valor={datos.direccion} />
         </Bloque>
       </div>
 
@@ -265,7 +267,7 @@ export function OrdenDelMandanteImprimible({ ciclo, cubiertos = [ciclo] }: { cic
 
       <Firmas
         firmas={[
-          ["Recibe", empresa.representante],
+          ["Recibe", datos.representante],
           ["Cobro", ciclo.ordenFechaCobro ? formatearFecha(ciclo.ordenFechaCobro) : "—"],
         ]}
       />
@@ -277,6 +279,7 @@ export function OrdenDelMandanteImprimible({ ciclo, cubiertos = [ciclo] }: { cic
 
 /** Una factura puede cobrar varios EDP: `incluidos` son todos los que apuntan a este folio. */
 export function FacturaImprimible({ ciclo, incluidos = [ciclo] }: { ciclo: Ciclo; incluidos?: Ciclo[] }) {
+  const datos = useEmpresa();
   const neto = ciclo.facturaNeto ?? 0;
   const total = ciclo.facturaTotal ?? 0;
   const iva = total - neto;
@@ -291,10 +294,10 @@ export function FacturaImprimible({ ciclo, incluidos = [ciclo] }: { ciclo: Ciclo
 
       <div className="mt-6 grid gap-8 sm:grid-cols-2">
         <Bloque titulo="Factura">
-          <Dato etiqueta="Razón social" valor={empresa.razonSocial} />
-          <Dato etiqueta="Rut" valor={empresa.rut} />
-          <Dato etiqueta="Dirección" valor={emisorOC.direccion} />
-          <Dato etiqueta="Correo" valor={empresa.email} />
+          <Dato etiqueta="Razón social" valor={datos.razonSocial} />
+          <Dato etiqueta="Rut" valor={datos.rut} />
+          <Dato etiqueta="Dirección" valor={datos.direccion} />
+          <Dato etiqueta="Correo" valor={datos.email} />
         </Bloque>
 
         <Bloque titulo="Se cobra a">
@@ -354,7 +357,7 @@ export function FacturaImprimible({ ciclo, incluidos = [ciclo] }: { ciclo: Ciclo
 
       <Firmas
         firmas={[
-          ["Emite", empresa.representante],
+          ["Emite", datos.representante],
           ["Recibe conforme", ciclo.cliente],
         ]}
       />
@@ -373,6 +376,7 @@ function Hoja({
   folio: string;
   children: React.ReactNode;
 }) {
+  const datos = useEmpresa();
   return (
     <article className="hoja mx-auto w-full max-w-[210mm] bg-white p-8 text-ink lg:p-12">
       <header className="flex items-start justify-between gap-8 border-b-2 border-ink pb-5">
@@ -380,9 +384,9 @@ function Hoja({
           <LogoMark className="h-9 w-auto text-ink" />
           <div>
             <p className="font-display text-xl font-semibold leading-tight tracking-[0.14em]">
-              {emisorOC.razonSocial}
+              {datos.nombreEnOrdenes}
             </p>
-            <p className="text-xs text-ink-soft">RUT {empresa.rut}</p>
+            <p className="text-xs text-ink-soft">RUT {datos.rut}</p>
           </div>
         </div>
         <div className="text-right">

@@ -3,7 +3,7 @@
 import { LogoMark } from "./Logo";
 import { FirmaTeoLabs } from "./FirmaTeoLabs";
 import { agrupar } from "./vistas/VistaPagos";
-import { emisorOC } from "@/lib/empresa";
+import { useEmpresa } from "@/lib/empresa-cliente";
 import { formatearFecha, formatearPesos } from "@/lib/formato";
 import { formatearRut } from "@/lib/abastecimiento";
 import type { CuentaPorPagar, LineaNomina } from "@/lib/pagos";
@@ -31,6 +31,7 @@ export function CuadroDePago({
   nomina: LineaNomina[];
   tope: number;
 }) {
+  const datos = useEmpresa();
   const grupos = agrupar(lineas);
   const total = lineas.reduce((t, l) => t + l.total, 0);
   const bloqueados = nomina.filter((n) => !n.listo);
@@ -42,9 +43,9 @@ export function CuadroDePago({
           <LogoMark className="h-9 w-auto text-ink" />
           <div>
             <p className="font-display text-xl font-semibold leading-tight tracking-[0.14em]">
-              {emisorOC.razonSocial}
+              {datos.nombreEnOrdenes}
             </p>
-            <p className="text-xs text-ink-soft">{emisorOC.rut}</p>
+            <p className="text-xs text-ink-soft">{datos.rut}</p>
           </div>
         </div>
         <div className="text-right">

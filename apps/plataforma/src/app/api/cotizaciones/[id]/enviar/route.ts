@@ -2,7 +2,8 @@ import { enviarCorreoDeOrden, smtpConfigurado } from "@/lib/oc-envio/correo";
 import { DIAS_DEL_ENLACE, correoValido, nuevoEnlace, remitenteDe } from "@/lib/oc-envio/datos";
 import { pdfDeSolicitud } from "@/lib/oc-envio/pdf-solicitud";
 import { cuerpoDeSolicitud, type ItemSolicitud, type ResumenSolicitud } from "@/lib/oc-envio/solicitud";
-import { empresa } from "@/lib/empresa";
+import { direccionCompleta } from "@/lib/empresa";
+import { cargarDatosEmpresa } from "@/lib/empresa-servidor";
 import { supabaseDeServicio } from "@/lib/supabase-servidor";
 
 /**
@@ -96,6 +97,7 @@ export async function POST(pedido: Request, { params }: Contexto) {
     return falla("Falta configurar el correo del servidor (EMAIL_HOST, ZOHO_SMTP_USER y ZOHO_SMTP_PASS).", 500);
   }
 
+  const datosEmpresa = await cargarDatosEmpresa(servicio, cotizacion.empresa_id);
   const resumen: ResumenSolicitud = {
     numero: String(cuerpo.numero ?? id).slice(0, 40),
     solped: solped.numero ? String(solped.numero).slice(0, 40) : null,
@@ -108,6 +110,7 @@ export async function POST(pedido: Request, { params }: Contexto) {
     items,
     emisorNombre: remitente.nombre,
     emisorCorreo: emisor,
+    empresa: datosEmpresa,
   };
 
   /* El envío, primero anotado, con la foto de lo que se manda. */
@@ -136,7 +139,11 @@ export async function POST(pedido: Request, { params }: Contexto) {
   }
 
   const enlace = `${new URL(pedido.url).origin}/sc/${token}/`;
-  const { texto, html } = cuerpoDeSolicitud(mensaje, enlace, resumen, empresa);
+  const { texto, html } = cuerpoDeSolicitud(mensaje, enlace, resumen, {
+    razonSocial: datosEmpresa.razonSocial,
+    rut: datosEmpresa.rut,
+    direccion: direccionCompleta(datosEmpresa),
+  });
 
   try {
     await enviarCorreoDeOrden({

@@ -9,7 +9,7 @@ import {
 import { destinatariosDeLaEmpresa } from "@/lib/oc-envio/destinatarios";
 import { pdfDeOrden } from "@/lib/oc-envio/pdf";
 import { anunciarOrden, modoDeRecepcion } from "@/lib/pagnol/compras-esperadas";
-import { empresa } from "@/lib/empresa";
+import { direccionCompleta } from "@/lib/empresa";
 import { supabaseDeServicio } from "@/lib/supabase-servidor";
 
 /**
@@ -116,7 +116,7 @@ export async function POST(pedido: Request, { params }: Contexto) {
       emisorCorreo: orden.emisorCorreo,
       emisorTelefono: orden.emisorTelefono,
     },
-    empresa,
+    { razonSocial: orden.empresa.razonSocial, rut: orden.empresa.rut, direccion: direccionCompleta(orden.empresa) },
   );
 
   try {

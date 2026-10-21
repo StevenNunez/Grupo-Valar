@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { FirmaTeoLabs } from "@/components/FirmaTeoLabs";
 import { LogoMark } from "@/components/Logo";
-import { emisorOC } from "@/lib/empresa";
+import { DATOS_POR_DEFECTO, type DatosEmpresa } from "@/lib/empresa";
 import { formatearFecha, formatearPesos } from "@/lib/formato";
 import { abrirEnlace } from "@/lib/oc-envio/publico";
 import { ConfirmarOrden } from "./ConfirmarOrden";
@@ -49,7 +49,7 @@ export default async function PaginaOrdenProveedor({ params }: Props) {
   const iva = o.items.reduce((t, i) => t + i.iva, 0);
 
   return (
-    <Marco>
+    <Marco empresa={o.empresa}>
       <article className="rounded-2xl border border-mist-deep bg-white">
         <header className="flex flex-wrap items-start justify-between gap-4 border-b border-mist px-6 py-5">
           <div>
@@ -134,15 +134,15 @@ export default async function PaginaOrdenProveedor({ params }: Props) {
   );
 }
 
-function Marco({ children }: { children: React.ReactNode }) {
+function Marco({ children, empresa = DATOS_POR_DEFECTO }: { children: React.ReactNode; empresa?: DatosEmpresa }) {
   return (
     <main className="min-h-svh bg-mist/40 px-4 py-8 sm:py-12">
       <div className="mx-auto w-full max-w-3xl">
         <div className="mb-6 flex items-center gap-3">
           <LogoMark className="h-8 w-auto text-ink" />
           <div>
-            <p className="font-display text-base font-semibold tracking-[0.14em] text-ink">{emisorOC.razonSocial}</p>
-            <p className="text-xs text-ink-soft">RUT {emisorOC.rut} · {emisorOC.direccion}, {emisorOC.ciudad}</p>
+            <p className="font-display text-base font-semibold tracking-[0.14em] text-ink">{empresa.nombreEnOrdenes}</p>
+            <p className="text-xs text-ink-soft">RUT {empresa.rut} · {empresa.direccion}, {empresa.ciudad}</p>
           </div>
         </div>
         {children}

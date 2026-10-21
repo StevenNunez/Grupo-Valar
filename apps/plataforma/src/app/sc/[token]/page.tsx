@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { FirmaTeoLabs } from "@/components/FirmaTeoLabs";
 import { LogoMark } from "@/components/Logo";
-import { emisorOC } from "@/lib/empresa";
+import { DATOS_POR_DEFECTO, type DatosEmpresa } from "@/lib/empresa";
 import { formatearFecha } from "@/lib/formato";
 import { abrirEnlaceSolicitud } from "@/lib/oc-envio/publico-solicitud";
 import { RecibirSolicitud } from "./RecibirSolicitud";
@@ -44,7 +44,7 @@ export default async function PaginaSolicitudProveedor({ params }: Props) {
   const { contenido: c, envio } = r;
 
   return (
-    <Marco>
+    <Marco empresa={c.empresa ?? DATOS_POR_DEFECTO}>
       <article className="rounded-2xl border border-mist-deep bg-white">
         <header className="flex flex-wrap items-start justify-between gap-4 border-b border-mist px-6 py-5">
           <div>
@@ -119,16 +119,16 @@ export default async function PaginaSolicitudProveedor({ params }: Props) {
   );
 }
 
-function Marco({ children }: { children: React.ReactNode }) {
+function Marco({ children, empresa = DATOS_POR_DEFECTO }: { children: React.ReactNode; empresa?: DatosEmpresa }) {
   return (
     <main className="min-h-svh bg-mist/40 px-4 py-8 sm:py-12">
       <div className="mx-auto w-full max-w-3xl">
         <div className="mb-6 flex items-center gap-3">
           <LogoMark className="h-8 w-auto text-ink" />
           <div>
-            <p className="font-display text-base font-semibold tracking-[0.14em] text-ink">{emisorOC.razonSocial}</p>
+            <p className="font-display text-base font-semibold tracking-[0.14em] text-ink">{empresa.nombreEnOrdenes}</p>
             <p className="text-xs text-ink-soft">
-              RUT {emisorOC.rut} · {emisorOC.direccion}, {emisorOC.ciudad}
+              RUT {empresa.rut} · {empresa.direccion}, {empresa.ciudad}
             </p>
           </div>
         </div>

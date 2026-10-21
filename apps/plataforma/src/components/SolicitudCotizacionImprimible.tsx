@@ -2,7 +2,7 @@
 
 import { LogoMark } from "./Logo";
 import { FirmaTeoLabs } from "./FirmaTeoLabs";
-import { emisorOC } from "@/lib/empresa";
+import { useEmpresa } from "@/lib/empresa-cliente";
 import { formatearFecha, formatearNumero } from "@/lib/formato";
 import { formatearRut } from "@/lib/abastecimiento";
 
@@ -67,6 +67,7 @@ export function SolicitudCotizacionImprimible({
   items: ItemSolicitado[];
   observaciones: string | null;
 }) {
+  const datos = useEmpresa();
   return (
     <article className="hoja mx-auto w-full max-w-[210mm] bg-white p-8 text-ink lg:p-12">
       <header className="flex items-start justify-between gap-8 border-b-2 border-ink pb-5">
@@ -74,9 +75,9 @@ export function SolicitudCotizacionImprimible({
           <LogoMark className="h-9 w-auto text-ink" />
           <div>
             <p className="font-display text-xl font-semibold leading-tight tracking-[0.14em]">
-              {emisorOC.razonSocial}
+              {datos.nombreEnOrdenes}
             </p>
-            <p className="text-xs text-ink-soft">{emisorOC.rut}</p>
+            <p className="text-xs text-ink-soft">{datos.rut}</p>
           </div>
         </div>
         <div className="text-right">
@@ -162,7 +163,7 @@ export function SolicitudCotizacionImprimible({
       <footer className="mt-10 border-t border-mist pt-4 text-[10px] leading-relaxed text-ink-soft">
         Al responder, mencione el número <strong>{numero}</strong>. La cotización no
         constituye orden de compra: la compra se formaliza únicamente con una orden
-        emitida por {emisorOC.razonSocial}.
+        emitida por {datos.nombreEnOrdenes}.
       </footer>
       {/* La firma va al pie de cada documento que sale de la plataforma. */}
       <div className="mt-8 flex justify-center border-t border-mist pt-3">

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { MARCA, escapar, firmaTeoLabs } from "./correo";
+import type { DatosEmpresa } from "@/lib/empresa";
 
 /**
  * El correo de la solicitud de cotización, con la misma cara que el de la OC:
@@ -29,6 +30,8 @@ export type ResumenSolicitud = {
   items: ItemSolicitud[];
   emisorNombre: string | null;
   emisorCorreo: string | null;
+  /** La empresa que la emite, tal como estaba al enviarla. Falta en envíos anteriores a la 0094. */
+  empresa?: DatosEmpresa;
 };
 
 const fechaCorta = (iso: string | null) => (iso ? iso.slice(0, 10).split("-").reverse().join("-") : "—");

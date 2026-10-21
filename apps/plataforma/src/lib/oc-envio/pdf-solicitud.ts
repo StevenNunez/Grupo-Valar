@@ -18,7 +18,7 @@ import {
   type PDFPage,
 } from "pdf-lib";
 import { MARK_A, MARK_V } from "@/components/Logo";
-import { emisorOC } from "@/lib/empresa";
+import { DATOS_POR_DEFECTO } from "@/lib/empresa";
 import type { ResumenSolicitud } from "./solicitud";
 
 /**
@@ -59,9 +59,11 @@ const fecha = (iso: string | null) => {
 };
 
 export async function pdfDeSolicitud(r: ResumenSolicitud): Promise<Uint8Array> {
+  // Las solicitudes enviadas antes de la 0094 no guardaron la empresa: llevan los datos por defecto.
+  const e = r.empresa ?? DATOS_POR_DEFECTO;
   const doc = await PDFDocument.create();
   doc.setTitle(`Solicitud de cotización ${r.numero}`);
-  doc.setAuthor(emisorOC.razonSocial);
+  doc.setAuthor(e.nombreEnOrdenes);
   doc.setCreator("Plataforma Valar · Teo Labs");
 
   const normal = await doc.embedFont(StandardFonts.Helvetica);
@@ -118,8 +120,8 @@ export async function pdfDeSolicitud(r: ResumenSolicitud): Promise<Uint8Array> {
     pagina.drawSvgPath(trazo, { x: MARGEN, y: y - 4, scale: escala, color: TINTA });
   }
   const xMarca = MARGEN + 50;
-  texto(emisorOC.razonSocial, xMarca, y - 14, { tam: 16, fuente: negrita });
-  texto(`RUT ${emisorOC.rut}`, xMarca, y - 28, { tam: 9, color: SUAVE });
+  texto(e.nombreEnOrdenes, xMarca, y - 14, { tam: 16, fuente: negrita });
+  texto(`RUT ${e.rut}`, xMarca, y - 28, { tam: 9, color: SUAVE });
   texto("SOLICITUD DE COTIZACIÓN", derecha, y - 14, { tam: 14, fuente: negrita, alinear: "der" });
   texto(r.numero, derecha, y - 30, { tam: 12, fuente: negrita, alinear: "der" });
   y -= 42;
@@ -143,9 +145,9 @@ export async function pdfDeSolicitud(r: ResumenSolicitud): Promise<Uint8Array> {
     return yy;
   };
   const finEmisor = bloque("Solicita", MARGEN, [
-    ["Empresa", emisorOC.razonSocial],
-    ["Rut", emisorOC.rut],
-    ["Dirección", `${emisorOC.direccion}, ${emisorOC.ciudad}`],
+    ["Empresa", e.nombreEnOrdenes],
+    ["Rut", e.rut],
+    ["Dirección", `${e.direccion}, ${e.ciudad}`],
     ["Contacto", r.emisorNombre],
     ["Correo", r.emisorCorreo],
   ]);
@@ -190,7 +192,7 @@ export async function pdfDeSolicitud(r: ResumenSolicitud): Promise<Uint8Array> {
     pie(pagina);
     pagina = doc.addPage([A4.ancho, A4.alto]);
     y = A4.alto - MARGEN;
-    texto(`${emisorOC.razonSocial} · Solicitud de cotización ${r.numero} (continuación)`, MARGEN, y - 8, {
+    texto(`${e.nombreEnOrdenes} · Solicitud de cotización ${r.numero} (continuación)`, MARGEN, y - 8, {
       tam: 8,
       color: SUAVE,
     });

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { IconoModulo } from "./IconoModulo";
 import { entraDirecto, modulos } from "@/lib/modulos";
-import { administraAlgo, entraA, useUsuario } from "@/lib/sesion";
+import { administraAlgo, entraA, puede, useUsuario } from "@/lib/sesion";
 
 /**
  * Las tarjetas de los módulos, recortadas a los de la persona.
@@ -99,19 +99,32 @@ export function ListaModulos() {
 
       {/* La administración no es un módulo: es de dónde salen los accesos de
           todos los demás. Va aparte y en chico, porque se entra pocas veces. */}
-      {administraAlgo(usuario) && (
-        <div className="mt-10 border-t border-mist-deep pt-6">
-          <Link
-            href="/usuarios/"
-            className="inline-flex items-center gap-2 text-sm font-semibold text-ink-soft transition-colors hover:text-ink"
-          >
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-              <circle cx="9" cy="8" r="3.2" />
-              <path d="M3.5 19a5.5 5.5 0 0 1 11 0" strokeLinecap="round" />
-              <path d="M16 8.5h5M18.5 6v5" strokeLinecap="round" />
-            </svg>
-            Usuarios y accesos
-          </Link>
+      {(administraAlgo(usuario) || puede(usuario, "parametros.editar")) && (
+        <div className="mt-10 flex flex-wrap items-center gap-x-8 gap-y-3 border-t border-mist-deep pt-6">
+          {administraAlgo(usuario) && (
+            <Link
+              href="/usuarios/"
+              className="inline-flex items-center gap-2 text-sm font-semibold text-ink-soft transition-colors hover:text-ink"
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                <circle cx="9" cy="8" r="3.2" />
+                <path d="M3.5 19a5.5 5.5 0 0 1 11 0" strokeLinecap="round" />
+                <path d="M16 8.5h5M18.5 6v5" strokeLinecap="round" />
+              </svg>
+              Usuarios y accesos
+            </Link>
+          )}
+          {puede(usuario, "parametros.editar") && (
+            <Link
+              href="/empresa/"
+              className="inline-flex items-center gap-2 text-sm font-semibold text-ink-soft transition-colors hover:text-ink"
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                <path d="M4 20V6l8-3 8 3v14M9 20v-5h6v5M8 9h.01M12 9h.01M16 9h.01M8 12.5h.01M12 12.5h.01M16 12.5h.01" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Datos de la empresa
+            </Link>
+          )}
         </div>
       )}
     </>

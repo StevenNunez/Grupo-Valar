@@ -2,6 +2,8 @@ import "server-only";
 
 import { createHash, randomBytes } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { DatosEmpresa } from "@/lib/empresa";
+import { cargarDatosEmpresa } from "@/lib/empresa-servidor";
 
 /**
  * Lo que el servidor necesita para mandarle una OC al proveedor.
@@ -14,6 +16,8 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export type OrdenParaEnviar = {
   empresaId: string;
+  /** Los datos de la empresa que emite: salen impresos en el PDF, el correo y la página del proveedor. */
+  empresa: DatosEmpresa;
   id: string;
   contratoId: string;
   numero: string;
@@ -70,6 +74,7 @@ export async function cargarOrdenParaEnviar(
 
   return {
     empresaId: o.empresa_id,
+    empresa: await cargarDatosEmpresa(sb, o.empresa_id),
     id: o.id,
     contratoId: o.contrato_id,
     numero: o.numero,

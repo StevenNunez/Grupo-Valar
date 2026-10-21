@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CampoTexto, Dialogo, Pie } from "./ui/Formulario";
 import { Chip } from "./ui/Chip";
-import { emisorOC } from "@/lib/empresa";
+import { useEmpresa } from "@/lib/empresa-cliente";
 import { formatearFecha, formatearPesos } from "@/lib/formato";
 import {
   abrirPdfDeOrden,
@@ -36,12 +36,13 @@ export function EnvioOrden({
   alCerrar: () => void;
   alEnviada: () => void;
 }) {
+  const datos = useEmpresa();
   const borrador = orden.estado === "borrador";
   const anulada = orden.estado === "anulada";
 
   const [para, setPara] = useState(correoProveedor || orden.correoContacto || "");
-  const [asunto, setAsunto] = useState(`Orden de compra ${orden.numero} · ${emisorOC.razonSocial}`);
-  const [mensaje, setMensaje] = useState(() => mensajeInicial(orden));
+  const [asunto, setAsunto] = useState(`Orden de compra ${orden.numero} · ${datos.nombreEnOrdenes}`);
+  const [mensaje, setMensaje] = useState(() => mensajeInicial(orden, datos.nombreEnOrdenes));
   const [cc, setCc] = useState<string[]>([]);
   const [buscar, setBuscar] = useState("");
   const [personas, setPersonas] = useState<Destinatario[] | null>(null);
@@ -251,11 +252,11 @@ export function EnvioOrden({
   );
 }
 
-function mensajeInicial(o: Orden) {
+function mensajeInicial(o: Orden, firma: string) {
   return [
     o.contacto ? `Estimado/a ${o.contacto}:` : "Estimados:",
     "",
-    `Adjuntamos la orden de compra ${o.numero} de ${emisorOC.razonSocial}, por un total de ${formatearPesos(o.total)} (IVA incluido).`,
+    `Adjuntamos la orden de compra ${o.numero} de ${firma}, por un total de ${formatearPesos(o.total)} (IVA incluido).`,
     "",
     [
       o.fechaRequerida ? `Requerida para el ${formatearFecha(o.fechaRequerida)}` : null,
@@ -268,7 +269,7 @@ function mensajeInicial(o: Orden) {
     "Saludos,",
     o.emisorNombre ?? "",
     o.emisorTelefono ?? "",
-    emisorOC.razonSocial,
+    firma,
   ]
     .filter((l) => l !== null)
     .join("\n")

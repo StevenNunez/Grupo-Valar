@@ -18,7 +18,6 @@ import {
   type PDFPage,
 } from "pdf-lib";
 import { MARK_A, MARK_V } from "@/components/Logo";
-import { emisorOC } from "@/lib/empresa";
 import type { OrdenParaEnviar } from "./datos";
 
 /**
@@ -67,9 +66,10 @@ const fecha = (iso: string | null) => {
 };
 
 export async function pdfDeOrden(o: OrdenParaEnviar): Promise<Uint8Array> {
+  const e = o.empresa;
   const doc = await PDFDocument.create();
   doc.setTitle(`Orden de compra ${o.numero}`);
-  doc.setAuthor(emisorOC.razonSocial);
+  doc.setAuthor(e.nombreEnOrdenes);
   doc.setCreator("Plataforma Valar · Teo Labs");
 
   const normal = await doc.embedFont(StandardFonts.Helvetica);
@@ -129,8 +129,8 @@ export async function pdfDeOrden(o: OrdenParaEnviar): Promise<Uint8Array> {
     pagina.drawSvgPath(trazo, { x: MARGEN, y: y - 4, scale: escala, color: TINTA });
   }
   const xMarca = MARGEN + 50;
-  texto(emisorOC.razonSocial, xMarca, y - 14, { tam: 16, fuente: negrita });
-  texto(`RUT ${emisorOC.rut}`, xMarca, y - 28, { tam: 9, color: SUAVE });
+  texto(e.nombreEnOrdenes, xMarca, y - 14, { tam: 16, fuente: negrita });
+  texto(`RUT ${e.rut}`, xMarca, y - 28, { tam: 9, color: SUAVE });
   texto("ORDEN DE COMPRA", derecha, y - 14, { tam: 16, fuente: negrita, alinear: "der" });
   texto(o.numero, derecha, y - 30, { tam: 12, fuente: negrita, alinear: "der" });
   y -= 42;
@@ -154,9 +154,9 @@ export async function pdfDeOrden(o: OrdenParaEnviar): Promise<Uint8Array> {
     return yy;
   };
   const finEmisor = bloque("Emite", MARGEN, [
-    ["Rut", emisorOC.rut],
-    ["Dirección", emisorOC.direccion],
-    ["Ciudad", `${emisorOC.ciudad}, ${emisorOC.region}`],
+    ["Rut", e.rut],
+    ["Dirección", e.direccion],
+    ["Ciudad", `${e.ciudad}, ${e.region}`],
     ["Contacto", o.emisorNombre],
     ["Correo", o.emisorCorreo],
     ["Teléfono", o.emisorTelefono],
@@ -222,7 +222,7 @@ export async function pdfDeOrden(o: OrdenParaEnviar): Promise<Uint8Array> {
     pie(pagina);
     pagina = doc.addPage([A4.ancho, A4.alto]);
     y = A4.alto - MARGEN;
-    texto(`${emisorOC.razonSocial} · Orden de compra ${o.numero} (continuación)`, MARGEN, y - 8, {
+    texto(`${e.nombreEnOrdenes} · Orden de compra ${o.numero} (continuación)`, MARGEN, y - 8, {
       tam: 8,
       color: SUAVE,
     });
@@ -299,7 +299,7 @@ export async function pdfDeOrden(o: OrdenParaEnviar): Promise<Uint8Array> {
       ["Solicitado por", o.solicitadoPor],
       ["Retira", o.retira],
       // Fijo: es el representante legal, no cambia por orden.
-      ["Autorizado por", emisorOC.autorizadoPor],
+      ["Autorizado por", e.representante],
     ] as const
   ).forEach(([etiqueta, nombre], i) => {
     const centro = MARGEN + tercio * i + tercio / 2;

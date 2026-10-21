@@ -42,3 +42,80 @@ export const emisorOC = {
   siguienteCorrelativo: 1129,
   digitosCorrelativo: 6,
 } as const;
+
+/* ── Los datos de la empresa, editables (0094) ────────────────────────────── */
+
+/**
+ * Lo que sale impreso o escrito en documentos: viene de la fila de `empresas`
+ * (se edita desde «Datos de la empresa»). Las constantes de arriba quedan como
+ * valores por defecto: son lo que se usa antes de iniciar sesión (pantalla de
+ * acceso) y mientras los datos cargan, y no cambian lo que ya estaba escrito.
+ */
+export type DatosEmpresa = {
+  id: string | null;
+  /** Cómo se llama en pantalla. */
+  nombre: string;
+  /** Razón social legal: correos, informes, pie de página. */
+  razonSocial: string;
+  /** Cómo la conoce el proveedor: OC y solicitudes de cotización. */
+  nombreEnOrdenes: string;
+  rut: string;
+  direccion: string;
+  ciudad: string;
+  region: string;
+  email: string;
+  representante: string;
+};
+
+export const DATOS_POR_DEFECTO: DatosEmpresa = {
+  id: null,
+  nombre: "Valar SpA",
+  razonSocial: empresa.razonSocial,
+  nombreEnOrdenes: emisorOC.razonSocial,
+  rut: empresa.rut,
+  direccion: emisorOC.direccion,
+  ciudad: emisorOC.ciudad,
+  region: emisorOC.region,
+  email: empresa.email,
+  representante: empresa.representante,
+};
+
+/** Las columnas de `empresas` que arman `DatosEmpresa`. */
+export const COLUMNAS_EMPRESA = "id, nombre, razon_social, nombre_en_ordenes, rut, direccion, ciudad, region, email_contacto, representante";
+
+export type FilaEmpresa = {
+  id: string;
+  nombre: string | null;
+  razon_social: string | null;
+  nombre_en_ordenes: string | null;
+  rut: string | null;
+  direccion: string | null;
+  ciudad: string | null;
+  region: string | null;
+  email_contacto: string | null;
+  representante: string | null;
+};
+
+/** Una fila de la base → los datos; lo que falte se completa con los valores por defecto. */
+export function datosDeFila(f: FilaEmpresa | null | undefined): DatosEmpresa {
+  if (!f) return DATOS_POR_DEFECTO;
+  const d = DATOS_POR_DEFECTO;
+  const v = (x: string | null | undefined, por: string) => (x?.trim() ? x.trim() : por);
+  const nombre = v(f.nombre, d.nombre);
+  const razonSocial = v(f.razon_social, nombre);
+  return {
+    id: f.id,
+    nombre,
+    razonSocial,
+    nombreEnOrdenes: v(f.nombre_en_ordenes, razonSocial.toUpperCase()),
+    rut: v(f.rut, d.rut),
+    direccion: v(f.direccion, d.direccion),
+    ciudad: v(f.ciudad, d.ciudad),
+    region: v(f.region, d.region),
+    email: v(f.email_contacto, d.email),
+    representante: v(f.representante, d.representante),
+  };
+}
+
+/** La dirección completa en una línea: «Heroes de la Concepción 8848, Antofagasta». */
+export const direccionCompleta = (d: DatosEmpresa) => [d.direccion, d.ciudad].filter(Boolean).join(", ");

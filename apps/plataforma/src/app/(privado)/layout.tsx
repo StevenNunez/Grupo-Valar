@@ -1,5 +1,6 @@
 import { Guardia } from "@/components/Guardia";
 import { Avisos } from "@/components/ui/Avisos";
+import { ProveedorEmpresa } from "@/lib/empresa-cliente";
 
 /**
  * Grupo de rutas `(privado)`: los paréntesis no aparecen en la URL. Acá vive
@@ -13,7 +14,7 @@ export default function LayoutPrivado({
 }) {
   return (
     <Guardia>
-      {children}
+      <ProveedorEmpresa>{children}</ProveedorEmpresa>
       <Avisos />
     </Guardia>
   );

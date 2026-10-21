@@ -2,7 +2,8 @@
 
 import { LogoMark } from "./Logo";
 import { FirmaTeoLabs } from "./FirmaTeoLabs";
-import { empresa } from "@/lib/empresa";
+import { direccionCompleta } from "@/lib/empresa";
+import { useEmpresa } from "@/lib/empresa-cliente";
 import {
   semaforo,
   textoSemaforo,
@@ -63,6 +64,7 @@ export function InformeImprimible({
   alcance: string;
   emitidoPor: string;
 }) {
+  const datos = useEmpresa();
   const luz = semaforo(total.margenPct, meta);
   const desde = evolucion[0];
   const hasta = evolucion[evolucion.length - 1];
@@ -82,9 +84,9 @@ export function InformeImprimible({
           <LogoMark className="h-9 w-auto text-ink" />
           <div>
             <p className="font-display text-base font-semibold leading-tight tracking-[0.1em]">
-              {empresa.razonSocial.toUpperCase()}
+              {datos.razonSocial.toUpperCase()}
             </p>
-            <p className="text-xs text-ink-soft">RUT {empresa.rut}</p>
+            <p className="text-xs text-ink-soft">RUT {datos.rut}</p>
           </div>
         </div>
         <div className="text-right">
@@ -402,13 +404,13 @@ export function InformeImprimible({
         </div>
         <div>
           <div className="mx-auto h-12" />
-          <p className="border-t border-ink pt-2 font-semibold">{empresa.representante}</p>
+          <p className="border-t border-ink pt-2 font-semibold">{datos.representante}</p>
           <p className="mt-0.5 text-ink-soft">Revisado por</p>
         </div>
       </div>
 
       <p className="mt-8 border-t border-mist pt-3 text-center text-[10px] text-ink-soft">
-        {empresa.razonSocial} · {empresa.direccion} · Documento generado por la Plataforma
+        {datos.razonSocial} · {direccionCompleta(datos)} · Documento generado por la Plataforma
         Valar desde los datos cargados en Ingresos y Egresos.
       </p>
       {/* La firma va al pie de cada documento que sale de la plataforma. */}

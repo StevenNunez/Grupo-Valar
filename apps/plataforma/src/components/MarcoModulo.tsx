@@ -130,6 +130,19 @@ export function MarcoModulo({
             </Link>
           )}
 
+          {puede(usuario, "parametros.editar") && (
+            <Link
+              href="/empresa/"
+              onClick={() => setMenuAbierto(false)}
+              className="mb-3 flex items-center gap-2 text-xs text-white/60 transition-colors hover:text-white"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <path d="M4 20V6l8-3 8 3v14M9 20v-5h6v5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Datos de la empresa
+            </Link>
+          )}
+
           {!entraDirecto(usuario) && (
             <Link
               href="/modulos/"

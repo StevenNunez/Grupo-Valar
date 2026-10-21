@@ -2,7 +2,7 @@
 
 import { LogoMark } from "./Logo";
 import { FirmaTeoLabs } from "./FirmaTeoLabs";
-import { emisorOC } from "@/lib/empresa";
+import { useEmpresa } from "@/lib/empresa-cliente";
 import { formatearFecha, formatearNumero, formatearPesos } from "@/lib/formato";
 import type { Item, Orden } from "@/lib/ordenes";
 
@@ -16,6 +16,7 @@ import type { Item, Orden } from "@/lib/ordenes";
  * `globals.css` esconden el resto de la aplicación y dejan solo esta hoja.
  */
 export function OrdenImprimible({ orden, items }: { orden: Orden; items: Item[] }) {
+  const datos = useEmpresa();
   const neto = items.reduce((t, i) => t + i.neto, 0);
   const iva = items.reduce((t, i) => t + i.iva, 0);
 
@@ -27,9 +28,9 @@ export function OrdenImprimible({ orden, items }: { orden: Orden; items: Item[] 
           <LogoMark className="h-9 w-auto text-ink" />
           <div>
             <p className="font-display text-xl font-semibold leading-tight tracking-[0.14em]">
-              {emisorOC.razonSocial}
+              {datos.nombreEnOrdenes}
             </p>
-            <p className="text-xs text-ink-soft">{empresaRut()}</p>
+            <p className="text-xs text-ink-soft">{empresaRut(datos.rut)}</p>
           </div>
         </div>
         <div className="text-right">
@@ -41,9 +42,9 @@ export function OrdenImprimible({ orden, items }: { orden: Orden; items: Item[] 
       {/* Emisor y proveedor, uno al lado del otro */}
       <div className="mt-6 grid gap-8 sm:grid-cols-2">
         <Bloque titulo="Emite">
-          <Dato etiqueta="Rut" valor={emisorOC.rut} />
-          <Dato etiqueta="Dirección" valor={emisorOC.direccion} />
-          <Dato etiqueta="Ciudad" valor={`${emisorOC.ciudad}, ${emisorOC.region}`} />
+          <Dato etiqueta="Rut" valor={datos.rut} />
+          <Dato etiqueta="Dirección" valor={datos.direccion} />
+          <Dato etiqueta="Ciudad" valor={`${datos.ciudad}, ${datos.region}`} />
           <Dato etiqueta="Contacto" valor={orden.emisorNombre} />
           <Dato etiqueta="Correo" valor={orden.emisorCorreo} />
           <Dato etiqueta="Teléfono" valor={orden.emisorTelefono} />
@@ -151,7 +152,7 @@ export function OrdenImprimible({ orden, items }: { orden: Orden; items: Item[] 
           ["Solicitado por", orden.solicitadoPor],
           ["Retira", orden.retira],
           // Fijo: es el representante legal, no cambia por orden.
-          ["Autorizado por", emisorOC.autorizadoPor],
+          ["Autorizado por", datos.representante],
         ].map(([etiqueta, nombre]) => (
           <div key={etiqueta as string}>
             <div className="mx-auto h-12" />
@@ -168,8 +169,8 @@ export function OrdenImprimible({ orden, items }: { orden: Orden; items: Item[] 
   );
 }
 
-function empresaRut() {
-  return `RUT ${emisorOC.rut}`;
+function empresaRut(rut: string) {
+  return `RUT ${rut}`;
 }
 
 function Bloque({ titulo, children }: { titulo: string; children: React.ReactNode }) {
