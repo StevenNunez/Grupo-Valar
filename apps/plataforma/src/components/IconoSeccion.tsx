@@ -53,6 +53,13 @@ const trazos: Record<Seccion["icono"], React.ReactNode> = {
     </>
   ),
   // Caja de bodega: el artículo.
+  // Un maletín: lo que la empresa tiene.
+  activos: (
+    <>
+      <rect x="3" y="7" width="18" height="13" rx="2" />
+      <path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7M3 13h18" strokeLinejoin="round" />
+    </>
+  ),
   articulos: (
     <>
       <path d="M3 8.5 12 4l9 4.5v7L12 20l-9-4.5Z" strokeLinejoin="round" />

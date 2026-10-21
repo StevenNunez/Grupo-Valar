@@ -41,6 +41,7 @@ export type Seccion = {
     | "ordenes"
     | "pagos"
     | "articulos"
+    | "activos"
     | "proveedores";
   /** Adónde lleva el enlace de la sección (su primera subsección, si tiene). */
   href: string;
@@ -113,6 +114,16 @@ export const seccionesGestion: Seccion[] = [
         ],
       },
     ],
+  },
+  /* Lo que la empresa tiene —para qué contrato se compró, dónde está y cuánto vale—.
+     Se mira como Oficina Central: es de la casa matriz, no de un contrato. */
+  {
+    id: "activos",
+    titulo: "Activos",
+    icono: "activos",
+    href: `${RAIZ_GESTION}/activos/`,
+    base: `${RAIZ_GESTION}/activos`,
+    permiso: "oficina_central.ver",
   },
 ];
 
