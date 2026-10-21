@@ -61,6 +61,17 @@ export const anularRecepcionConPagnol = (recepcionId: string) =>
 export const procesarReposicionPendiente = () =>
   llamar<{ ok: true; revisados: number; listos: number }>("/api/pagnol/reposicion/", "POST");
 
+/* ── Fase 5 · C: solicitudes de compra de Pagnol ──────────────────────────── */
+
+/**
+ * Arma la solicitud de un aviso que esperaba contrato, en el contrato elegido
+ * (y deja guardada la asociación con el de Pagnol). Sin aviso, reintenta todos.
+ */
+export async function resolverSolicitudDePagnol(webhookId?: string, contratoId?: string) {
+  if (!webhookId) return llamar<{ ok: true; revisados: number; listos: number }>("/api/pagnol/solicitudes/", "POST");
+  return llamarConCuerpo<{ ok: true }>("/api/pagnol/solicitudes/", "POST", { webhook_id: webhookId, contrato_id: contratoId });
+}
+
 /* ── Catálogo de Pagnol en Artículos ──────────────────────────────────────── */
 
 export const catalogoDePagnol = {

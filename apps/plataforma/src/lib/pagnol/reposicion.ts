@@ -52,7 +52,7 @@ async function datosDelMaterial(d: DatosAviso) {
   return { nombre: d.nombre ?? data?.nombre ?? "Material de Pagnol", unidad: d.unidad_medida ?? data?.unidad_medida ?? "un" };
 }
 
-async function siguienteNumero(sb: SupabaseClient, empresa: string) {
+export async function siguienteNumero(sb: SupabaseClient, empresa: string) {
   const { data } = await sb.from("solped").select("numero").eq("empresa_id", empresa);
   const numeros = (data ?? []).map((s) => Number(/(\d+)\s*$/.exec(s.numero as string)?.[1] ?? 0)).filter((n) => n > 0);
   return `SOLPED-${String((numeros.length ? Math.max(...numeros) : 0) + 1).padStart(3, "0")}`;

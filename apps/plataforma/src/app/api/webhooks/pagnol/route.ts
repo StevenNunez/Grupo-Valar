@@ -3,6 +3,7 @@ import { Webhook } from "standardwebhooks";
 import type { TagPagnol } from "@/lib/pagnol/client";
 import { registrarCompraRecibida, registrarCorreccion } from "@/lib/pagnol/recepciones-entrantes";
 import { procesarYAnotar } from "@/lib/pagnol/reposicion";
+import { procesarSolicitudYAnotar, type AvisoSolicitud } from "@/lib/pagnol/solicitudes-entrantes";
 import { supabaseDeServicio } from "@/lib/supabase-servidor";
 
 /**
@@ -39,6 +40,9 @@ type EventoPagnol = {
 
 /** `compra.recibida` y `compra.recepcion_corregida`: la recepción vive en Pagnol (Fase 5). */
 const esDeCompra = (tipo: string) => tipo === "compra.recibida" || tipo === "compra.recepcion_corregida";
+
+/** `solicitud_compra.creada|aprobada|rechazada`: las solicitudes de Pagnol (Fase 5 · C). */
+const esDeSolicitud = (tipo: string) => tipo.startsWith("solicitud_compra.");
 
 /** Qué caché limpia cada familia de eventos. */
 function tagsDe(tipo: string): TagPagnol[] {
@@ -120,6 +124,11 @@ export async function POST(pedido: Request) {
       .from("pagnol_webhooks_recibidos")
       .update({ procesado_en: new Date().toISOString(), error: r.ok ? null : r.error })
       .eq("webhook_id", id);
+  } else if (sb && esDeSolicitud(evento.type)) {
+    // Fase 5 · C: una solicitud de compra aprobada en Pagnol → borrador de SOLPED.
+    // Sin contrato asociado, queda en la bandeja con el motivo y se responde 2xx:
+    // el aviso llegó bien; reintentarlo no lo arreglaría.
+    await procesarSolicitudYAnotar(sb, { webhook_id: id, empresa_id: empresa, tipo: evento.type, payload: evento as AvisoSolicitud["payload"] });
   } else if (sb && evento.type === "stock.bajo_minimo") {
     // Si no se puede (pañol sin contrato), queda en la bandeja con el motivo.
     // Igual se responde 2xx: el aviso llegó bien; reintentarlo no lo arreglaría.

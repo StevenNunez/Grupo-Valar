@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ReposicionPagnol } from "./ReposicionPagnol";
+import { SolicitudesPagnol } from "./SolicitudesPagnol";
 import { Chip, type Tono } from "./ui/Chip";
 import { Contenido, Resumen } from "./ui/Vista";
 import { useConsulta } from "@/lib/consulta";
@@ -58,6 +59,7 @@ export function PanelAbastecimiento() {
 
       <Contenido consulta={estado}>{(datos) => <Tablero datos={datos} />}</Contenido>
       <ReposicionPagnol />
+      <SolicitudesPagnol />
     </>
   );
 }
