@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { Chip } from "./ui/Chip";
 import { DialogoAdjuntos } from "./ui/Adjuntos";
 import { Ancho, CampoDinero, CampoFecha, CampoTexto, Campos, Confirmacion, Dialogo, Pie, ResumenIva, ivaDe, useFormulario } from "./ui/Formulario";
-import { anularRecepcionConPagnol, informarRecepcionAPagnol, listarPanolesDePagnol } from "@/lib/pagnol/navegador";
+import { anularRecepcionConPagnol, estadoDeOrdenEnPagnol, informarRecepcionAPagnol, listarPanolesDePagnol, type AnuncioDeOrden } from "@/lib/pagnol/navegador";
+import { PanelPagnolDeOrden } from "./PanelPagnolDeOrden";
 import type { PanolPagnol } from "@/lib/pagnol/tipos";
 import {
   cargarCiclo,
@@ -72,6 +73,19 @@ export function CicloOrden({
      volver al resumen. La recepción en Valar queda guardada igual. */
   const [avisoPagnol, setAvisoPagnol] = useState<AvisoPagnol>(null);
 
+  /* Fase 5 · B: si la empresa recibe en Pagnol, las líneas del catálogo de
+     Pagnol de una orden anunciada las recibe el pañolero allá, no acá. */
+  const [pagnolOC, setPagnolOC] = useState<{ modo: "externa" | "pagnol"; anuncio: AnuncioDeOrden } | null>(null);
+  const [versionPagnol, setVersionPagnol] = useState(0);
+  useEffect(() => {
+    let vigente = true;
+    estadoDeOrdenEnPagnol(orden.id).then((r) => {
+      if (vigente && r.ok) setPagnolOC({ modo: r.modo, anuncio: r.anuncio });
+    });
+    return () => { vigente = false; };
+  }, [orden.id, versionPagnol]);
+  const seRecibeEnPagnol = pagnolOC?.modo === "pagnol" && pagnolOC.anuncio.estado === "anunciada";
+
   function hecho(aviso?: AvisoPagnol) {
     setAvisoPagnol(aviso ?? null);
     recargar();
@@ -104,9 +118,12 @@ export function CicloOrden({
       ) : modo === "ver" ? (
         <Resumen orden={orden} ciclo={estado.datos} alModo={setModo} alAdjuntos={setAdjuntos}
           puedeRecibir={puedeRecibir} puedeFacturar={puedeFacturar} alCerrar={alCerrar}
-          avisoPagnol={avisoPagnol} alCambio={hecho} />
+          avisoPagnol={avisoPagnol} alCambio={hecho}
+          pagnolOC={pagnolOC} puedeAnunciar={emiteOrdenes || cargaGestion} alCambioPagnol={() => { setVersionPagnol((v) => v + 1); recargar(); alCambiar(); }} />
       ) : modo === "recibir" ? (
-        <FormRecepcion orden={orden} ciclo={estado.datos} alVolver={() => setModo("ver")} alHecho={hecho} />
+        <FormRecepcion orden={orden}
+          ciclo={seRecibeEnPagnol ? { ...estado.datos, lineas: estado.datos.lineas.filter((l) => !l.pagnolMaterialId) } : estado.datos}
+          alVolver={() => setModo("ver")} alHecho={hecho} />
       ) : modo === "facturar" ? (
         <FormFactura orden={orden} ciclo={estado.datos} alVolver={() => setModo("ver")} alHecho={hecho} />
       ) : modo === "nc" ? (
@@ -122,7 +139,7 @@ export function CicloOrden({
 
 type AvisoPagnol = { tono: "info" | "aviso"; texto: string } | null;
 
-function Resumen({ orden, ciclo, alModo, alAdjuntos, puedeRecibir, puedeFacturar, alCerrar, avisoPagnol, alCambio }: {
+function Resumen({ orden, ciclo, alModo, alAdjuntos, puedeRecibir, puedeFacturar, alCerrar, avisoPagnol, alCambio, pagnolOC, puedeAnunciar, alCambioPagnol }: {
   orden: Orden;
   ciclo: Ciclo;
   alModo: (m: Modo) => void;
@@ -133,6 +150,10 @@ function Resumen({ orden, ciclo, alModo, alAdjuntos, puedeRecibir, puedeFacturar
   avisoPagnol: AvisoPagnol;
   /** Releer todo tras reintentar o anular, con lo que haya que avisar. */
   alCambio: (aviso?: AvisoPagnol) => void;
+  /** Modo de recepción de la empresa y si la OC se anunció a Pagnol (Fase 5 · B). */
+  pagnolOC: { modo: "externa" | "pagnol"; anuncio: AnuncioDeOrden } | null;
+  puedeAnunciar: boolean;
+  alCambioPagnol: () => void;
 }) {
   const [trabajando, setTrabajando] = useState<string | null>(null);
   const [anulando, setAnulando] = useState<string | null>(null);
@@ -159,7 +180,9 @@ function Resumen({ orden, ciclo, alModo, alAdjuntos, puedeRecibir, puedeFacturar
   const nombre = new Map(ciclo.lineas.map((l) => [l.id, l.descripcion]));
   const sinRecibir = ciclo.lineas.reduce((t, l) => t + l.sinRecibir * l.precioUnitario, 0);
   const porFacturar = ciclo.lineas.reduce((t, l) => t + l.recibidaSinFacturar * l.precioUnitario, 0);
-  const hayPorRecibir = ciclo.lineas.some((l) => l.porRecibir > 0);
+  const seRecibeEnPagnol = pagnolOC?.modo === "pagnol" && pagnolOC.anuncio.estado === "anunciada";
+  /* Lo que falta y no es del catálogo de Pagnol se sigue recibiendo acá. */
+  const hayPorRecibir = ciclo.lineas.some((l) => l.porRecibir > 0 && !(seRecibeEnPagnol && l.pagnolMaterialId));
   const hayFacturable = ciclo.lineas.some((l) => facturable(l) > 0);
   const hayCerrable = ciclo.lineas.some((l) => cerrable(l) > 0);
   const hayNc = ciclo.lineas.some((l) => l.sinRecibir > 0);
@@ -173,6 +196,12 @@ function Resumen({ orden, ciclo, alModo, alAdjuntos, puedeRecibir, puedeFacturar
           <Cifra etiqueta="Facturado" valor={orden.facturado} nota={`${orden.facturas} ${orden.facturas === 1 ? "factura" : "facturas"}`} />
           <Cifra etiqueta="Pagado" valor={orden.pagado} />
         </dl>
+
+        {pagnolOC?.modo === "pagnol" && orden.estado !== "borrador" && orden.estado !== "anulada" && (
+          <div className="mt-4">
+            <PanelPagnolDeOrden ordenId={orden.id} anuncio={pagnolOC.anuncio} puedeEscribir={puedeAnunciar} alCambiar={alCambioPagnol} />
+          </div>
+        )}
 
         <div className="mt-4 flex flex-col gap-2">
           {avisoPagnol && <Aviso tono={avisoPagnol.tono}>{avisoPagnol.texto}</Aviso>}
@@ -240,9 +269,13 @@ function Resumen({ orden, ciclo, alModo, alAdjuntos, puedeRecibir, puedeFacturar
                     {r.lineas.map((x) => `${formatearNumero(x.cantidad)} ${nombre.get(x.itemId) ?? x.itemId}`).join(" · ")}
                     {r.recibidoPor && ` — recibió ${r.recibidoPor}`}
                   </p>
-                  <EstadoEnPagnol recepcion={r} conPagnol={r.lineas.some((x) => deLaOrdenEnPagnol.has(x.itemId))}
-                    trabajando={trabajando === r.id} alReintentar={() => reintentar(r.id)} />
-                  {puedeRecibir && (
+                  {r.desdePagnol ? (
+                    <p className="mt-1.5 text-xs font-semibold text-[#0e7a4f]">Recibida en Pagnol ✓ · si algo no venía, se corrige allá y el cambio llega solo</p>
+                  ) : (
+                    <EstadoEnPagnol recepcion={r} conPagnol={r.lineas.some((x) => deLaOrdenEnPagnol.has(x.itemId))}
+                      trabajando={trabajando === r.id} alReintentar={() => reintentar(r.id)} />
+                  )}
+                  {puedeRecibir && !r.desdePagnol && (
                     <button type="button" onClick={() => { setErrorAnular(null); setAnulando(r.id); }}
                       className="mt-2 text-xs font-semibold text-[#a52f24] hover:underline">
                       Anular recepción

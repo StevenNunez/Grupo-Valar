@@ -41,6 +41,8 @@ export type RecepcionCiclo = {
   guia: string | null;
   recibidoPor: string | null;
   observaciones: string | null;
+  /** La registró el pañolero en Pagnol (Fase 5): el stock ya está allá y no se informa de vuelta (0092). */
+  desdePagnol: boolean;
   lineas: { itemId: string; cantidad: number }[];
   /** Lo que se le informó a Pagnol de esta recepción (0055). Null si no tenía líneas de Pagnol. */
   pagnol: { total: number; enviados: number; errores: string[] } | null;
@@ -81,7 +83,7 @@ export async function cargarCiclo(ordenId: string): Promise<CicloOrden> {
     supabase.from("items_avance").select("*").eq("orden_id", ordenId),
     supabase
       .from("recepciones")
-      .select("id, fecha, guia_despacho, recibido_por, observaciones, recepcion_items(item_id, cantidad)")
+      .select("id, fecha, guia_despacho, recibido_por, observaciones, origen, recepcion_items(item_id, cantidad)")
       .eq("orden_id", ordenId)
       .order("fecha", { ascending: false }),
     supabase
@@ -135,9 +137,10 @@ export async function cargarCiclo(ordenId: string): Promise<CicloOrden> {
     }),
     recepciones: ((recepciones.data ?? []) as unknown as {
       id: string; fecha: string; guia_despacho: string | null; recibido_por: string | null;
-      observaciones: string | null; recepcion_items: Detalle;
+      observaciones: string | null; origen: string | null; recepcion_items: Detalle;
     }[]).map((r) => ({
       id: r.id,
+      desdePagnol: r.origen === "pagnol",
       fecha: r.fecha,
       guia: r.guia_despacho,
       recibidoPor: r.recibido_por,

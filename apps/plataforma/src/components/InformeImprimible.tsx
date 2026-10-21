@@ -128,6 +128,22 @@ export function InformeImprimible({
         </p>
       </section>
 
+      </>)}
+
+      {/* Oficina Central y finiquitos: aparte del resultado de los contratos */}
+      {(paralelos.oficina || paralelos.finiquitos > 0) && (
+        <section className="mt-7 break-inside-avoid border-t-2 border-ink pt-4">
+          <Titulo>{paralelos.oficina ? "Oficina Central y finiquitos" : "Finiquitos"}</Titulo>
+          <div className="mt-3 grid grid-cols-4 gap-4">
+            {paralelos.oficina && <Cifra etiqueta="Gastos operativos" valor={formatearPesos(paralelos.oficina.operativos)} nota={`${paralelos.oficina.movimientos} movimientos`} />}
+            {paralelos.oficina && <Cifra etiqueta="Compra de activos" valor={formatearPesos(paralelos.oficina.activos)} nota="Fuera del resultado" />}
+            <Cifra etiqueta="Finiquitos (informativo)" valor={formatearPesos(paralelos.finiquitos)} nota="No son costo del contrato" />
+            {paralelos.consolidado !== null && <Cifra etiqueta="Resultado consolidado" valor={formatearPesos(paralelos.consolidado)} nota="Contratos − oficina − finiquitos" />}
+          </div>
+        </section>
+      )}
+
+      {!soloOficina && (<>
       {/* Por contrato */}
       {contratos.length > 0 && (
         <section className="mt-7">
@@ -183,99 +199,6 @@ export function InformeImprimible({
           </table>
         </section>
       )}
-
-      {/* Mes a mes */}
-      <section className="mt-7">
-        <Titulo>Mes a mes</Titulo>
-        <table className="mt-3 w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b-2 border-ink text-left text-[10px] font-semibold uppercase tracking-[0.1em]">
-              <th className="py-2">Mes</th>
-              <th className="py-2 text-right">Ventas</th>
-              <th className="py-2 text-right">Costos</th>
-              <th className="py-2 text-right">De ello parada</th>
-              <th className="py-2 text-right">Resultado</th>
-              <th className="py-2 text-right">Rent.</th>
-              <th className="py-2 text-right">Contra la meta</th>
-            </tr>
-          </thead>
-          <tbody>
-            {evolucion.map((m) => {
-              const brecha = m.consolidado.margenPct - meta;
-              return (
-                <tr key={m.periodo} className="border-b border-mist">
-                  <td className="py-2 font-semibold">{mesLargo(m.periodo)}</td>
-                  <td className="py-2 text-right tabular-nums">
-                    {formatearPesos(m.consolidado.venta)}
-                  </td>
-                  <td className="py-2 text-right tabular-nums">
-                    {formatearPesos(m.consolidado.costo)}
-                  </td>
-                  <td className="py-2 text-right tabular-nums text-ink-soft">
-                    {m.consolidado.costoParadaPlanta > 0 ? formatearPesos(m.consolidado.costoParadaPlanta) : "—"}
-                  </td>
-                  <td className="py-2 text-right tabular-nums">
-                    {formatearPesos(m.consolidado.margen)}
-                  </td>
-                  <td className="py-2 text-right font-semibold tabular-nums">
-                    {m.consolidado.margenPct.toFixed(1)}%
-                  </td>
-                  <td className="py-2 text-right tabular-nums">
-                    {/* El signo va explícito: en una hoja impresa, un "-2,4"
-                        suelto se confunde con un guión. */}
-                    {brecha >= 0 ? "+" : "−"}
-                    {Math.abs(brecha).toFixed(1)} pts
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </section>
-
-      {/* Categorías */}
-      {categorias.length > 0 && (
-        <section className="mt-7 break-inside-avoid">
-          <Titulo>Costo por categoría</Titulo>
-          <p className="mt-1 text-[11px] text-ink-soft">
-            Acumulado del período contra el presupuesto mensual del contrato.
-          </p>
-          {personal.total > 0 && (
-            <p className="mt-1 text-[11px] text-ink-soft">
-              Personal: ordinario {formatearPesos(personal.ordinario)} · extraordinario{" "}
-              {formatearPesos(personal.paradaPlanta)} (parada de planta).
-            </p>
-          )}
-          <table className="mt-3 w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b-2 border-ink text-left text-[10px] font-semibold uppercase tracking-[0.1em]">
-                <th className="py-2">Categoría</th>
-                <th className="py-2">Contrato</th>
-                <th className="py-2 text-right">Real</th>
-                <th className="py-2 text-right">Presupuesto</th>
-                <th className="py-2 text-right">Consumo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {categorias.map((c) => (
-                <tr key={c.id} className="border-b border-mist">
-                  <td className="py-2 pr-3">{c.categoria}</td>
-                  <td className="py-2 pr-3 text-ink-soft">{c.contratoId}</td>
-                  <td className="py-2 text-right tabular-nums">{formatearPesos(c.real)}</td>
-                  <td className="py-2 text-right tabular-nums text-ink-soft">
-                    {c.presupuesto > 0 ? formatearPesos(c.presupuesto) : "—"}
-                  </td>
-                  <td className="py-2 text-right font-semibold tabular-nums">
-                    {c.presupuesto > 0 ? `${((c.real / c.presupuesto) * 100).toFixed(0)}%` : "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      )}
-
-      </>)}
 
       {/* Ordinario y extraordinario */}
       {!soloOficina && (
@@ -377,18 +300,98 @@ export function InformeImprimible({
         </section>
       )}
 
-      {/* Oficina Central y finiquitos: aparte del resultado de los contratos */}
-      {(paralelos.oficina || paralelos.finiquitos > 0) && (
-        <section className="mt-7 break-inside-avoid border-t-2 border-ink pt-4">
-          <Titulo>{paralelos.oficina ? "Oficina Central y finiquitos" : "Finiquitos"}</Titulo>
-          <div className="mt-3 grid grid-cols-4 gap-4">
-            {paralelos.oficina && <Cifra etiqueta="Gastos operativos" valor={formatearPesos(paralelos.oficina.operativos)} nota={`${paralelos.oficina.movimientos} movimientos`} />}
-            {paralelos.oficina && <Cifra etiqueta="Compra de activos" valor={formatearPesos(paralelos.oficina.activos)} nota="Fuera del resultado" />}
-            <Cifra etiqueta="Finiquitos (informativo)" valor={formatearPesos(paralelos.finiquitos)} nota="No son costo del contrato" />
-            {paralelos.consolidado !== null && <Cifra etiqueta="Resultado consolidado" valor={formatearPesos(paralelos.consolidado)} nota="Contratos − oficina − finiquitos" />}
-          </div>
+      {/* Mes a mes */}
+      <section className="mt-7">
+        <Titulo>Mes a mes</Titulo>
+        <table className="mt-3 w-full border-collapse text-sm">
+          <thead>
+            <tr className="border-b-2 border-ink text-left text-[10px] font-semibold uppercase tracking-[0.1em]">
+              <th className="py-2">Mes</th>
+              <th className="py-2 text-right">Ventas</th>
+              <th className="py-2 text-right">Costos</th>
+              <th className="py-2 text-right">De ello parada</th>
+              <th className="py-2 text-right">Resultado</th>
+              <th className="py-2 text-right">Rent.</th>
+              <th className="py-2 text-right">Contra la meta</th>
+            </tr>
+          </thead>
+          <tbody>
+            {evolucion.map((m) => {
+              const brecha = m.consolidado.margenPct - meta;
+              return (
+                <tr key={m.periodo} className="border-b border-mist">
+                  <td className="py-2 font-semibold">{mesLargo(m.periodo)}</td>
+                  <td className="py-2 text-right tabular-nums">
+                    {formatearPesos(m.consolidado.venta)}
+                  </td>
+                  <td className="py-2 text-right tabular-nums">
+                    {formatearPesos(m.consolidado.costo)}
+                  </td>
+                  <td className="py-2 text-right tabular-nums text-ink-soft">
+                    {m.consolidado.costoParadaPlanta > 0 ? formatearPesos(m.consolidado.costoParadaPlanta) : "—"}
+                  </td>
+                  <td className="py-2 text-right tabular-nums">
+                    {formatearPesos(m.consolidado.margen)}
+                  </td>
+                  <td className="py-2 text-right font-semibold tabular-nums">
+                    {m.consolidado.margenPct.toFixed(1)}%
+                  </td>
+                  <td className="py-2 text-right tabular-nums">
+                    {/* El signo va explícito: en una hoja impresa, un "-2,4"
+                        suelto se confunde con un guión. */}
+                    {brecha >= 0 ? "+" : "−"}
+                    {Math.abs(brecha).toFixed(1)} pts
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </section>
+
+      {/* Categorías */}
+      {categorias.length > 0 && (
+        <section className="mt-7 break-inside-avoid">
+          <Titulo>Costo por categoría</Titulo>
+          <p className="mt-1 text-[11px] text-ink-soft">
+            Acumulado del período contra el presupuesto mensual del contrato.
+          </p>
+          {personal.total > 0 && (
+            <p className="mt-1 text-[11px] text-ink-soft">
+              Personal: ordinario {formatearPesos(personal.ordinario)} · extraordinario{" "}
+              {formatearPesos(personal.paradaPlanta)} (parada de planta).
+            </p>
+          )}
+          <table className="mt-3 w-full border-collapse text-sm">
+            <thead>
+              <tr className="border-b-2 border-ink text-left text-[10px] font-semibold uppercase tracking-[0.1em]">
+                <th className="py-2">Categoría</th>
+                <th className="py-2">Contrato</th>
+                <th className="py-2 text-right">Real</th>
+                <th className="py-2 text-right">Presupuesto</th>
+                <th className="py-2 text-right">Consumo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {categorias.map((c) => (
+                <tr key={c.id} className="border-b border-mist">
+                  <td className="py-2 pr-3">{c.categoria}</td>
+                  <td className="py-2 pr-3 text-ink-soft">{c.contratoId}</td>
+                  <td className="py-2 text-right tabular-nums">{formatearPesos(c.real)}</td>
+                  <td className="py-2 text-right tabular-nums text-ink-soft">
+                    {c.presupuesto > 0 ? formatearPesos(c.presupuesto) : "—"}
+                  </td>
+                  <td className="py-2 text-right font-semibold tabular-nums">
+                    {c.presupuesto > 0 ? `${((c.real / c.presupuesto) * 100).toFixed(0)}%` : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </section>
       )}
+
+      </>)}
 
       {/* Firmas */}
       <div className="mt-12 grid grid-cols-2 gap-10 text-center text-xs">

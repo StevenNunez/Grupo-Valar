@@ -456,12 +456,33 @@ export async function cargarCotizacion(id: string) {
  *
  * Compara la parte numérica, no el texto: "SOLPED-9" no le gana a "SOLPED-097".
  */
-export function siguienteNumeroSolped(solped: Solped[]) {
-  const numeros = solped
-    .map((s) => Number(/(\d+)\s*$/.exec(s.numero)?.[1] ?? 0))
-    .filter((n) => n > 0);
-  const siguiente = (numeros.length > 0 ? Math.max(...numeros) : 0) + 1;
-  return `SOLPED-${String(siguiente).padStart(3, "0")}`;
+export function siguienteNumeroSolped(
+  solped: Solped[],
+  contrato?: { id: string; nombreCorto?: string },
+) {
+  const ultimo = (lista: Solped[]) =>
+    Math.max(0, ...lista.map((s) => Number(/(\d+)\s*$/.exec(s.numero)?.[1] ?? 0)));
+  if (!contrato) return `SOLPED-${String(ultimo(solped) + 1).padStart(3, "0")}`;
+
+  /* Cada contrato lleva su propia serie: el código del contrato va en el número
+     (así dos contratos pueden tener su "001" sin chocar) y el correlativo sigue
+     solo lo que ese contrato ya emitió. */
+  const codigo = codigoDeContrato(contrato);
+  let n = ultimo(solped.filter((s) => s.contratoId === contrato.id)) + 1;
+  const tomado = (c: string) => solped.some((s) => s.numero === c);
+  let candidato = `SOLPED-${codigo}-${String(n).padStart(3, "0")}`;
+  while (tomado(candidato)) candidato = `SOLPED-${codigo}-${String(++n).padStart(3, "0")}`;
+  return candidato;
+}
+
+/** "Misceláneos" → "MISC"; sin alias, el id del contrato sin el "C-". */
+export function codigoDeContrato(contrato: { id: string; nombreCorto?: string }) {
+  const base = (contrato.nombreCorto?.trim() || contrato.id.replace(/^C-/, ""))
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "");
+  return base.slice(0, 8) || "GEN";
 }
 
 /* ── Aprobaciones ─────────────────────────────────────────────────────────── */

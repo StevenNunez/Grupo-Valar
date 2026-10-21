@@ -234,6 +234,16 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
     return a ? (a.nombre?.trim() ? `Anexo ${a.nombre.trim()}` : etiquetaAnexo(a)) : "Anexo";
   };
 
+  /* El valor de un anexo "por avance" (con sus adendas vigentes); nulo si se
+     mide por sus estados de pago como cualquier otro. */
+  const valorPorAvance = (contratoId: string, raiz: string) => {
+    const principal = anexos.find((x) => x.contratoId === contratoId && x.id === raiz);
+    if (!principal?.ventaPorValor || principal.estado !== "vigente") return null;
+    return anexos
+      .filter((x) => x.contratoId === contratoId && x.estado === "vigente" && raizDe(contratoId, x.id) === raiz)
+      .reduce((t, x) => t + x.monto, 0);
+  };
+
   /* unidad → período → cifras */
   const deAnexos = new Map<string, Map<string, Acum>>();
   const celda = (unidad: string, periodo: string) => {
@@ -364,6 +374,17 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
         recalcular(base);
       }
       const nombre = nombreAnexo(contratoId, raiz);
+      /* Un contrato por avance (Carpas) vende su valor completo, no lo que han
+         cobrado sus estados de pago; ese valor se reconoce en el mes de su
+         primer movimiento. Los estados de pago quedan como cobro. */
+      const valorContrato = valorPorAvance(contratoId, raiz);
+      const primerMes = [...porPeriodo.keys()].sort()[0];
+      const ventaDelMes =
+        valorContrato === null
+          ? { venta: a.venta, ordinaria: a.ordinaria }
+          : periodo === primerMes
+            ? { venta: valorContrato + a.extraordinaria, ordinaria: valorContrato }
+            : { venta: a.extraordinaria, ordinaria: 0 };
       const fila: FilaMes = {
         contratoId: unidad,
         padreId: contratoId,
@@ -372,8 +393,8 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
         cliente: base?.cliente ?? "",
         periodo,
         etiqueta: mesCorto(periodo),
-        venta: a.venta,
-        ventaOrdinaria: a.ordinaria,
+        venta: ventaDelMes.venta,
+        ventaOrdinaria: ventaDelMes.ordinaria,
         ventaExtraordinaria: a.extraordinaria,
         cobrado: a.cobrado,
         costo: a.costo,

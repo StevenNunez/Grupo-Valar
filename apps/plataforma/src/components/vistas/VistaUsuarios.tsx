@@ -12,6 +12,7 @@ import { formatearFecha } from "@/lib/formato";
 import { administra, administraAlgo, useUsuario, type Usuario as Yo } from "@/lib/sesion";
 import {
   cambiarCargo,
+  cambiarNombre,
   cambiarGeneral,
   cambiarNivelPermiso,
   cancelarInvitacion,
@@ -407,6 +408,8 @@ function DialogoPersona({
   const [ocupado, setOcupado] = useState(false);
   const soyYo = persona.id === yo.id;
   const general = yo.general !== null;
+  const [nombre, setNombre] = useState(persona.nombre);
+  const [rol, setRol] = useState(persona.rol);
 
   const [borradores, setBorradores] = useState<Record<string, Borrador>>(() =>
     Object.fromEntries(
@@ -480,6 +483,51 @@ function DialogoPersona({
             más. Pídeselo a otro administrador.
           </p>
         )}
+
+        <section className="mb-6">
+          <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft">Datos de la persona</h3>
+          <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+            <label className="text-xs font-semibold text-ink-soft">
+              Nombre
+              <input
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                disabled={ocupado}
+                className="mt-1 w-full rounded-lg border border-mist-deep bg-white px-3 py-2 text-sm font-normal text-ink"
+              />
+            </label>
+            <label className="text-xs font-semibold text-ink-soft">
+              Cargo
+              <select
+                value={rol}
+                onChange={(e) => setRol(e.target.value)}
+                disabled={ocupado}
+                className="mt-1 w-full rounded-lg border border-mist-deep bg-white px-3 py-2 text-sm font-normal text-ink"
+              >
+                {datos.cargos
+                  .filter((c) => c.activo || c.id === persona.rol)
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.titulo}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              disabled={ocupado || !nombre.trim() || (nombre.trim() === persona.nombre && rol === persona.rol)}
+              onClick={() =>
+                void hacer(async () => {
+                  if (nombre.trim() !== persona.nombre) await cambiarNombre(persona.id, nombre);
+                  if (rol !== persona.rol) await cambiarCargo(persona.id, rol);
+                }, "Datos guardados.")
+              }
+              className="rounded-full bg-cyan px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:opacity-50"
+            >
+              Guardar datos
+            </button>
+          </div>
+        </section>
 
         {general && (
           <section className="mb-6">
@@ -1153,6 +1201,14 @@ function DialogoInvitar({
       ancho="max-w-3xl"
     >
       <form
+        /* Enter en un campo no envía: la invitación sale al correo de la persona,
+           y quien la arma todavía está eligiendo módulos y permisos. Solo sale
+           con el botón. */
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && e.target instanceof HTMLInputElement && e.target.type !== "checkbox") {
+            e.preventDefault();
+          }
+        }}
         onSubmit={(e) => {
           e.preventDefault();
           f.enviar(async () => {

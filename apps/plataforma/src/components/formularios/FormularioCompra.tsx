@@ -20,6 +20,9 @@ import { Combo } from "../ui/Combo";
 import { CamposDelContrato } from "../ui/CamposDelContrato";
 import { FormularioProveedor } from "./FormularioProveedor";
 import { LineasDeGasto, lineaVacia, netoLinea, type LineaGasto } from "./LineasDeGasto";
+import { IngresoAPagnol } from "./IngresoAPagnol";
+import { deshacerCompraConPagnol } from "@/lib/pagnol/navegador";
+import { supabase } from "@/lib/supabase";
 import { formatearRut, type Proveedor } from "@/lib/abastecimiento";
 import type { CampoContrato, Datos } from "@/lib/campos";
 import { categoriasDe, type Categoria } from "@/lib/categorias";
@@ -271,6 +274,13 @@ export function FormularioCompra({
     setErrorBorrado(null);
     setBorrando(true);
     try {
+      // Lo que se le informó a Pagnol se deshace primero: si Pagnol no lo acepta
+      // (p. ej. ya se entregaron esas unidades), la compra no se borra.
+      const { count } = await supabase.from("pagnol_envios").select("id", { count: "exact", head: true }).eq("compra_id", compra!.id);
+      if (count) {
+        const enPagnol = await deshacerCompraConPagnol(compra!.id);
+        if (!enPagnol.ok) throw new Error(enPagnol.error);
+      }
       // Sus líneas se borran con ella (trigger de la 0053).
       await eliminar("compras", compra!.id);
       alGuardado();
@@ -475,6 +485,15 @@ export function FormularioCompra({
               alCambiar={setPropios}
             />
           </Campos>
+
+          {editando && !cargandoLineas && (
+            <div className="px-6 pb-6">
+              <IngresoAPagnol
+                compraId={compra.id}
+                lineas={lineas.map(({ descripcion, cantidad, precio_unitario }) => ({ descripcion, cantidad, precio_unitario }))}
+              />
+            </div>
+          )}
 
           <Pie
             extra={<SeccionRespaldos respaldos={respaldos} />}

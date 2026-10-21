@@ -1,6 +1,7 @@
 import { revalidateTag } from "next/cache";
 import { Webhook } from "standardwebhooks";
 import type { TagPagnol } from "@/lib/pagnol/client";
+import { registrarCompraRecibida, registrarCorreccion } from "@/lib/pagnol/recepciones-entrantes";
 import { procesarYAnotar } from "@/lib/pagnol/reposicion";
 import { supabaseDeServicio } from "@/lib/supabase-servidor";
 
@@ -35,6 +36,9 @@ type EventoPagnol = {
   organization_id: string;
   data: unknown;
 };
+
+/** `compra.recibida` y `compra.recepcion_corregida`: la recepción vive en Pagnol (Fase 5). */
+const esDeCompra = (tipo: string) => tipo === "compra.recibida" || tipo === "compra.recepcion_corregida";
 
 /** Qué caché limpia cada familia de eventos. */
 function tagsDe(tipo: string): TagPagnol[] {
@@ -84,15 +88,39 @@ export async function POST(pedido: Request) {
       empresa_id: empresa,
       payload: evento,
     });
-    // Ya había llegado: se confirma sin volver a procesarlo.
-    if (error?.code === "23505") return Response.json({ ok: true, duplicado: true });
-    if (error) return Response.json({ error: "No se pudo anotar el aviso." }, { status: 500 });
+    if (error?.code === "23505") {
+      // Ya había llegado. Una recepción que no se pudo aplicar (aviso con
+      // `procesado_en` vacío) se reintenta; todo lo demás se confirma sin repetir.
+      const { data: previo } = await sb.from("pagnol_webhooks_recibidos").select("procesado_en").eq("webhook_id", id).maybeSingle();
+      if (!esDeCompra(evento.type) || previo?.procesado_en) return Response.json({ ok: true, duplicado: true });
+    } else if (error) {
+      return Response.json({ error: "No se pudo anotar el aviso." }, { status: 500 });
+    }
   }
 
   // Limpiar la caché es idempotente: aunque no se haya podido anotar, se hace.
   for (const tag of tagsDe(evento.type)) revalidateTag(tag, { expire: 0 });
 
-  if (sb && evento.type === "stock.bajo_minimo") {
+  if (sb && esDeCompra(evento.type)) {
+    // Fase 5 · B: lo que el pañolero recibe en Pagnol. Si no se puede aplicar
+    // por algo pasajero se responde 500 y Pagnol reintenta; si no tiene arreglo
+    // (la OC no existe) queda anotado y se confirma, para no reintentar 7 días.
+    if (!empresa) {
+      await sb.from("pagnol_webhooks_recibidos").update({ error: "La organización de Pagnol no está enlazada a ninguna empresa.", procesado_en: new Date().toISOString() }).eq("webhook_id", id);
+      return Response.json({ ok: true, ignorado: true });
+    }
+    const r = evento.type === "compra.recibida"
+      ? await registrarCompraRecibida(sb, empresa, evento.data as Parameters<typeof registrarCompraRecibida>[2])
+      : await registrarCorreccion(sb, empresa, evento.data as Parameters<typeof registrarCorreccion>[2]);
+    if (!r.ok && !r.permanente) {
+      await sb.from("pagnol_webhooks_recibidos").update({ error: r.error }).eq("webhook_id", id);
+      return Response.json({ error: r.error }, { status: 500 });
+    }
+    await sb
+      .from("pagnol_webhooks_recibidos")
+      .update({ procesado_en: new Date().toISOString(), error: r.ok ? null : r.error })
+      .eq("webhook_id", id);
+  } else if (sb && evento.type === "stock.bajo_minimo") {
     // Si no se puede (pañol sin contrato), queda en la bandeja con el motivo.
     // Igual se responde 2xx: el aviso llegó bien; reintentarlo no lo arreglaría.
     await procesarYAnotar(sb, { webhook_id: id, empresa_id: empresa, payload: evento as FilaWebhook["payload"] });

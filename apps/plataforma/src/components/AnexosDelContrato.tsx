@@ -121,7 +121,9 @@ function Lista({
   // Ver los anexos es de quien ve contratos; crearlos y corregirlos, de quien los administra.
   const puedeEditar = usePuede("contratos.editar");
   const vigentes = anexos.filter((a) => a.estado === "vigente");
-  const montoVigente = vigentes.reduce((t, a) => t + a.monto, 0);
+  /* Un anexo es un contrato nuevo: su monto no mueve el del contrato. Solo un
+     adicional se le suma. */
+  const montoVigente = vigentes.filter((a) => a.sumaAlContrato).reduce((t, a) => t + a.monto, 0);
   const diasVigentes = vigentes.reduce((t, a) => t + a.diasPlazo, 0);
 
   return (
@@ -202,13 +204,16 @@ function Lista({
                   {a.monto !== 0 && (
                     <p
                       className={`text-sm font-semibold tabular-nums ${
-                        a.monto < 0 ? "text-[#a52f24]" : "text-ink"
+                        a.monto < 0 && a.sumaAlContrato ? "text-[#a52f24]" : "text-ink"
                       }`}
                     >
-                      {a.monto > 0 ? "+" : "−"}
+                      {a.sumaAlContrato ? (a.monto > 0 ? "+" : "−") : ""}
                       {formatearPesos(Math.abs(a.monto))}
                     </p>
                   )}
+                  <span className="mt-1 flex justify-end gap-1.5">
+                    <Chip tono={a.sumaAlContrato ? "aviso" : "info"}>{a.sumaAlContrato ? "Adicional" : "Contrato nuevo"}</Chip>
+                  </span>
                   <span className="mt-1 inline-block">
                     <Chip tono={tonos[a.estado]}>
                       {estadosAnexo.find((e) => e.id === a.estado)?.titulo ?? a.estado}
@@ -222,8 +227,9 @@ function Lista({
       )}
 
       <p className="mt-5 text-xs leading-relaxed text-ink-soft">
-        Solo los anexos <strong className="text-ink-soft">vigentes</strong> mueven el monto
-        y el plazo. Los que quedan en negociación o anulados se conservan igual: saber qué
+        Un <strong className="text-ink-soft">anexo</strong> es un contrato nuevo y no mueve el valor del
+        contrato; un <strong className="text-ink-soft">adicional</strong> sí se le suma. Solo los
+        <strong className="text-ink-soft"> vigentes</strong> cuentan. Los que quedan en negociación o anulados se conservan igual: saber qué
         se pidió y no prosperó también sirve.
       </p>
     </div>
@@ -274,6 +280,10 @@ type Borrador = {
   estado: EstadoAnexo;
   observaciones: string;
   inicio: string;
+  /** "anexo" = contrato nuevo; "adicional" = suma al valor del contrato (0089). */
+  efecto: "anexo" | "adicional";
+  /** "estados" = venta por estados de pago; "valor" = el valor del contrato (por avance). */
+  venta: "estados" | "valor";
   /** "" = anexo directo del contrato. */
   padre: string;
   condiciones: Condiciones;
@@ -313,6 +323,8 @@ export function FormularioAnexo({
           estado: anexo.estado,
           observaciones: anexo.observaciones ?? "",
           inicio: anexo.inicio ?? "",
+          efecto: anexo.sumaAlContrato ? "adicional" : "anexo",
+          venta: anexo.ventaPorValor ? "valor" : "estados",
           padre: anexo.padreId ?? "",
           condiciones: condicionesDe(anexo.condiciones, contrato.forma),
         }
@@ -329,6 +341,8 @@ export function FormularioAnexo({
           estado: "vigente",
           observaciones: "",
           inicio: "",
+          efecto: "anexo",
+          venta: "estados",
           padre: padreInicial,
           condiciones: condicionesVacias(contrato.forma),
         },
@@ -370,6 +384,8 @@ export function FormularioAnexo({
       estado: d.estado,
       observaciones: d.observaciones.trim() || null,
       inicio: d.inicio || null,
+      suma_al_contrato: d.efecto === "adicional",
+      venta_por_valor: d.venta === "valor",
       anexo_padre_id: d.padre || null,
       condiciones: condicionesParaGuardar(d.condiciones, contrato.forma),
     };
@@ -444,8 +460,30 @@ export function FormularioAnexo({
             />
           </Ancho>
 
+          <CampoSeleccion
+            etiqueta="Efecto en el valor del contrato"
+            requerido
+            opciones={[
+              { id: "anexo", titulo: "Anexo: contrato nuevo, no mueve el valor" },
+              { id: "adicional", titulo: "Adicional: se suma al valor del contrato" },
+            ]}
+            ayuda="Un anexo tiene su propio valor y su propio resultado. Un adicional cambia el valor inicial del contrato."
+            {...f.campo("efecto")}
+          />
+
+          <CampoSeleccion
+            etiqueta="Cómo se cuenta la venta"
+            requerido
+            opciones={[
+              { id: "estados", titulo: "Por estados de pago" },
+              { id: "valor", titulo: "Por el valor del contrato (por avance)" },
+            ]}
+            ayuda="En un contrato por avance, la venta es el valor del contrato y los estados de pago son solo el cobro."
+            {...f.campo("venta")}
+          />
+
           <CampoDinero
-            etiqueta={f.datos.tipo === "menor_obra" ? "Monto que se descuenta" : "Monto que se agrega"}
+            etiqueta={f.datos.tipo === "menor_obra" ? "Monto que se descuenta" : f.datos.efecto === "anexo" ? "Valor del anexo" : "Monto que se agrega"}
             ayuda={
               f.datos.tipo === "menor_obra"
                 ? "Escríbelo positivo: se guarda como resta."

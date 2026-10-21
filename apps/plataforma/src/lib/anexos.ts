@@ -64,6 +64,13 @@ export type Anexo = {
   condiciones: Record<string, unknown>;
   /** Si es adenda de otro anexo del mismo contrato. */
   padreId: string | null;
+  /**
+   * Adicional: su monto se suma al valor del contrato. Un anexo (lo normal) es
+   * un contrato nuevo y no lo mueve (0089).
+   */
+  sumaAlContrato: boolean;
+  /** Contrato por avance: su venta es el valor del contrato, no sus estados de pago (0089). */
+  ventaPorValor: boolean;
 };
 
 /** Cómo se nombra un anexo en los selectores: "Anexo N°2 · Carpas". */
@@ -102,6 +109,8 @@ export async function cargarAnexos(contratoId?: string): Promise<Anexo[]> {
     inicio: (f.inicio as string | null) ?? null,
     condiciones: (f.condiciones as Record<string, unknown> | null) ?? {},
     padreId: (f.anexo_padre_id as string | null) ?? null,
+    sumaAlContrato: f.suma_al_contrato === true,
+    ventaPorValor: f.venta_por_valor === true,
   }));
 }
 

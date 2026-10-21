@@ -369,8 +369,6 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
         ]}
       />
 
-      <PanelOrdinarioExtra total={total} />
-
       <IndicadoresParalelos filas={oficinaVisible} personal={personalOficina} margenContratos={total.margen} finiquitos={finiquitos + finiquitosOficina} conOficina={conOficina} />
 
       {/* ── Por contrato ───────────────────────────────────────────────────── */}
@@ -386,6 +384,9 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
           </div>
         </section>
       )}
+
+      {/* ── Ordinario y extraordinario ─────────────────────────────────────── */}
+      <PanelOrdinarioExtra total={total} />
 
       {/* ── Análisis gráfico ───────────────────────────────────────────────── */}
       <AnalisisGrafico

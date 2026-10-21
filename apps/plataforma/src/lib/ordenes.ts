@@ -466,7 +466,7 @@ export async function cargarDestinatarios(
 export async function enviarOrdenAlProveedor(
   ordenId: string,
   datos: { para: string; cc: string[]; asunto: string; mensaje: string },
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; pagnol?: { ok: boolean; error?: string } | null } | { ok: false; error: string }> {
   const t = await token();
   if (!t) return { ok: false, error: "La sesión expiró. Vuelve a ingresar." };
   try {
@@ -475,7 +475,7 @@ export async function enviarOrdenAlProveedor(
       headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" },
       body: JSON.stringify(datos),
     });
-    return (await r.json()) as { ok: true } | { ok: false; error: string };
+    return (await r.json()) as { ok: true; pagnol?: { ok: boolean; error?: string } | null } | { ok: false; error: string };
   } catch {
     return { ok: false, error: "No se pudo conectar con el servidor. Revisa la conexión." };
   }

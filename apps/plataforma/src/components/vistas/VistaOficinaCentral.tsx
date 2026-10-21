@@ -3,7 +3,10 @@
 import { SeccionRespaldos, useRespaldos } from "@/components/ui/Respaldos";
 import { useFiltro } from "@/lib/vista-guardada";
 import { useState, type FormEvent } from "react";
-import { actualizar, crearConId } from "@/lib/crud";
+import { actualizar, crearConId, eliminar } from "@/lib/crud";
+import { supabase } from "@/lib/supabase";
+import { deshacerCompraConPagnol } from "@/lib/pagnol/navegador";
+import { IngresoAPagnol } from "../formularios/IngresoAPagnol";
 import { useConsulta } from "@/lib/consulta";
 import { usePuede } from "@/lib/sesion";
 import { formatearFecha, formatearMonto, formatearPesos, mesLargo } from "@/lib/formato";
@@ -183,7 +186,17 @@ function FormularioOficina({ registro, categoriaInicial, alCerrar, alGuardado }:
   const formulario = useFormulario(inicial);
   // El IVA es el 19% del neto. Un egreso guardado con neto y sin IVA se abre como exento.
   const [exento, setExento] = useState(registro !== null && registro.neto > 0 && registro.iva === 0);
-  const borrado = useBorrado("egresos_oficina_central", registro?.id, () => { alGuardado(); alCerrar(); });
+  /* Lo que se le informó a Pagnol se deshace primero: si Pagnol no lo acepta (p. ej.
+     ya se entregaron esas unidades), el egreso no se borra. Solo se le habla a
+     Pagnol si el egreso realmente le informó algo. */
+  const borrado = useBorrado("egresos_oficina_central", registro?.id, () => { alGuardado(); alCerrar(); }, async (id) => {
+    const { count } = await supabase.from("pagnol_envios").select("id", { count: "exact", head: true }).eq("egreso_oficina_id", id);
+    if (count) {
+      const enPagnol = await deshacerCompraConPagnol(id, "oficina");
+      if (!enPagnol.ok) throw new Error(enPagnol.error);
+    }
+    await eliminar("egresos_oficina_central", id);
+  });
 
   const respaldos = useRespaldos("egresos_oficina_central", registro ? registro.id : null);
   function guardar(evento: FormEvent<HTMLFormElement>) {
@@ -218,6 +231,16 @@ function FormularioOficina({ registro, categoriaInicial, alCerrar, alGuardado }:
           <ResumenIva neto={formulario.datos.neto} afecto={!exento} alCambiarAfecto={(v) => setExento(!v)} />
           <Ancho><CampoTexto etiqueta="Observaciones" valor={formulario.datos.observaciones ?? ""} alCambiar={(v) => formulario.cambiar("observaciones", v)} /></Ancho>
         </Campos>
+        {registro && formulario.datos.categoria !== "arriendos" && (
+          <div className="px-6 pb-6">
+            <IngresoAPagnol
+              compraId={registro.id}
+              origen="oficina"
+              panolPorNombre="Oficina Central"
+              lineas={[{ descripcion: registro.descripcion, cantidad: 1, precio_unitario: registro.neto }]}
+            />
+          </div>
+        )}
         <Pie extra={<SeccionRespaldos respaldos={respaldos} />} error={formulario.error} guardando={formulario.guardando} alCancelar={alCerrar} alEliminar={registro ? borrado.abrir : undefined} />
       </form>
     </Dialogo>

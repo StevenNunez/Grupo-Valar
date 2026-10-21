@@ -26,6 +26,7 @@ import { cargarAnexos, proyectoDeAnexo, type Anexo } from "@/lib/anexos";
 import { SelectorAnexo } from "../ui/SelectorAnexo";
 import { actualizar, crear, eliminar } from "@/lib/crud";
 import { supabase } from "@/lib/supabase";
+import { cancelarOrdenEnPagnol } from "@/lib/pagnol/navegador";
 import { opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
 import { tiposCompra } from "@/lib/egresos";
 import { emisorOC } from "@/lib/empresa";
@@ -457,8 +458,11 @@ export function FormularioOrden({
     };
 
     f.enviar(async () => {
-      if (editando) await actualizar("ordenes_compra_proveedor", orden.id, cabecera);
-      else {
+      if (editando) {
+        await actualizar("ordenes_compra_proveedor", orden.id, cabecera);
+        // Fase 5: una orden anulada deja de esperarse en Pagnol (sin efecto si nunca se anunció).
+        if (cabecera.estado === "anulada" && orden.estado !== "anulada") void cancelarOrdenEnPagnol(orden.id);
+      } else {
         await crear("ordenes_compra_proveedor", cabecera);
         void respaldos.subirA(cabecera.id);
       }

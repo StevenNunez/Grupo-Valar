@@ -176,6 +176,14 @@ export async function cambiarCargo(usuarioId: string, rol: string) {
   if (error) throw new Error(traducir(error.message));
 }
 
+/** El nombre con que aparece la persona. */
+export async function cambiarNombre(usuarioId: string, nombre: string) {
+  const limpio = nombre.trim();
+  if (!limpio) throw new Error("El nombre no puede quedar vacío.");
+  const { error } = await supabase.from("perfiles").update({ nombre: limpio }).eq("id", usuarioId);
+  if (error) throw new Error(traducir(error.message));
+}
+
 /** Nombrar o quitar Administrador general / Soporte. */
 export async function cambiarGeneral(usuarioId: string, general: General) {
   const { error } = await supabase

@@ -368,7 +368,7 @@ function TarjetaContrato({
 
       <dl className="mt-4 grid grid-cols-3 gap-3 border-t border-mist pt-4">
         <Cifra etiqueta="Monto vigente" valor={c.montoVigente === null ? "—" : formatearMonto(c.montoVigente)}
-          nota={c.montoAnexos !== 0 ? `base ${formatearMonto(c.presupuesto)} ${c.montoAnexos > 0 ? "+" : "−"} ${formatearMonto(Math.abs(c.montoAnexos))} anexos` : c.montoVigente === null ? "sin monto total" : c.moneda === "UF" && c.montoUf ? `${formatearUf(c.montoUf)} UF a la UF de hoy` : undefined} />
+          nota={c.montoAnexos !== 0 ? `base ${formatearMonto(c.presupuesto)} ${c.montoAnexos > 0 ? "+" : "−"} ${formatearMonto(Math.abs(c.montoAnexos))} adicionales` : c.montoVigente === null ? "sin monto total" : c.moneda === "UF" && c.montoUf ? `${formatearUf(c.montoUf)} UF a la UF de hoy` : undefined} />
         <Cifra etiqueta="Costo real" valor={formatearMonto(c.costoReal)} />
         <Cifra etiqueta="Facturado" valor={formatearMonto(c.facturado)} />
       </dl>

@@ -22,3 +22,17 @@ export type ResumenEnvio = {
   /** Lo que falló o no se pudo preparar, escrito para la pantalla. */
   errores: string[];
 };
+
+/** Una línea ya informada (o por informar) de una compra directa, para mostrarla. */
+export type EnvioDeCompra = {
+  id: string;
+  tipo: "activo" | "ingreso";
+  descripcion: string | null;
+  /** En los activos, cuál de las unidades de la línea. */
+  unidad: number | null;
+  cantidad: number | null;
+  estado: "pendiente" | "enviado" | "error";
+  error: string | null;
+  /** Ya se revirtió en Pagnol (reverso o baja). */
+  deshecho: boolean;
+};

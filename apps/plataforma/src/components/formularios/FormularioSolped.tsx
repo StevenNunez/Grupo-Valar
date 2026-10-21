@@ -2,7 +2,7 @@
 
 import { SeccionRespaldos, useRespaldos } from "@/components/ui/Respaldos";
 import { SelectorAnexo } from "../ui/SelectorAnexo";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Ancho,
   CampoFecha,
@@ -135,7 +135,7 @@ export function FormularioSolped({
         }
       : {
           id: "",
-          numero: siguienteNumeroSolped(todas),
+          numero: siguienteNumeroSolped(todas, contratos[0]),
           contrato_id: contratos[0]?.id ?? "",
           anexo_id: "",
           // Quien la crea es quien la pide: sale de la sesión, no se teclea.
@@ -149,6 +149,19 @@ export function FormularioSolped({
           observaciones: "",
         },
   );
+
+  /* El número propuesto sigue al contrato elegido (cada contrato lleva su
+     serie), salvo que alguien lo haya escrito a mano. */
+  const numeroPropuesto = useRef(f.datos.numero);
+  useEffect(() => {
+    if (editando) return;
+    const contrato = contratos.find((c) => c.id === f.datos.contrato_id);
+    if (!contrato || f.datos.numero !== numeroPropuesto.current) return;
+    const nuevo = siguienteNumeroSolped(todas, contrato);
+    numeroPropuesto.current = nuevo;
+    if (nuevo !== f.datos.numero) f.cambiar("numero", nuevo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [f.datos.contrato_id]);
 
   const [lineas, setLineas] = useState<Linea[]>(editando ? [] : [lineaVacia(0)]);
   const [eliminadas, setEliminadas] = useState<string[]>([]);
@@ -257,7 +270,7 @@ export function FormularioSolped({
 
     const solpedId = editando
       ? solped.id
-      : id.trim() || `SP-${campos.contrato_id.replace(/^C-/, "")}-${campos.numero.replace(/\D/g, "")}`;
+      : id.trim() || `SP-${campos.contrato_id.replace(/^C-/, "")}-${/(\d+)\s*$/.exec(campos.numero)?.[1] ?? campos.numero.replace(/\D/g, "")}`;
 
     f.enviar(
       async () => {
@@ -318,8 +331,8 @@ export function FormularioSolped({
             <CampoTexto
               etiqueta="N° de solicitud"
               requerido
-              marcador="SOLPED-098"
-              ayuda="Viene propuesto con el siguiente de la serie."
+              marcador="SOLPED-MISC-001"
+              ayuda="Viene propuesto con el siguiente de la serie del contrato elegido."
               {...f.campo("numero")}
             />
 

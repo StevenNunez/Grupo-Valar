@@ -8,6 +8,7 @@ import {
 } from "@/lib/oc-envio/datos";
 import { destinatariosDeLaEmpresa } from "@/lib/oc-envio/destinatarios";
 import { pdfDeOrden } from "@/lib/oc-envio/pdf";
+import { anunciarOrden, modoDeRecepcion } from "@/lib/pagnol/compras-esperadas";
 import { empresa } from "@/lib/empresa";
 import { supabaseDeServicio } from "@/lib/supabase-servidor";
 
@@ -134,5 +135,18 @@ export async function POST(pedido: Request, { params }: Contexto) {
     return falla(`El correo no salió: ${e instanceof Error ? e.message : String(e)}`, 502);
   }
 
-  return Response.json({ ok: true, envio: { id: envio.id, enviadaEn: envio.enviada_en, para, cc } });
+  /* Fase 5 · B: si la empresa recibe en Pagnol, la OC enviada se anuncia allá para
+     que el pañolero la vea por recibir. Si falla, el envío ya salió: se avisa y
+     se reintenta desde la orden. */
+  let pagnol: { ok: boolean; error?: string } | null = null;
+  try {
+    if ((await modoDeRecepcion(remitente.sb)) === "pagnol") {
+      const r = await anunciarOrden(remitente.sb, orden.id, null);
+      pagnol = r.ok ? { ok: true } : { ok: false, error: r.error };
+    }
+  } catch (e) {
+    pagnol = { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+
+  return Response.json({ ok: true, envio: { id: envio.id, enviadaEn: envio.enviada_en, para, cc }, pagnol });
 }

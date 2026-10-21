@@ -48,6 +48,8 @@ export function EnvioOrden({
   const [errorPersonas, setErrorPersonas] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+  /* Si la empresa recibe en Pagnol, lo que pasó al anunciarle la orden. */
+  const [avisoPagnol, setAvisoPagnol] = useState<{ ok: boolean; error?: string } | null>(null);
   const [enviada, setEnviada] = useState(false);
 
   const emisor = (orden.emisorCorreo ?? "").toLowerCase();
@@ -78,6 +80,7 @@ export function EnvioOrden({
     const r = await enviarOrdenAlProveedor(orden.id, { para, cc, asunto, mensaje });
     setEnviando(false);
     if (!r.ok) return setError(r.error);
+    setAvisoPagnol(r.pagnol ?? null);
     setEnviada(true);
     alEnviada();
   }
@@ -94,6 +97,13 @@ export function EnvioOrden({
           <p className="rounded-xl bg-[#e6f4ee] px-4 py-3 font-medium text-[#0e7a4f]">
             Se le envió a {para}, con copia a {[emisor, ...cc].filter(Boolean).join(", ")}.
           </p>
+          {avisoPagnol && (
+            <p className={`mt-4 rounded-xl px-4 py-3 ${avisoPagnol.ok ? "bg-[#e6f4ee] font-medium text-[#0e7a4f]" : "bg-[#fdf2e1] text-[#8a5a00]"}`}>
+              {avisoPagnol.ok
+                ? "Anunciada a Pagnol: el pañolero ya la ve por recibir."
+                : `La orden salió, pero no se pudo anunciar a Pagnol: ${avisoPagnol.error ?? "error desconocido"}. Anúnciala desde el detalle de la orden.`}
+            </p>
+          )}
           <p className="mt-4 text-ink-soft">
             Cuando el proveedor la abra y confirme su fecha de entrega, lo vas a ver en la columna Estado de
             esta lista.

@@ -20,7 +20,7 @@ import type { PanolPagnol, ResumenEnvio } from "./tipos";
  * escribe en Valar pasa por sus políticas, igual que desde la pantalla.
  */
 
-type Envio = {
+export type Envio = {
   id: string;
   tipo: "activo" | "ingreso" | "reverso" | "baja";
   item_id: string | null;
@@ -38,7 +38,7 @@ type Envio = {
 const refRecepcion = (recepcionId: string, itemId: string) => `valar:recepcion:${recepcionId}:item:${itemId}`;
 
 /** El mensaje de Pagnol si lo hay; si no, uno según el código. */
-function mensajeEscritura(estado: number | null, cuerpo?: unknown, e?: unknown): string {
+export function mensajeEscritura(estado: number | null, cuerpo?: unknown, e?: unknown): string {
   if (e instanceof PagnolNoConfigurado) return "La conexión con Pagnol no está configurada en el servidor.";
   if (e instanceof DOMException && (e.name === "TimeoutError" || e.name === "AbortError")) return "Pagnol no respondió a tiempo.";
   const propio = (cuerpo as { error?: { message?: string } } | undefined)?.error?.message;
@@ -51,7 +51,7 @@ function mensajeEscritura(estado: number | null, cuerpo?: unknown, e?: unknown):
 }
 
 /** ¿Es rastreable? Sale del catálogo de Pagnol, con caché. */
-async function esRastreable(materialId: string): Promise<{ ok: true; rastreable: boolean; nombre: string } | { ok: false; error: string }> {
+export async function esRastreable(materialId: string): Promise<{ ok: true; rastreable: boolean; nombre: string } | { ok: false; error: string }> {
   try {
     const { data, error, response } = await clientePagnol("pagnol:materiales").GET("/materiales/{id}", {
       params: { path: { id: materialId } },
@@ -64,7 +64,7 @@ async function esRastreable(materialId: string): Promise<{ ok: true; rastreable:
 }
 
 /** Manda un envío ya registrado y deja la fila con el resultado. */
-async function mandar(sb: SupabaseClient, e: Envio, contexto: { panolId: string | null; fecha: string; proveedorId: string | null; valor: number | null; deshacerRef?: string; deshacerId?: string | null }) {
+export async function mandar(sb: SupabaseClient, e: Envio, contexto: { panolId: string | null; fecha: string; proveedorId: string | null; valor: number | null; deshacerRef?: string; deshacerId?: string | null }) {
   const pagnol = clientePagnolEscritura;
   let estado: number | null = null;
   let cuerpo: unknown;
@@ -142,13 +142,14 @@ type Recepcion = {
   contrato_id: string;
   fecha: string;
   pagnol_panol_id: string | null;
+  origen: string | null;
   recepcion_items: { item_id: string; cantidad: number; items_compra: { pagnol_material_id: string | null; precio_unitario: number; descripcion: string } | null }[];
 };
 
 async function leerRecepcion(sb: SupabaseClient, recepcionId: string) {
   const { data, error } = await sb
     .from("recepciones")
-    .select("id, orden_id, contrato_id, fecha, pagnol_panol_id, recepcion_items(item_id, cantidad, items_compra(pagnol_material_id, precio_unitario, descripcion))")
+    .select("id, orden_id, contrato_id, fecha, pagnol_panol_id, origen, recepcion_items(item_id, cantidad, items_compra(pagnol_material_id, precio_unitario, descripcion))")
     .eq("id", recepcionId)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -172,7 +173,7 @@ async function enviosDe(sb: SupabaseClient, recepcionId: string): Promise<Envio[
   return (data ?? []) as Envio[];
 }
 
-function resumir(envios: Envio[], avisos: string[]): ResumenEnvio {
+export function resumir(envios: Envio[], avisos: string[]): ResumenEnvio {
   const directos = envios.filter((e) => e.tipo === "activo" || e.tipo === "ingreso");
   return {
     total: directos.length,
@@ -189,6 +190,8 @@ function resumir(envios: Envio[], avisos: string[]): ResumenEnvio {
 export async function sincronizarRecepcion(sb: SupabaseClient, recepcionId: string): Promise<ResumenEnvio> {
   const rec = await leerRecepcion(sb, recepcionId);
   if (!rec) throw new Error("No se encontró la recepción, o tu acceso no la alcanza.");
+  // Recibida en Pagnol: el stock ya está allá. Informarla de vuelta lo duplicaría.
+  if (rec.origen === "pagnol") throw new Error("Esta recepción la registró el pañolero en Pagnol: no se informa de vuelta.");
 
   const avisos: string[] = [];
   const nuevas: Record<string, unknown>[] = [];
@@ -237,6 +240,10 @@ export async function sincronizarRecepcion(sb: SupabaseClient, recepcionId: stri
  * hay que ajustarlo en Pagnol primero.
  */
 export async function anularRecepcion(sb: SupabaseClient, recepcionId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const origen = await leerRecepcion(sb, recepcionId);
+  if (origen?.origen === "pagnol") {
+    return { ok: false, error: "Esta recepción la registró el pañolero en Pagnol. Corrígela allá («esto no venía») y el cambio llega solo." };
+  }
   // Lo que quedó a medias se termina de mandar: si había llegado a Pagnol sin
   // que lo supiéramos, así se entera Valar y se puede deshacer.
   const previo = await sincronizarRecepcion(sb, recepcionId);
