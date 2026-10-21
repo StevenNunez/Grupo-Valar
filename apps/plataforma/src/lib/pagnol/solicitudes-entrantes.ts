@@ -94,7 +94,7 @@ export async function procesarSolicitud(sb: SupabaseClient, aviso: AvisoSolicitu
   const id = `SP-${contrato.replace(/^C-/, "")}-${numero.replace(/\D/g, "")}`;
   const observaciones = [
     `Solicitud ${d.codigo ?? d.id} de Pagnol.`,
-    d.motivo?.trim() && `Motivo: ${d.motivo.trim()}`,
+    d.motivo?.trim() && `Motivo: ${d.motivo.trim().replace(/[.\s]*$/, "")}.`,
     d.prioridad === "urgente" && `Urgente${d.motivo_urgencia?.trim() ? `: ${d.motivo_urgencia.trim()}` : ""}.`,
     "Armada sola con la solicitud aprobada en Pagnol. Revisa las líneas, vincúlalas al catálogo si corresponde y envíala a aprobación.",
   ]
