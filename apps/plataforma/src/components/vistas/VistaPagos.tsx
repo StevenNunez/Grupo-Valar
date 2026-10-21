@@ -18,6 +18,7 @@ import { BotonImprimir, Impresion } from "../ui/Impresion";
 import { CuadroDePago } from "../CuadroDePago";
 import { CicloOrden } from "../CicloOrden";
 import { PagosDeFactura } from "../PagosDeFactura";
+import { ParametrosDePago } from "../ParametrosDePago";
 import { useConsulta } from "@/lib/consulta";
 import { formatearFecha, formatearMonto, formatearPesos } from "@/lib/formato";
 import { formatearRut } from "@/lib/abastecimiento";
@@ -37,7 +38,6 @@ import {
   programarPago,
   proximasFechasDePago,
   registrarFactura,
-  UMBRAL_CUOTAS,
   type CuentaPorPagar,
   type EstadoDocumento,
   type ParametrosPago,
@@ -93,13 +93,26 @@ const pestanas: { id: Pestana; titulo: string }[] = [
 
 export function VistaPagos() {
   const { estado, recargar } = useConsulta<Datos>(cargar);
+  const puedeParametros = usePuede("parametros.editar");
+  const [editandoParametros, setEditandoParametros] = useState(false);
 
   return (
     <>
       <Encabezado
         titulo="Pagos a proveedores"
         descripcion="Lo que se le debe a cada proveedor y qué se paga esta semana. Una línea sin factura registrada aparece, pero no se paga: es la regla con la que Valar ya trabaja."
+        acciones={
+          puedeParametros && estado.estado === "listo" && (
+            <button type="button" onClick={() => setEditandoParametros(true)}
+              className="rounded-full border border-mist-deep px-5 py-2.5 text-sm font-semibold text-ink hover:border-ink">
+              Parámetros
+            </button>
+          )
+        }
       />
+      {editandoParametros && estado.estado === "listo" && (
+        <ParametrosDePago parametros={estado.datos.parametros} alCerrar={() => setEditandoParametros(false)} alGuardado={recargar} />
+      )}
 
       <Contenido consulta={estado}>
         {(datos) => <Tablero datos={datos} recargar={recargar} />}
@@ -378,7 +391,7 @@ function PorVencimiento({
       <Buscador valor={texto} alCambiar={setTexto} etiqueta="Buscar cuentas por pagar" placeholder="Buscar por N° de OC, proveedor, RUT, factura o contrato…" />
 
       <Tabla
-        columnas={columnasLinea({ semana, trabajando, accion, alFacturar, alPagos: setConPagos, puedeProgramar, puedeMarcar })}
+        columnas={columnasLinea({ semana, trabajando, accion, alFacturar, alPagos: setConPagos, umbralCuotas: datos.parametros.umbralCuotas, puedeProgramar, puedeMarcar })}
         filas={visibles}
         claveDe={(c) => c.id}
         vacio={texto.trim() ? "Ninguna cuenta coincide con la búsqueda." : "Nada en este estado."}
@@ -397,6 +410,7 @@ function PorVencimiento({
         <PagosDeFactura
           linea={conPagos}
           fechas={fechas}
+          umbral={datos.parametros.umbralCuotas}
           puedeProgramar={puedeProgramar}
           puedeMarcar={puedeMarcar}
           alCerrar={() => setConPagos(null)}
@@ -415,8 +429,11 @@ function columnasLinea({
   puedeProgramar,
   puedeMarcar,
   alPagos,
+  umbralCuotas,
 }: {
   semana: string;
+  /** Desde qué total se ofrece «Pagar en cuotas». */
+  umbralCuotas: number;
   trabajando: string | null;
   /** Abrir los pagos en cuotas de una factura. */
   alPagos: (linea: CuentaPorPagar) => void;
@@ -601,7 +618,7 @@ function columnasLinea({
             )}
             </>
             )}
-            {(puedeProgramar || puedeMarcar) && (c.cuotas > 0 || c.total >= UMBRAL_CUOTAS) && (
+            {(puedeProgramar || puedeMarcar) && (c.cuotas > 0 || c.total >= umbralCuotas) && (
               <Boton secundario disabled={ocupado} onClick={() => alPagos(c)}>
                 {c.cuotas > 0 ? "Cuotas" : "Pagar en cuotas"}
               </Boton>

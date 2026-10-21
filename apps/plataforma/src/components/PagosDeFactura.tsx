@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Chip } from "./ui/Chip";
 import { Dialogo } from "./ui/Formulario";
-import { agregarCuotas, cambiarCuota, cargarCuotas, quitarCuota, UMBRAL_CUOTAS, type Cuota, type CuentaPorPagar } from "@/lib/pagos";
+import { agregarCuotas, cambiarCuota, cargarCuotas, quitarCuota, type Cuota, type CuentaPorPagar } from "@/lib/pagos";
 import { formatearFecha, formatearPesos } from "@/lib/formato";
 
 /**
@@ -21,8 +21,10 @@ const campo = "w-full rounded-lg border border-mist-deep bg-white px-3 py-2 text
 const boton = "rounded-full border border-mist-deep px-3.5 py-1.5 text-xs font-semibold text-ink hover:border-ink disabled:opacity-50";
 const botonPrimario = "rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-deep disabled:opacity-50";
 
-export function PagosDeFactura({ linea, fechas, puedeProgramar, puedeMarcar, alCerrar, alCambiar }: {
+export function PagosDeFactura({ linea, fechas, umbral, puedeProgramar, puedeMarcar, alCerrar, alCambiar }: {
   linea: CuentaPorPagar;
+  /** Desde qué total se ofrece pagar en cuotas (parámetro de la empresa). */
+  umbral: number;
   /** Las próximas fechas de pago semanal, para programar cada cuota. */
   fechas: string[];
   puedeProgramar: boolean;
@@ -185,7 +187,7 @@ export function PagosDeFactura({ linea, fechas, puedeProgramar, puedeMarcar, alC
 
         <p className="mt-5 text-xs text-ink-soft">
           La factura pasa sola a «pagada» cuando lo pagado completa su total, y mientras tanto sigue por su saldo.
-          {linea.total >= UMBRAL_CUOTAS ? "" : ` Pagar en cuotas se usa sobre todo desde ${formatearPesos(UMBRAL_CUOTAS)}.`}
+          {linea.total >= umbral ? "" : ` Pagar en cuotas se ofrece desde ${formatearPesos(umbral)}.`}
         </p>
       </div>
     </Dialogo>

@@ -695,7 +695,7 @@ const columnas = (
           <span className="mt-0.5 block text-xs text-ink-soft">reembolsable</span>
         )}
         {e.tipo === "activo" && (
-          <span className="mt-0.5 block text-xs font-semibold text-cyan-deep">activo · no resta del margen</span>
+          <span className="mt-0.5 block text-xs font-semibold text-cyan-deep">activo · gasto del contrato, queda en la empresa</span>
         )}
       </>
     ),

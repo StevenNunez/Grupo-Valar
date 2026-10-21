@@ -27,6 +27,8 @@ export type ParametrosPago = {
   diasMaximosSinFactura: number;
   /** 1 = lunes … 7 = domingo. En Valar, jueves. */
   diaPagoSemanal: number;
+  /** Desde este total se ofrece pagar una factura en cuotas (0098). */
+  umbralCuotas: number;
 };
 
 const PARAMETROS_POR_DEFECTO: ParametrosPago = {
@@ -35,6 +37,7 @@ const PARAMETROS_POR_DEFECTO: ParametrosPago = {
   diasAlertaVencimiento: 7,
   diasMaximosSinFactura: 15,
   diaPagoSemanal: 4,
+  umbralCuotas: 5_000_000,
 };
 
 export async function cargarParametrosPago(): Promise<ParametrosPago> {
@@ -57,7 +60,28 @@ export async function cargarParametrosPago(): Promise<ParametrosPago> {
     diasAlertaVencimiento: data.dias_alerta_vencimiento,
     diasMaximosSinFactura: data.dias_maximos_sin_factura,
     diaPagoSemanal: data.dia_pago_semanal,
+    // Sin la migración 0098 la columna no existe: vale el de siempre.
+    umbralCuotas: data.umbral_cuotas == null ? PARAMETROS_POR_DEFECTO.umbralCuotas : Number(data.umbral_cuotas),
   };
+}
+
+/** Guarda los parámetros de pago de la empresa (quien tiene «Cambiar parámetros»). */
+export async function guardarParametrosPago(p: ParametrosPago) {
+  const fila = {
+    id: true,
+    plazo_pago_dias: p.plazoPagoDias,
+    tope_semanal: p.topeSemanal,
+    dias_alerta_vencimiento: p.diasAlertaVencimiento,
+    dias_maximos_sin_factura: p.diasMaximosSinFactura,
+    dia_pago_semanal: p.diaPagoSemanal,
+    umbral_cuotas: p.umbralCuotas,
+  };
+  const { data, error } = await supabase.from("parametros_pago").upsert(fila, { onConflict: "empresa_id,id" }).select("id");
+  if (error) {
+    throw new Error(/umbral_cuotas/.test(error.message) ? "Falta aplicar la migración 0098 en la base." : error.message);
+  }
+  // El RLS no avisa cuando no deja escribir: simplemente no cambia ninguna fila.
+  if (!data?.length) throw new Error("Tu acceso no permite cambiar los parámetros.");
 }
 
 /* ── Una línea por pagar ──────────────────────────────────────────────────── */
@@ -146,9 +170,6 @@ export type CuentaPorPagar = {
  * próxima cuota si tiene plan, y si no, lo que falta de la factura.
  */
 export const montoAPagar = (c: Pick<CuentaPorPagar, "cuotaMonto" | "saldo">) => c.cuotaMonto ?? c.saldo;
-
-/** Desde este neto se sugiere pagar en cuotas: así se acuerdan las facturas grandes. */
-export const UMBRAL_CUOTAS = 5_000_000;
 
 type FilaCuenta = {
   id: string;

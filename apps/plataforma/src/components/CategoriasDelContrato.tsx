@@ -307,7 +307,7 @@ function FormularioCategoria({
           <CampoSeleccion
             etiqueta="Es de activos"
             opciones={siNo}
-            ayuda="Equipos, herramientas, mobiliario: lo que se compra acá se marca como activo y no resta de la rentabilidad del contrato."
+            ayuda="Equipos, herramientas, mobiliario: lo que se compra acá cuenta como gasto del contrato y además queda como activo de la empresa."
             {...f.campo("es_activo")}
           />
 

@@ -269,6 +269,16 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
     return filas.reduce((t, f) => t + f.costo, 0);
   }, [datos.personalOficina, periodo, periodosCerrados]);
 
+  /* Los activos comprados para contratos que ya se cerraron: la obra terminó y esos
+     activos quedan en la empresa. Se gastaron en el contrato y ahí siguen contando;
+     Oficina Central solo los VALORIZA (dato informativo, mismo recorte de período):
+     no suman a sus egresos ni restan al contrato. Un contrato abierto no los traslada aún. */
+  const activosDeCerrados = useMemo(() => {
+    const meses = (esMes(periodo) ? [mesDe(periodo)] : periodo === "todo" ? periodosCerrados : periodosCerrados.slice(-Number(periodo))).map((p) => p.slice(0, 7));
+    const filas = (datos.activosDeContratos ?? []).filter((f) => cerradosIds.has(f.contratoId) && meses.includes(f.periodo.slice(0, 7)));
+    return { total: filas.reduce((t, f) => t + f.neto, 0), contratos: [...new Set(filas.map((f) => f.contratoId))].length };
+  }, [datos.activosDeContratos, cerradosIds, periodo, periodosCerrados]);
+
   const total = sumar(filas);
   const operativosOficina = totalOficina(oficinaVisible.filter((f) => f.categoria !== "activos")) + personalOficina;
   const activosOficina = totalOficina(oficinaVisible.filter((f) => f.categoria === "activos"));
@@ -325,7 +335,7 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
           su rentabilidad. Los egresos de Oficina Central aparecen debajo.
         </p>
       </div>}
-      {conOficina && <IndicadoresParalelos filas={oficinaVisible} personal={personalOficina} margenContratos={0} finiquitos={finiquitos + finiquitosOficina} conOficina />}
+      {conOficina && <IndicadoresParalelos filas={oficinaVisible} personal={personalOficina} margenContratos={0} finiquitos={finiquitos + finiquitosOficina} conOficina activosDeContratos={activosDeCerrados} />}
       </>
     );
   }
@@ -369,7 +379,7 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
         ]}
       />
 
-      <IndicadoresParalelos filas={oficinaVisible} personal={personalOficina} margenContratos={total.margen} finiquitos={finiquitos + finiquitosOficina} conOficina={conOficina} />
+      <IndicadoresParalelos filas={oficinaVisible} personal={personalOficina} margenContratos={total.margen} finiquitos={finiquitos + finiquitosOficina} conOficina={conOficina} activosDeContratos={activosDeCerrados} />
 
       {/* ── Por contrato ───────────────────────────────────────────────────── */}
       {contratos.length > 1 && (
@@ -618,11 +628,13 @@ function PanelOrdinarioExtra({ total }: { total: Totales }) {
  * parte del resultado de los contratos.
  */
 function IndicadoresParalelos({
-  filas, personal, margenContratos, finiquitos, conOficina,
-}: { filas: EgresoOficina[]; personal: number; margenContratos: number; finiquitos: number; conOficina: boolean }) {
+  filas, personal, margenContratos, finiquitos, conOficina, activosDeContratos,
+}: { filas: EgresoOficina[]; personal: number; margenContratos: number; finiquitos: number; conOficina: boolean; activosDeContratos: { total: number; contratos: number } }) {
   // La nómina de la oficina es gasto operativo: sin ella el resultado se ve mejor de lo que es.
   const operativos = totalOficina(filas.filter((fila) => fila.categoria !== "activos")) + personal;
-  const activos = totalOficina(filas.filter((fila) => fila.categoria === "activos"));
+  const activosDirectos = totalOficina(filas.filter((fila) => fila.categoria === "activos"));
+  // Lo que Oficina Central gastó en activos. Lo de contratos cerrados no entra: ahí ya se gastó.
+  const activos = activosDirectos;
   const consolidado = margenContratos - (conOficina ? operativos : 0) - finiquitos;
 
   const mini = (etiqueta: string, valor: string, nota: string, oscuro: boolean, rojo = false) => (
@@ -646,6 +658,14 @@ function IndicadoresParalelos({
             {mini("Compra de activos", formatearMonto(activos), "Inversión, fuera del resultado", true)}
             {mini("Total egresos", formatearMonto(operativos + activos), `${filas.length} movimientos`, true)}
           </dl>
+          {activosDeContratos.total > 0 && (
+            <p className="mt-4 rounded-xl bg-white/10 px-4 py-3 text-xs leading-relaxed text-white/80">
+              <strong className="text-white">Activos de contratos cerrados: {formatearMonto(activosDeContratos.total)}</strong>
+              {" "}· se gastaron en {activosDeContratos.contratos === 1 ? "un contrato" : `${activosDeContratos.contratos} contratos`} y hoy son de la empresa.
+              Valorizados acá; no suman a los egresos de Oficina Central ni restan al contrato.{" "}
+              <Link href="/control-de-gestion/activos/" className="font-semibold text-white underline">Ver activos →</Link>
+            </p>
+          )}
           {(filas.length > 0 || personal > 0) && (
             <p className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/60">
               {categoriasOficina.map((c) => <span key={c.id}>{c.titulo}: <strong className="text-white/90">{formatearMonto(totalOficina(filas.filter((f) => f.categoria === c.id)))}</strong></span>)}

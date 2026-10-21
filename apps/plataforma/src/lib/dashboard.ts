@@ -118,6 +118,13 @@ export type DatosDashboard = {
   finiquitos: { contratoId: string | null; anexoId: string | null; periodo: string; total: number }[];
   /** Costo de la nómina de Oficina Central por mes. Vacío para quien no ve sueldos. */
   personalOficina: { periodo: string; costo: number }[];
+  /**
+   * Lo comprado como ACTIVO para un contrato (0099). Cuenta como gasto del contrato
+   * —se gastó en esa obra— y también es un activo de la empresa. Cuando el contrato se
+   * cierra, esos activos quedan en Valar y la tarjeta de Oficina Central los valoriza
+   * aparte (dato informativo: no suma a sus egresos ni resta al contrato).
+   */
+  activosDeContratos: { contratoId: string; periodo: string; neto: number }[];
 };
 
 type FilaResumenSQL = {
@@ -218,6 +225,9 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
   const fallo = resumen.error ?? categorias.error;
   if (fallo) throw new Error(fallo.message);
 
+  /* Los activos comprados para un contrato: si falla, el Dashboard sale igual sin ellos. */
+  const { data: activosCostos } = await supabase.from("costos_unificados").select("contrato_id, periodo, neto").eq("es_activo", true);
+
   /* Los contratos cerrados (0083) salen del tablero operativo; su historia sigue acá. */
   const cerrados = (alias.error ? [] : alias.data ?? []).filter((f) => f.estado === "cerrado").map((f) => f.id as string);
 
@@ -269,7 +279,7 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
   for (const m of movimientos) {
     if (!m.periodo) continue;
     const a = celda(unidadDe(m.contrato_id, m.anexo_id), primeroDelMes(m.periodo));
-    // Igual que resumen_mensual: lo ordinario es costo, lo reembolsable va aparte y un activo no cuenta.
+    // Igual que resumen_mensual: lo ordinario es costo (un activo comprado para el contrato también, 0099) y lo reembolsable va aparte.
     if (m.tipo === "ordinario") a.costo += Number(m.neto);
     else if (m.tipo === "reembolsable") a.reembolsable += Number(m.neto);
   }
@@ -491,6 +501,9 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
       total: f.total,
     })),
     personalOficina: nominas.map((n) => ({ periodo: primeroDelMes(n.periodo), costo: n.costo_total })),
+    activosDeContratos: (activosCostos ?? [])
+      .filter((f) => f.periodo)
+      .map((f) => ({ contratoId: f.contrato_id as string, periodo: primeroDelMes(f.periodo as string), neto: Number(f.neto) })),
     /* Un ítem suelto (sin orden ni factura, p. ej. de una OC borrada) llega con
        periodo nulo: no pertenece a ningún mes y no debe tumbar el Dashboard. */
     meses: filasMes,
