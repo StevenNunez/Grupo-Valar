@@ -55,8 +55,10 @@ function tagsDe(tipo: string): TagPagnol[] {
 }
 
 export async function POST(pedido: Request) {
-  const secreto = process.env.PAGNOL_WEBHOOK_SECRET;
-  if (!secreto) {
+  // Cada organización de Pagnol firma con su propio secreto: el de Valar y, mientras
+  // se prueba, el del demo (PAGNOL_WEBHOOK_SECRET_DEMO). Vale el que verifique la firma.
+  const secretos = [process.env.PAGNOL_WEBHOOK_SECRET, process.env.PAGNOL_WEBHOOK_SECRET_DEMO].filter((x): x is string => !!x);
+  if (!secretos.length) {
     // 503 y no 2xx: así Pagnol reintenta cuando el secreto esté configurado.
     return Response.json({ error: "Webhook de Pagnol no configurado." }, { status: 503 });
   }
@@ -68,12 +70,16 @@ export async function POST(pedido: Request) {
     "webhook-signature": pedido.headers.get("webhook-signature") ?? "",
   };
 
-  let evento: EventoPagnol;
-  try {
-    evento = new Webhook(secreto).verify(cuerpo, cabeceras) as EventoPagnol;
-  } catch {
-    return Response.json({ error: "Firma inválida." }, { status: 401 });
+  let evento: EventoPagnol | null = null;
+  for (const secreto of secretos) {
+    try {
+      evento = new Webhook(secreto).verify(cuerpo, cabeceras) as EventoPagnol;
+      break;
+    } catch {
+      // No es la firma de esta organización: se prueba con la siguiente.
+    }
   }
+  if (!evento) return Response.json({ error: "Firma inválida." }, { status: 401 });
 
   const sb = supabaseDeServicio();
   const id = cabeceras["webhook-id"];
