@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { FirmaPerfil } from "./FirmaPerfil";
 import { useUsuario } from "@/lib/sesion";
 import { supabase } from "@/lib/supabase";
 
@@ -90,6 +91,8 @@ export function FormularioPerfil() {
           {guardandoPerfil ? "Guardando…" : "Guardar datos"}
         </button>
       </form>
+
+      <FirmaPerfil />
 
       <form onSubmit={guardarClave} className="rounded-2xl border border-mist-deep bg-white p-6 sm:p-8">
         <h2 className="font-display text-xl font-semibold">Cambiar contraseña</h2>

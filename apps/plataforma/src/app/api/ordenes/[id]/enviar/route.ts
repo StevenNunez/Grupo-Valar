@@ -7,6 +7,7 @@ import {
   remitenteDe,
 } from "@/lib/oc-envio/datos";
 import { destinatariosDeLaEmpresa } from "@/lib/oc-envio/destinatarios";
+import { cargarFirmasDeOrden } from "@/lib/oc-envio/firmas";
 import { pdfDeOrden } from "@/lib/oc-envio/pdf";
 import { anunciarOrden, modoDeRecepcion } from "@/lib/pagnol/compras-esperadas";
 import { direccionCompleta } from "@/lib/empresa";
@@ -128,7 +129,7 @@ export async function POST(pedido: Request, { params }: Contexto) {
       asunto,
       texto,
       html,
-      adjunto: { nombre: `${orden.numero}.pdf`, contenido: await pdfDeOrden(orden) },
+      adjunto: { nombre: `${orden.numero}.pdf`, contenido: await pdfDeOrden({ ...orden, firmas: await cargarFirmasDeOrden(servicio, orden.empresaId, remitente.id) }) },
     });
   } catch (e) {
     await servicio.from("ordenes_envios").delete().eq("id", envio.id);

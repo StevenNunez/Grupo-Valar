@@ -293,17 +293,40 @@ export async function pdfDeOrden(o: OrdenParaEnviar): Promise<Uint8Array> {
   /* ── Firmas ─────────────────────────────────────────────────────────────── */
   asegurar(80, false);
   y -= 40;
-  const tercio = ancho / 3;
+  /** Una firma dibujada (0095). Si la imagen no sirve, la raya queda en blanco y el PDF sale igual. */
+  const incrustar = async (png: Uint8Array | null | undefined) => {
+    if (!png) return null;
+    try {
+      return await doc.embedPng(png);
+    } catch {
+      return null;
+    }
+  };
+  const firmas = o.firmas;
+  const imagenEmite = await incrustar(firmas?.emite);
+  const imagenAutoriza = await incrustar(firmas?.autoriza);
+
+  const columna = ancho / 4;
   (
     [
-      ["Solicitado por", o.solicitadoPor],
-      ["Retira", o.retira],
-      // Fijo: es el representante legal, no cambia por orden.
-      ["Autorizado por", e.representante],
+      ["Solicitado por", o.solicitadoPor, null],
+      ["Retira", o.retira, null],
+      // Quien envía la orden desde la plataforma; su firma sale de «Mi firma».
+      ["Emite", o.emisorNombre, imagenEmite],
+      // Por defecto el representante legal; con una firma designada, esa persona.
+      ["Autorizado por", firmas?.autorizaNombre || e.representante, imagenAutoriza],
     ] as const
-  ).forEach(([etiqueta, nombre], i) => {
-    const centro = MARGEN + tercio * i + tercio / 2;
-    raya(y, 0.8, TINTA, centro - tercio / 2 + 10, centro + tercio / 2 - 10);
+  ).forEach(([etiqueta, nombre, imagen], i) => {
+    const centro = MARGEN + columna * i + columna / 2;
+    if (imagen) {
+      // La firma se apoya sobre la raya, sin salirse de su columna.
+      const tope = { ancho: columna - 24, alto: 38 };
+      const escalaFirma = Math.min(tope.ancho / imagen.width, tope.alto / imagen.height, 1);
+      const w = imagen.width * escalaFirma;
+      const h = imagen.height * escalaFirma;
+      pagina.drawImage(imagen, { x: centro - w / 2, y: y + 2, width: w, height: h });
+    }
+    raya(y, 0.8, TINTA, centro - columna / 2 + 8, centro + columna / 2 - 8);
     texto(nombre || "—", centro, y - 12, { tam: 8.5, fuente: negrita, alinear: "centro" });
     texto(etiqueta, centro, y - 23, { tam: 8, color: SUAVE, alinear: "centro" });
   });

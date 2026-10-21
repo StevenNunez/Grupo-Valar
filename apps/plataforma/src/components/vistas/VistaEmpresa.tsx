@@ -60,6 +60,9 @@ export function VistaEmpresa() {
   const recargar = useRecargarEmpresa();
   const edita = puede(usuario, "parametros.editar");
   const [valores, setValores] = useState<Campos | null>(null);
+  /** Quién autoriza las órdenes de compra: su firma va en «Autorizado por» (0095). */
+  const [autoriza, setAutoriza] = useState("");
+  const [personas, setPersonas] = useState<{ id: string; nombre: string }[]>([]);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,13 +73,14 @@ export function VistaEmpresa() {
     let vigente = true;
     supabase
       .from("empresas")
-      .select("nombre, razon_social, nombre_en_ordenes, rut, direccion, ciudad, region, email_contacto, representante")
+      .select("nombre, razon_social, nombre_en_ordenes, rut, direccion, ciudad, region, email_contacto, representante, autoriza_ordenes_usuario_id")
       .eq("id", usuario.empresa)
       .maybeSingle()
       .then(({ data, error: falla }) => {
         if (!vigente) return;
         if (falla) return setError(falla.message);
-        const f = (data ?? {}) as Partial<Record<keyof Campos, string | null>>;
+        const f = (data ?? {}) as Partial<Record<keyof Campos | "autoriza_ordenes_usuario_id", string | null>>;
+        setAutoriza(f.autoriza_ordenes_usuario_id ?? "");
         setValores({
           nombre: f.nombre ?? "",
           razon_social: f.razon_social ?? "",
@@ -89,6 +93,13 @@ export function VistaEmpresa() {
           representante: f.representante ?? "",
         });
       });
+    // La gente de la empresa, para elegir quién autoriza. Sin la 0095 la lista queda vacía.
+    supabase
+      .from("perfiles")
+      .select("id, nombre")
+      .eq("empresa_id", usuario.empresa)
+      .order("nombre")
+      .then(({ data }) => vigente && setPersonas((data ?? []) as { id: string; nombre: string }[]));
     return () => {
       vigente = false;
     };
@@ -100,7 +111,10 @@ export function VistaEmpresa() {
     if (!valores.nombre.trim()) return setError("El nombre en pantalla no puede quedar vacío.");
     setGuardando(true);
     setError(null);
-    const limpio = Object.fromEntries(Object.entries(valores).map(([k, v]) => [k, v.trim() || null]));
+    const limpio = {
+      ...Object.fromEntries(Object.entries(valores).map(([k, v]) => [k, v.trim() || null])),
+      autoriza_ordenes_usuario_id: autoriza || null,
+    };
     const { data, error: falla } = await supabase.from("empresas").update(limpio).eq("id", usuario.empresa).select("id");
     setGuardando(false);
     if (falla) return setError(falla.message);
@@ -142,6 +156,28 @@ export function VistaEmpresa() {
               </div>
             </section>
           ))}
+
+          <section className="rounded-2xl border border-mist-deep bg-white">
+            <h2 className="border-b border-mist px-6 py-4 text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-soft">Firma en las órdenes de compra</h2>
+            <div className="px-6 py-5">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-sm font-semibold text-ink">Quién autoriza las órdenes</span>
+                <select
+                  value={autoriza}
+                  disabled={!edita}
+                  onChange={(e) => setAutoriza(e.target.value)}
+                  className="rounded-xl border border-mist-deep bg-white px-3.5 py-2.5 text-sm text-ink disabled:bg-mist/40 disabled:text-ink-soft sm:max-w-md"
+                >
+                  <option value="">— Nadie: la raya queda en blanco con el representante —</option>
+                  {personas.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                </select>
+                <span className="text-xs text-ink-soft">
+                  Su firma (la que dibujó en «Mi perfil») sale en «Autorizado por», y la de quien envía cada orden sale en «Emite».
+                  Si la persona no tiene firma cargada, esa raya queda en blanco para firmar a mano.
+                </span>
+              </label>
+            </div>
+          </section>
 
           <p className="text-xs text-ink-soft">
             Así se ve hoy en una orden de compra: <strong className="text-ink">{datos.nombreEnOrdenes}</strong> · RUT {datos.rut} · {datos.direccion}, {datos.ciudad}

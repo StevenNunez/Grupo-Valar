@@ -4,6 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { DatosEmpresa } from "@/lib/empresa";
 import { cargarDatosEmpresa } from "@/lib/empresa-servidor";
+import type { FirmasDeOrden } from "./firmas";
 
 /**
  * Lo que el servidor necesita para mandarle una OC al proveedor.
@@ -18,6 +19,8 @@ export type OrdenParaEnviar = {
   empresaId: string;
   /** Los datos de la empresa que emite: salen impresos en el PDF, el correo y la página del proveedor. */
   empresa: DatosEmpresa;
+  /** Las firmas dibujadas que lleva el PDF (0095). Las pone quien arma el PDF: leer la orden no las trae. */
+  firmas?: FirmasDeOrden;
   id: string;
   contratoId: string;
   numero: string;

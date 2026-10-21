@@ -14,6 +14,7 @@ export type Envio = {
   empresaId: string;
   ordenId: string;
   enviadaEn: string;
+  enviadaPor: string | null;
   enviadaPorNombre: string | null;
   expiraEn: string;
   confirmadaEn: string | null;
@@ -57,6 +58,7 @@ export async function abrirEnlace(token: string, { contarVista = false } = {}): 
       empresaId: e.empresa_id,
       ordenId: e.orden_id,
       enviadaEn: e.enviada_en,
+      enviadaPor: (e.enviada_por as string | null) ?? null,
       enviadaPorNombre: e.enviada_por_nombre,
       expiraEn: e.expira_en,
       confirmadaEn: e.confirmada_en,
