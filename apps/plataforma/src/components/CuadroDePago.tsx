@@ -6,7 +6,7 @@ import { agrupar } from "./vistas/VistaPagos";
 import { useEmpresa } from "@/lib/empresa-cliente";
 import { formatearFecha, formatearPesos } from "@/lib/formato";
 import { formatearRut } from "@/lib/abastecimiento";
-import type { CuentaPorPagar, LineaNomina } from "@/lib/pagos";
+import { montoAPagar, type CuentaPorPagar, type LineaNomina } from "@/lib/pagos";
 
 /**
  * El cuadro de pago de la semana, listo para imprimir.
@@ -33,7 +33,7 @@ export function CuadroDePago({
 }) {
   const datos = useEmpresa();
   const grupos = agrupar(lineas);
-  const total = lineas.reduce((t, l) => t + l.total, 0);
+  const total = lineas.reduce((t, l) => t + montoAPagar(l), 0);
   const bloqueados = nomina.filter((n) => !n.listo);
 
   return (
@@ -98,13 +98,16 @@ export function CuadroDePago({
             <tbody>
               {g.lineas.map((l) => (
                 <tr key={l.id} className="border-t border-mist">
-                  <td className="py-2 font-mono">{l.documento ?? "SIN FACTURA"}</td>
+                  <td className="py-2 font-mono">
+                    {l.documento ?? "SIN FACTURA"}
+                    {l.cuotas > 0 && l.cuotaNumero !== null && <span className="block font-sans text-[10px] text-ink-soft">Cuota {l.cuotaNumero} de {l.cuotas}</span>}
+                  </td>
                   <td className="py-2">{l.ordenNumero ?? "—"}</td>
                   <td className="py-2">{l.contrato}</td>
-                  <td className="py-2 text-right tabular-nums">{formatearPesos(l.neto)}</td>
-                  <td className="py-2 text-right tabular-nums">{formatearPesos(l.iva)}</td>
+                  <td className="py-2 text-right tabular-nums">{l.cuotas > 0 ? "—" : formatearPesos(l.neto)}</td>
+                  <td className="py-2 text-right tabular-nums">{l.cuotas > 0 ? "—" : formatearPesos(l.iva)}</td>
                   <td className="py-2 text-right font-semibold tabular-nums">
-                    {formatearPesos(l.total)}
+                    {formatearPesos(montoAPagar(l))}
                   </td>
                 </tr>
               ))}

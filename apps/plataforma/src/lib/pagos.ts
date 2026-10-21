@@ -130,7 +130,25 @@ export type CuentaPorPagar = {
   fechaPagoProgramada: string | null;
   fechaPago: string | null;
   semanaPago: string | null;
+  /** Lo ya transferido en cuotas (0097). */
+  pagado: number;
+  /** Lo que falta pagar: el total menos lo pagado. 0 si la factura está pagada. */
+  saldo: number;
+  /** Cuántas cuotas tiene el plan; 0 si se paga de una vez. */
+  cuotas: number;
+  /** La próxima cuota sin pagar: su monto y su número. */
+  cuotaMonto: number | null;
+  cuotaNumero: number | null;
 };
+
+/**
+ * Cuánto hay que transferir de esta línea cuando llega su semana de pago: la
+ * próxima cuota si tiene plan, y si no, lo que falta de la factura.
+ */
+export const montoAPagar = (c: Pick<CuentaPorPagar, "cuotaMonto" | "saldo">) => c.cuotaMonto ?? c.saldo;
+
+/** Desde este neto se sugiere pagar en cuotas: así se acuerdan las facturas grandes. */
+export const UMBRAL_CUOTAS = 5_000_000;
 
 type FilaCuenta = {
   id: string;
@@ -162,6 +180,11 @@ type FilaCuenta = {
   fecha_pago_programada: string | null;
   fecha_pago: string | null;
   semana_pago: string | null;
+  pagado: number | null;
+  saldo: number | null;
+  cuotas: number | null;
+  cuota_monto: number | null;
+  cuota_numero: number | null;
 };
 
 export async function cargarCuentasPorPagar(): Promise<CuentaPorPagar[]> {
@@ -202,6 +225,12 @@ export async function cargarCuentasPorPagar(): Promise<CuentaPorPagar[]> {
     fechaPagoProgramada: f.fecha_pago_programada,
     fechaPago: f.fecha_pago,
     semanaPago: f.semana_pago,
+    pagado: Number(f.pagado ?? 0),
+    // Sin la migración 0097 la vista no trae el saldo: vale el total, como antes.
+    saldo: f.saldo == null ? (f.estado_documento === "pagado" ? 0 : Number(f.total)) : Number(f.saldo),
+    cuotas: Number(f.cuotas ?? 0),
+    cuotaMonto: f.cuota_monto == null ? null : Number(f.cuota_monto),
+    cuotaNumero: f.cuota_numero == null ? null : Number(f.cuota_numero),
   }));
 }
 
@@ -299,6 +328,85 @@ export async function programarPago(compraId: string, fecha: string | null) {
 /** Dar por transferida una factura. */
 export async function marcarPagada(compraId: string, fecha: string) {
   await actualizar("compras", compraId, { estado_pago: "pagada", fecha_pago: fecha });
+}
+
+/* ── Pago en cuotas (0097) ────────────────────────────────────────────────── */
+
+export type Cuota = {
+  id: string;
+  numero: number;
+  monto: number;
+  fechaProgramada: string | null;
+  fechaPago: string | null;
+  referencia: string;
+  observaciones: string;
+};
+
+export async function cargarCuotas(compraId: string): Promise<Cuota[]> {
+  const { data, error } = await supabase
+    .from("pagos_factura")
+    .select("id, numero, monto, fecha_programada, fecha_pago, referencia, observaciones")
+    .eq("compra_id", compraId)
+    .order("numero");
+  if (error) {
+    throw new Error(/pagos_factura/.test(error.message) && /exist|schema cache/i.test(error.message) ? "Falta aplicar la migración 0097 en la base." : error.message);
+  }
+  return (data ?? []).map((f) => ({
+    id: f.id as string,
+    numero: Number(f.numero),
+    monto: Number(f.monto),
+    fechaProgramada: (f.fecha_programada as string | null) ?? null,
+    fechaPago: (f.fecha_pago as string | null) ?? null,
+    referencia: (f.referencia as string | null) ?? "",
+    observaciones: (f.observaciones as string | null) ?? "",
+  }));
+}
+
+/** Agrega cuotas al plan de una factura. Ya hechas (con fecha de pago) sirven para anotar lo que se pagó antes. */
+export async function agregarCuotas(
+  compraId: string,
+  cuotas: { numero: number; monto: number; fechaProgramada: string | null; fechaPago?: string | null; referencia?: string }[],
+) {
+  const { error } = await supabase.from("pagos_factura").insert(
+    cuotas.map((c) => ({
+      compra_id: compraId,
+      numero: c.numero,
+      monto: c.monto,
+      fecha_programada: c.fechaProgramada,
+      fecha_pago: c.fechaPago ?? null,
+      referencia: c.referencia?.trim() || null,
+    })),
+  );
+  if (error) throw new Error(error.message);
+}
+
+export async function cambiarCuota(
+  id: string,
+  datos: Partial<{ monto: number; fechaProgramada: string | null; fechaPago: string | null; referencia: string; observaciones: string }>,
+) {
+  const fila: Record<string, unknown> = {};
+  if (datos.monto !== undefined) fila.monto = datos.monto;
+  if (datos.fechaProgramada !== undefined) fila.fecha_programada = datos.fechaProgramada;
+  if (datos.fechaPago !== undefined) fila.fecha_pago = datos.fechaPago;
+  if (datos.referencia !== undefined) fila.referencia = datos.referencia.trim() || null;
+  if (datos.observaciones !== undefined) fila.observaciones = datos.observaciones.trim() || null;
+  const { error } = await supabase.from("pagos_factura").update(fila).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function quitarCuota(id: string) {
+  const { error } = await supabase.from("pagos_factura").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Da por transferida la próxima cuota sin pagar de la factura (la de fecha más cercana). */
+export async function pagarProximaCuota(compraId: string, fecha: string) {
+  const cuotas = await cargarCuotas(compraId);
+  const proxima = cuotas
+    .filter((c) => !c.fechaPago)
+    .sort((a, b) => (a.fechaProgramada ?? "9999").localeCompare(b.fechaProgramada ?? "9999") || a.numero - b.numero)[0];
+  if (!proxima) throw new Error("No quedan cuotas por pagar en esa factura.");
+  await cambiarCuota(proxima.id, { fechaPago: fecha });
 }
 
 /** Retener o soltar: la factura existe, pero hay una razón para no pagarla. */

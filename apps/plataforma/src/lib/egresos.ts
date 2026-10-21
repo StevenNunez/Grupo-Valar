@@ -552,6 +552,32 @@ export async function cargarEgresosTerceros(): Promise<EgresoTercero[]> {
 
   if (error) throw new Error(error.message);
 
+  /* Lo ya pagado en cuotas de facturas que siguen abiertas (0097): la vista suma
+     como pagado solo lo que está pagado entero. Sin la migración, la consulta
+     falla y todo sigue como antes. */
+  const parcialDeCompra = new Map<string, number>();
+  const parcialDeOrden = new Map<string, number>();
+  const { data: abiertas } = await supabase
+    .from("compras")
+    .select("id, orden_id, pagado")
+    .gt("pagado", 0)
+    .eq("estado_pago", "pendiente");
+  for (const c of abiertas ?? []) {
+    parcialDeCompra.set(c.id as string, Number(c.pagado));
+    if (c.orden_id) parcialDeOrden.set(c.orden_id as string, (parcialDeOrden.get(c.orden_id as string) ?? 0) + Number(c.pagado));
+  }
+  // Una OC puede salir en varias filas (una por período): lo pagado se anota una sola vez.
+  const ordenesAnotadas = new Set<string>();
+  const parcialDe = (f: Record<string, unknown>) => {
+    if (f.origen === "compra") return parcialDeCompra.get(f.id as string) ?? 0;
+    const orden = f.orden_id as string | null;
+    if (f.origen === "orden" && orden && !ordenesAnotadas.has(orden)) {
+      ordenesAnotadas.add(orden);
+      return parcialDeOrden.get(orden) ?? 0;
+    }
+    return 0;
+  };
+
   return (data ?? []).map((f: Record<string, unknown>) => ({
     id: f.id as string,
     origen: f.origen as "compra" | "servicio" | "orden",
@@ -582,7 +608,7 @@ export async function cargarEgresosTerceros(): Promise<EgresoTercero[]> {
     netoRecibido: Number(f.neto_recibido ?? 0),
     netoFacturado: Number(f.neto_facturado ?? 0),
     totalFacturado: Number(f.total_facturado ?? 0),
-    totalPagado: Number(f.total_pagado ?? 0),
+    totalPagado: Number(f.total_pagado ?? 0) + parcialDe(f),
   }));
 }
 

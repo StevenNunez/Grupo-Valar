@@ -86,7 +86,7 @@ const debe = (e: EgresoTercero) =>
   cuenta(e) && !e.rendidoPor && (e.origen === "orden" ? e.totalFacturado > e.totalPagado : e.estadoPago !== "pagada");
 
 /** Con IVA, lo que hay que pagar hoy de esa fila. */
-const montoPorPagar = (e: EgresoTercero) => (!debe(e) ? 0 : e.origen === "orden" ? e.totalFacturado - e.totalPagado : e.total);
+const montoPorPagar = (e: EgresoTercero) => (!debe(e) ? 0 : e.origen === "orden" ? e.totalFacturado - e.totalPagado : e.total - e.totalPagado);
 
 /** Impago y con el plazo ya cumplido. */
 const vencido = (e: EgresoTercero) => debe(e) && !!e.vencimiento && diasHastaFecha(e.vencimiento) < 0;

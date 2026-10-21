@@ -17,6 +17,7 @@ import { Contenido, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
 import { BotonImprimir, Impresion } from "../ui/Impresion";
 import { CuadroDePago } from "../CuadroDePago";
 import { CicloOrden } from "../CicloOrden";
+import { PagosDeFactura } from "../PagosDeFactura";
 import { useConsulta } from "@/lib/consulta";
 import { formatearFecha, formatearMonto, formatearPesos } from "@/lib/formato";
 import { formatearRut } from "@/lib/abastecimiento";
@@ -29,11 +30,14 @@ import {
   cargarFlujoDePagos,
   cargarParametrosPago,
   marcarPagada,
+  montoAPagar,
   nombreEstadoCuenta,
+  pagarProximaCuota,
   nombreEstadoDocumento,
   programarPago,
   proximasFechasDePago,
   registrarFactura,
+  UMBRAL_CUOTAS,
   type CuentaPorPagar,
   type EstadoDocumento,
   type ParametrosPago,
@@ -168,10 +172,10 @@ function Tablero({ datos, recargar }: { datos: Datos; recargar: () => void }) {
           },
           {
             etiqueta: `Programado al ${formatearFecha(semana)}`,
-            valor: formatearMonto(suma(deLaSemana)),
+            valor: formatearMonto(sumaSemana(deLaSemana)),
             nota: `Tope semanal ${formatearMonto(datos.parametros.topeSemanal)}`,
             acento:
-              suma(deLaSemana) > datos.parametros.topeSemanal ? "critico" : undefined,
+              sumaSemana(deLaSemana) > datos.parametros.topeSemanal ? "critico" : undefined,
           },
         ]}
       />
@@ -230,9 +234,9 @@ function Tablero({ datos, recargar }: { datos: Datos; recargar: () => void }) {
         <Panel
           titulo={`Cuadro de pago · ${formatearFecha(semana)}`}
           nota={
-            suma(deLaSemana) > datos.parametros.topeSemanal
-              ? `Se pasa ${formatearPesos(suma(deLaSemana) - datos.parametros.topeSemanal)} del tope semanal.`
-              : `${formatearPesos(datos.parametros.topeSemanal - suma(deLaSemana))} disponibles bajo el tope.`
+            sumaSemana(deLaSemana) > datos.parametros.topeSemanal
+              ? `Se pasa ${formatearPesos(sumaSemana(deLaSemana) - datos.parametros.topeSemanal)} del tope semanal.`
+              : `${formatearPesos(datos.parametros.topeSemanal - sumaSemana(deLaSemana))} disponibles bajo el tope.`
           }
           filtros={
             <div className="flex flex-wrap items-center gap-2">
@@ -319,6 +323,8 @@ function PorVencimiento({
   const [trabajando, setTrabajando] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [texto, setTexto] = useState("");
+  /** La factura cuyos pagos en cuotas se están viendo. */
+  const [conPagos, setConPagos] = useState<CuentaPorPagar | null>(null);
 
   const visibles = useMemo(() => {
     const cs = datos.cuentas;
@@ -372,7 +378,7 @@ function PorVencimiento({
       <Buscador valor={texto} alCambiar={setTexto} etiqueta="Buscar cuentas por pagar" placeholder="Buscar por N° de OC, proveedor, RUT, factura o contrato…" />
 
       <Tabla
-        columnas={columnasLinea({ semana, trabajando, accion, alFacturar, puedeProgramar, puedeMarcar })}
+        columnas={columnasLinea({ semana, trabajando, accion, alFacturar, alPagos: setConPagos, puedeProgramar, puedeMarcar })}
         filas={visibles}
         claveDe={(c) => c.id}
         vacio={texto.trim() ? "Ninguna cuenta coincide con la búsqueda." : "Nada en este estado."}
@@ -387,6 +393,16 @@ function PorVencimiento({
           </>
         }
       />
+      {conPagos && conPagos.compraId && (
+        <PagosDeFactura
+          linea={conPagos}
+          fechas={fechas}
+          puedeProgramar={puedeProgramar}
+          puedeMarcar={puedeMarcar}
+          alCerrar={() => setConPagos(null)}
+          alCambiar={recargar}
+        />
+      )}
     </Panel>
   );
 }
@@ -398,9 +414,12 @@ function columnasLinea({
   alFacturar,
   puedeProgramar,
   puedeMarcar,
+  alPagos,
 }: {
   semana: string;
   trabajando: string | null;
+  /** Abrir los pagos en cuotas de una factura. */
+  alPagos: (linea: CuentaPorPagar) => void;
   /** Registrar la factura y agendarla en una semana. */
   puedeProgramar: boolean;
   /** Retener, soltar y dar por pagada. */
@@ -465,7 +484,17 @@ function columnasLinea({
       clave: "monto",
       titulo: "Monto",
       derecha: true,
-      celda: (c) => <span className="font-semibold text-ink">{formatearMonto(c.total)}</span>,
+      celda: (c) =>
+        c.pagado > 0 && c.estadoDocumento !== "pagado" ? (
+          <>
+            <span className="block font-semibold text-ink">{formatearMonto(c.saldo)}</span>
+            <span className="mt-0.5 block text-xs text-ink-soft">
+              de {formatearMonto(c.total)} · pagado {formatearMonto(c.pagado)}
+            </span>
+          </>
+        ) : (
+          <span className="font-semibold text-ink">{formatearMonto(c.total)}</span>
+        ),
     },
     {
       clave: "estado",
@@ -473,6 +502,11 @@ function columnasLinea({
       celda: (c) => (
         <>
           <Chip tono={tonos[c.estadoDocumento]}>{nombreEstadoDocumento[c.estadoDocumento]}</Chip>
+          {c.cuotas > 0 && c.cuotaNumero !== null && (
+            <span className="mt-1 block text-xs text-ink-soft">
+              Cuota {c.cuotaNumero} de {c.cuotas} · {formatearMonto(c.cuotaMonto ?? 0)}
+            </span>
+          )}
           {c.fechaPagoProgramada && (
             <span className="mt-1 block text-xs text-ink-soft">
               Programado {formatearFecha(c.fechaPagoProgramada)}
@@ -503,7 +537,17 @@ function columnasLinea({
         }
 
         if (c.estadoDocumento === "pagado") {
-          return <span className="text-xs text-ink-soft">{formatearFecha(c.fechaPago)}</span>;
+          return (
+            <div className="flex items-center justify-end gap-2">
+              <span className="text-xs text-ink-soft">{formatearFecha(c.fechaPago)}</span>
+              {c.cuotas > 0 ? (
+                <Boton secundario disabled={ocupado} onClick={() => alPagos(c)}>Ver pagos</Boton>
+              ) : (
+                /* Se dio por pagada entera pero en realidad se pagó en partes: armar las cuotas la reabre por su saldo. */
+                c.compraId && puedeMarcar && <Boton secundario disabled={ocupado} onClick={() => alPagos(c)}>Pasar a cuotas</Boton>
+              )}
+            </div>
+          );
         }
 
         if (!c.compraId) return null;
@@ -557,14 +601,22 @@ function columnasLinea({
             )}
             </>
             )}
+            {(puedeProgramar || puedeMarcar) && (c.cuotas > 0 || c.total >= UMBRAL_CUOTAS) && (
+              <Boton secundario disabled={ocupado} onClick={() => alPagos(c)}>
+                {c.cuotas > 0 ? "Cuotas" : "Pagar en cuotas"}
+              </Boton>
+            )}
             {puedeMarcar && (
             <Boton
               disabled={ocupado}
               onClick={() =>
-                accion(c.id, () => marcarPagada(compraId, new Date().toISOString().slice(0, 10)))
+                accion(c.id, () => {
+                  const hoy = new Date().toISOString().slice(0, 10);
+                  return c.cuotas > 0 ? pagarProximaCuota(compraId, hoy) : marcarPagada(compraId, hoy);
+                })
               }
             >
-              Pagar
+              {c.cuotas > 0 ? `Pagar cuota ${c.cuotaNumero ?? ""}`.trim() : "Pagar"}
             </Boton>
             )}
           </div>
@@ -648,7 +700,10 @@ function Semana({
     setTrabajando(true);
     try {
       for (const l of lineas) {
-        if (l.compraId) await marcarPagada(l.compraId, semana);
+        if (!l.compraId) continue;
+        // Con plan de cuotas se paga la próxima cuota; la factura se cierra sola al completar el total.
+        if (l.cuotas > 0) await pagarProximaCuota(l.compraId, semana);
+        else await marcarPagada(l.compraId, semana);
       }
       recargar();
     } catch (e) {
@@ -706,7 +761,7 @@ function Semana({
                     {nombreEstadoDocumento[l.estadoDocumento]}
                   </Chip>
                   <span className="w-32 text-right font-semibold tabular-nums text-ink">
-                    {formatearPesos(l.total)}
+                    {formatearPesos(montoAPagar(l))}
                   </span>
                 </li>
               ))}
@@ -751,7 +806,7 @@ export function agrupar(lineas: CuentaPorPagar[]): GrupoDePago[] {
       total: 0,
       lineas: [],
     };
-    grupo.total += l.total;
+    grupo.total += montoAPagar(l);
     grupo.lineas.push(l);
     mapa.set(clave, grupo);
   }
@@ -894,7 +949,10 @@ function Boton({
   );
 }
 
-const suma = (ls: CuentaPorPagar[]) => ls.reduce((t, l) => t + l.total, 0);
+/** Lo que falta pagar de cada línea (el total menos lo pagado en cuotas). */
+const suma = (ls: CuentaPorPagar[]) => ls.reduce((t, l) => t + l.saldo, 0);
+/** Lo que hay que transferir esa semana: la próxima cuota de cada plan, o lo que falte de la factura. */
+const sumaSemana = (ls: CuentaPorPagar[]) => ls.reduce((t, l) => t + montoAPagar(l), 0);
 
 function sumarDias(iso: string, dias: number) {
   const f = new Date(`${iso}T12:00:00`);
