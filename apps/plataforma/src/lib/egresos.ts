@@ -556,26 +556,38 @@ export async function cargarEgresosTerceros(): Promise<EgresoTercero[]> {
      como pagado solo lo que está pagado entero. Sin la migración, la consulta
      falla y todo sigue como antes. */
   const parcialDeCompra = new Map<string, number>();
-  const parcialDeOrden = new Map<string, number>();
   const { data: abiertas } = await supabase
     .from("compras")
-    .select("id, orden_id, pagado")
+    .select("id, pagado")
     .gt("pagado", 0)
-    .eq("estado_pago", "pendiente");
-  for (const c of abiertas ?? []) {
-    parcialDeCompra.set(c.id as string, Number(c.pagado));
-    if (c.orden_id) parcialDeOrden.set(c.orden_id as string, (parcialDeOrden.get(c.orden_id as string) ?? 0) + Number(c.pagado));
+    .eq("estado_pago", "pendiente")
+    .is("orden_id", null);
+  for (const c of abiertas ?? []) parcialDeCompra.set(c.id as string, Number(c.pagado));
+
+  /* Lo facturado y lo pagado de una OC, de sus FACTURAS reales (las mismas que ve
+     Pagos): lo que cobró el proveedor, con IVA y neto de notas de crédito, y lo
+     pagado entero o en cuotas. La vista calcula esto a precio de la orden, que no
+     es lo que dice la factura, y no sabe de cuotas. */
+  const deFacturas = new Map<string, { facturado: number; pagado: number }>();
+  const { data: facturas } = await supabase
+    .from("compras")
+    .select("orden_id, total, pagado, estado_pago, notas_credito(total)")
+    .not("orden_id", "is", null)
+    .neq("estado_pago", "anulada");
+  for (const c of (facturas ?? []) as unknown as { orden_id: string; total: number; pagado: number | null; estado_pago: string; notas_credito: { total: number }[] | null }[]) {
+    const facturado = Number(c.total) - (c.notas_credito ?? []).reduce((t, nc) => t + Number(nc.total), 0);
+    const pagado = c.estado_pago === "pagada" ? facturado : Math.min(Number(c.pagado ?? 0), facturado);
+    const previo = deFacturas.get(c.orden_id) ?? { facturado: 0, pagado: 0 };
+    deFacturas.set(c.orden_id, { facturado: previo.facturado + facturado, pagado: previo.pagado + pagado });
   }
-  // Una OC puede salir en varias filas (una por período): lo pagado se anota una sola vez.
+  // Una OC puede salir en varias filas (una por período): sus facturas se anotan una sola vez.
   const ordenesAnotadas = new Set<string>();
-  const parcialDe = (f: Record<string, unknown>) => {
-    if (f.origen === "compra") return parcialDeCompra.get(f.id as string) ?? 0;
+  const facturasDe = (f: Record<string, unknown>) => {
     const orden = f.orden_id as string | null;
-    if (f.origen === "orden" && orden && !ordenesAnotadas.has(orden)) {
-      ordenesAnotadas.add(orden);
-      return parcialDeOrden.get(orden) ?? 0;
-    }
-    return 0;
+    if (f.origen !== "orden" || !orden || !deFacturas.has(orden)) return null;
+    if (ordenesAnotadas.has(orden)) return { facturado: 0, pagado: 0 };
+    ordenesAnotadas.add(orden);
+    return deFacturas.get(orden)!;
   };
 
   return (data ?? []).map((f: Record<string, unknown>) => ({
@@ -608,8 +620,11 @@ export async function cargarEgresosTerceros(): Promise<EgresoTercero[]> {
     netoRecibido: Number(f.neto_recibido ?? 0),
     netoFacturado: Number(f.neto_facturado ?? 0),
     totalFacturado: Number(f.total_facturado ?? 0),
-    totalPagado: Number(f.total_pagado ?? 0) + parcialDe(f),
-  }));
+    totalPagado: Number(f.total_pagado ?? 0) + (f.origen === "compra" ? parcialDeCompra.get(f.id as string) ?? 0 : 0),
+  })).map((e, i) => {
+    const real = facturasDe((data ?? [])[i] as Record<string, unknown>);
+    return real ? { ...e, totalFacturado: real.facturado, totalPagado: real.pagado } : e;
+  });
 }
 
 /**

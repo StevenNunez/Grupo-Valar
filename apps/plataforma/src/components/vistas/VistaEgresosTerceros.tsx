@@ -576,7 +576,12 @@ function Contenidos({
             <>
               <Total colSpan={4}>Total</Total>
               <Total derecha>{formatearMonto(neto)}</Total>
-              <Total derecha>{formatearMonto(total)}</Total>
+              <Total derecha>
+                {formatearMonto(total)}
+                {(filtro === "porPagar" || filtro === "vencidos") && (
+                  <span className="mt-0.5 block text-xs font-normal text-ink-soft">por pagar {formatearMonto(sumaPorPagar(contables))}</span>
+                )}
+              </Total>
               <Total />
             </>
           }
@@ -710,7 +715,15 @@ const columnas = (
     clave: "total",
     titulo: "Total",
     derecha: true,
-    celda: (e) => <span className="font-semibold text-ink">{formatearMonto(e.total)}</span>,
+    celda: (e) => (
+      <>
+        <span className="font-semibold text-ink">{formatearMonto(e.total)}</span>
+        {/* Pagada en parte (cuotas): lo que falta, no el total de la factura. */}
+        {debe(e) && !e.rendidoPor && e.totalPagado > 0 && (
+          <span className="mt-0.5 block text-xs text-ink-soft">pagado {formatearMonto(e.totalPagado)} · por pagar {formatearMonto(montoPorPagar(e))}</span>
+        )}
+      </>
+    ),
   },
   {
     clave: "acciones",
