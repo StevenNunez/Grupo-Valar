@@ -127,6 +127,9 @@ export function FormularioCompra({
   /* El IVA sigue a las líneas mientras no se escriba a mano: hay facturas con
      redondeos del proveedor que no dan exactamente lo calculado. */
   const [ivaTocado, setIvaTocado] = useState(editando);
+  /* Un gasto exento (boleta, honorarios, pasajes) va sin IVA aunque la categoría lo lleve. Una compra
+     guardada con neto y sin IVA se abre como exenta. */
+  const [exento, setExento] = useState(compra !== null && compra.neto > 0 && compra.iva === 0);
   const [confirmando, setConfirmando] = useState(false);
   const [errorBorrado, setErrorBorrado] = useState<string | null>(null);
   const [borrando, setBorrando] = useState(false);
@@ -171,7 +174,7 @@ export function FormularioCompra({
   const afectaIva = (id: string) => categorias.find((c) => c.id === id)?.afectaIva ?? true;
   const neto = lineas.reduce((t, l) => t + netoLinea(l), 0);
   const ivaCalculado = lineas.reduce((t, l) => t + (afectaIva(l.categoria_id) ? Math.round(netoLinea(l) * 0.19) : 0), 0);
-  const iva = ivaTocado ? f.datos.iva : ivaCalculado;
+  const iva = exento ? 0 : ivaTocado ? f.datos.iva : ivaCalculado;
 
   /* El presupuesto de cada categoría del documento, con lo que ya lleva en el
      mes sin contar esta compra. Es el semáforo de desviación de la planilla. */
@@ -439,19 +442,37 @@ export function FormularioCompra({
           </section>
 
           <Campos>
-            <CampoDinero
-              etiqueta="IVA del documento"
-              ayuda={
-                ivaTocado && iva !== ivaCalculado
-                  ? `Según las categorías serían ${formatearPesos(ivaCalculado)}. Se guarda lo que dice la factura.`
-                  : "Se calcula con las categorías. Corrígelo si la factura dice otra cosa."
-              }
-              valor={iva}
-              alCambiar={(v) => {
-                setIvaTocado(true);
-                f.cambiar("iva", v);
-              }}
-            />
+            {exento ? (
+              <div className="rounded-xl bg-mist/50 px-4 py-3 text-sm text-ink-soft">
+                <p className="font-semibold text-ink">Sin IVA</p>
+                <p className="mt-0.5 text-xs">Gasto exento: el total es igual al neto.</p>
+              </div>
+            ) : (
+              <CampoDinero
+                etiqueta="IVA del documento"
+                ayuda={
+                  ivaTocado && iva !== ivaCalculado
+                    ? `Según las categorías serían ${formatearPesos(ivaCalculado)}. Se guarda lo que dice la factura.`
+                    : "Se calcula con las categorías. Corrígelo si la factura dice otra cosa."
+                }
+                valor={iva}
+                alCambiar={(v) => {
+                  setIvaTocado(true);
+                  f.cambiar("iva", v);
+                }}
+              />
+            )}
+            <Ancho>
+              <label className="flex items-center gap-2 text-sm text-ink">
+                <input
+                  type="checkbox"
+                  checked={exento}
+                  onChange={(e) => setExento(e.target.checked)}
+                  className="h-4 w-4 shrink-0 rounded border-mist-deep accent-cyan"
+                />
+                Exento o boleta (sin IVA)
+              </label>
+            </Ancho>
             <div className="flex items-baseline justify-between gap-4 self-end rounded-xl border-2 border-ink bg-white px-4 py-3">
               <span className="font-display text-sm font-semibold uppercase tracking-[0.12em] text-ink">Total</span>
               <span className="font-display text-xl font-semibold tabular-nums text-ink">{formatearPesos(neto + iva)}</span>

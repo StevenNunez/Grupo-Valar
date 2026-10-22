@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnalisisGrafico } from "./AnalisisGrafico";
 import { InformeImprimible } from "./InformeImprimible";
+import { InformativosDelContrato } from "./InformativosDelContrato";
+import { cargarInformativos, sumarInformativos } from "@/lib/informativos-contrato";
 import { Chip } from "./ui/Chip";
 import { BotonImprimir, Impresion } from "./ui/Impresion";
 import { Tabla, Total, type Columna } from "./ui/Tabla";
@@ -214,6 +216,11 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
       ? vista.periodo
       : periodoInicial(datos);
 
+  /* Un contrato cerrado ya no tiene un mes «a medias»: su última venta puede caer en el mes en
+     curso (p. ej. el último estado de pago) y también cuenta, para que el Dashboard coincida con
+     su ficha de cierre. Un contrato vigente sigue sin contar el mes corriente. */
+  const delMesEnCursoDeCerrado = (f: FilaMes) => cerradosIds.has(f.padreId ?? f.contratoId) && f.periodo >= mesEnCurso();
+
   const recortarPeriodo = (origen: FilaMes[], porUnidades: boolean) => {
     let base = origen;
     if (porUnidades && unidades) {
@@ -222,12 +229,12 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
     if (esMes(periodo)) {
       base = base.filter((f) => f.periodo === mesDe(periodo));
     } else if (periodo === "todo") {
-      base = base.filter((f) => periodosCerrados.includes(f.periodo));
+      base = base.filter((f) => periodosCerrados.includes(f.periodo) || delMesEnCursoDeCerrado(f));
     } else {
       const meses = (
         !(porUnidades && unidades) ? periodosCerrados : [...new Set(base.map((f) => f.periodo).filter((p) => periodosCerrados.includes(p)))].sort()
       ).slice(-Number(periodo));
-      base = base.filter((f) => meses.includes(f.periodo));
+      base = base.filter((f) => meses.includes(f.periodo) || delMesEnCursoDeCerrado(f));
     }
     return base;
   };
@@ -278,6 +285,16 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
     const filas = (datos.activosDeContratos ?? []).filter((f) => cerradosIds.has(f.contratoId) && meses.includes(f.periodo.slice(0, 7)));
     return { total: filas.reduce((t, f) => t + f.neto, 0), contratos: [...new Set(filas.map((f) => f.contratoId))].length };
   }, [datos.activosDeContratos, cerradosIds, periodo, periodosCerrados]);
+
+  /* Por cobrar, activos y por pagar a proveedores de los contratos a la vista: informativos, no
+     dependen del período. Un extra: si falla, el Dashboard sale igual sin ellos. */
+  const informativos = useConsulta(cargarInformativos, `${usuario.id}:${usuario.empresa}:informativos-v1`);
+  const informativosVisibles = useMemo(() => {
+    if (soloOficina || informativos.estado.estado !== "listo") return null;
+    const ids = new Set(mesesAlcance.map((f) => f.padreId ?? f.contratoId));
+    const enVista = [...ids].filter((id) => !unidades || unidades.some((u) => u.split("#")[0] === id));
+    return sumarInformativos(informativos.estado.datos, enVista);
+  }, [informativos.estado, mesesAlcance, unidades, soloOficina]);
 
   const total = sumar(filas);
   const operativosOficina = totalOficina(oficinaVisible.filter((f) => f.categoria !== "activos")) + personalOficina;
@@ -378,6 +395,8 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
           },
         ]}
       />
+
+      {informativosVisibles && <InformativosDelContrato info={informativosVisibles} />}
 
       <IndicadoresParalelos filas={oficinaVisible} personal={personalOficina} margenContratos={total.margen} finiquitos={finiquitos + finiquitosOficina} conOficina={conOficina} activosDeContratos={activosDeCerrados} />
 

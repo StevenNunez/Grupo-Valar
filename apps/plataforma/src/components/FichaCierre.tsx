@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { PanelFiniquitos } from "./Finiquitos";
+import { InformativosDelContrato } from "./InformativosDelContrato";
 import { Dialogo } from "./ui/Formulario";
 import { Contenido } from "./ui/Vista";
 import { useConsulta } from "@/lib/consulta";
@@ -78,6 +79,11 @@ export function FichaCierre({
           {(d) => (
             <>
               <Cifras d={d} />
+              {d.informativos && (
+                <div className="mt-4">
+                  <InformativosDelContrato info={d.informativos} />
+                </div>
+              )}
 
               <section className="mt-6" aria-labelledby="cierre-meses">
                 <h3 id="cierre-meses" className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft">

@@ -5,6 +5,7 @@ import { cargarFiniquitos, type Finiquito } from "./finiquitos";
 import { cargarCategorias, type Categoria } from "./categorias";
 import { cargarContratosBreve, type ContratoBreve } from "./contratos";
 import { actualizar } from "./crud";
+import { cargarInformativos, type InformativosContrato } from "./informativos-contrato";
 
 /**
  * Cierre económico de un contrato.
@@ -32,14 +33,18 @@ export type DatosCierre = {
   listaFiniquitos: Finiquito[];
   contratos: ContratoBreve[];
   categorias: Categoria[];
+  /** Por cobrar, activos y por pagar a proveedores: informativos, no entran al resultado. */
+  informativos: InformativosContrato | null;
 };
 
 export async function cargarCierre(contratoId: string): Promise<DatosCierre> {
-  const [resultado, finiquitos, contratos, categorias] = await Promise.all([
+  const [resultado, finiquitos, contratos, categorias, informativos] = await Promise.all([
     supabase.from("resultado_por_anexo").select("periodo, venta, costo, reembolsable").eq("contrato_id", contratoId),
     cargarFiniquitos("contratos"),
     cargarContratosBreve(),
     cargarCategorias(),
+    /* Un extra: si falla, la ficha sale igual sin ellos. */
+    cargarInformativos().then((m) => m.get(contratoId) ?? null).catch(() => null),
   ]);
   if (resultado.error) throw new Error(resultado.error.message);
 
@@ -73,6 +78,7 @@ export async function cargarCierre(contratoId: string): Promise<DatosCierre> {
     listaFiniquitos,
     contratos,
     categorias,
+    informativos,
   };
 }
 
