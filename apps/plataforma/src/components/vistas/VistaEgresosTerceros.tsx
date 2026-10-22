@@ -45,7 +45,7 @@ import { diasHastaFecha, formatearFecha, formatearMonto, mesLargo, enPeriodo, gr
  * apagados según lo que se elija arriba, que es peor que tener dos botones.
  */
 
-type Filtrado = "todos" | "compras" | "ordenes" | "servicios" | "reembolsos" | "recurrentes" | "sinFactura" | "porPagar" | "vencidos" | "pagados" | "activos";
+type Filtrado = "todos" | "compras" | "ordenes" | "servicios" | "reembolsos" | "recurrentes" | "sinFactura" | "porPagar" | "vencidos" | "pagados" | "activos" | "arriendos";
 
 /* Filtros secundarios; los primarios son el contrato y el mes. */
 const opciones: { id: Filtrado; titulo: string }[] = [
@@ -60,7 +60,11 @@ const opciones: { id: Filtrado; titulo: string }[] = [
   { id: "vencidos", titulo: "Vencidos" },
   { id: "pagados", titulo: "Pagados" },
   { id: "activos", titulo: "Activos" },
+  { id: "arriendos", titulo: "Arriendos" },
 ];
+
+/** Un arriendo: un servicio de arriendo de equipos, o lo que está en una categoría o línea que se llama así. */
+const esArriendo = (e: EgresoTercero) => e.clase === "arriendo" || /arriendo/i.test(e.categoria) || /^s*arriendo/i.test(e.detalle);
 
 /** Una compra o servicio anulado se ve en la lista, pero no suma ni resta. */
 const cuenta = (e: EgresoTercero) => e.estadoPago !== "anulada";
@@ -466,6 +470,7 @@ function Contenidos({
       : filtro === "vencidos" ? filas.filter(vencido)
       : filtro === "pagados" ? filas.filter((e) => !e.rendidoPor && e.estadoPago === "pagada")
       : filtro === "activos" ? filas.filter((e) => e.tipo === "activo")
+      : filtro === "arriendos" ? filas.filter(esArriendo)
       : filas;
     /* Buscar recorta la lista, las tarjetas y el total: se ve cuánto suma lo buscado. */
     return delEstatus.filter((e) =>
@@ -482,6 +487,7 @@ function Contenidos({
   const ordenes = contables.filter((e) => e.origen === "orden");
   const servicios = contables.filter((e) => e.origen === "servicio");
   const porDevolver = contables.filter((e) => e.rendidoPor && e.estadoPago !== "pagada");
+  const arriendos = contables.filter(esArriendo);
   const porPagar = contables.filter(debe);
   const pagoVencido = porPagar.filter(vencido);
   const sinDocumento = contables.filter(sinFactura);
@@ -501,7 +507,7 @@ function Contenidos({
           {
             etiqueta: "Gasto total",
             valor: formatearMonto(suma(contables)),
-            nota: `${contables.length} movimientos · órdenes ${formatearMonto(suma(ordenes))} · compras ${formatearMonto(suma(compras))} · servicios ${formatearMonto(suma(servicios))}. La OC cuenta desde que se emite${anuladas ? ` · ${anuladas} anulada${anuladas === 1 ? "" : "s"} no suma${anuladas === 1 ? "" : "n"}` : ""}`,
+            nota: `${contables.length} movimientos · órdenes ${formatearMonto(suma(ordenes))} · compras ${formatearMonto(suma(compras))} · servicios ${formatearMonto(suma(servicios))}. La OC cuenta desde que se emite${arriendos.length ? ` · arriendos ${formatearMonto(suma(arriendos))} (${arriendos.length})` : ""}${anuladas ? ` · ${anuladas} anulada${anuladas === 1 ? "" : "s"} no suma${anuladas === 1 ? "" : "n"}` : ""}`,
           },
           {
             etiqueta: "Pendiente de pago",

@@ -186,6 +186,7 @@ function traducir(mensaje: string) {
   if (/items_recibida_no_supera_pedida/.test(mensaje)) return "Se está recibiendo más de lo pedido en alguna línea.";
   if (/row-level security|permission denied/i.test(mensaje)) return "Tu acceso no permite registrar esto en este contrato.";
   if (/duplicate key/i.test(mensaje)) return "Ya existe un documento con ese número.";
+  if (/corregir_factura_oc/.test(mensaje) && /exist|schema cache/i.test(mensaje)) return "Falta aplicar la migración 0101 en la base.";
   return mensaje;
 }
 
@@ -235,6 +236,27 @@ export async function registrarFacturaOC(datos: {
   return llamar<string>("registrar_factura_oc", {
     p_id: id,
     p_orden_id: datos.ordenId,
+    p_documento: datos.documento,
+    p_fecha_factura: datos.fechaFactura,
+    p_vencimiento: datos.vencimiento,
+    p_neto: datos.neto,
+    p_iva: datos.iva,
+    p_lineas: datos.lineas,
+  });
+}
+
+/** Cambia las líneas, el N° y el monto de una factura ya registrada (0101), en la misma fila y con sus adjuntos. */
+export async function corregirFacturaOC(datos: {
+  compraId: string;
+  documento: string;
+  fechaFactura: string;
+  vencimiento: string | null;
+  neto: number;
+  iva: number;
+  lineas: CantidadPorLinea;
+}) {
+  return llamar<string>("corregir_factura_oc", {
+    p_compra_id: datos.compraId,
     p_documento: datos.documento,
     p_fecha_factura: datos.fechaFactura,
     p_vencimiento: datos.vencimiento,

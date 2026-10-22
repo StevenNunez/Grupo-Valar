@@ -11,6 +11,7 @@ import {
   cargarCiclo,
   cerrable,
   cerrarSaldo,
+  corregirFacturaOC,
   facturable,
   registrarFacturaOC,
   registrarNotaCredito,
@@ -36,7 +37,7 @@ import { usePuede, useUsuario } from "@/lib/sesion";
  * corresponden en cada caso para que casi nunca haya que teclearlas.
  */
 
-type Modo = "ver" | "recibir" | "facturar" | "nc" | "cerrar";
+type Modo = "ver" | "recibir" | "facturar" | "corregir" | "nc" | "cerrar";
 
 const hoy = () => new Date().toISOString().slice(0, 10);
 const sumarDias = (fecha: string, dias: number) => {
@@ -61,6 +62,8 @@ export function CicloOrden({
 }) {
   const { estado, recargar } = useConsulta(() => cargarCiclo(orden.id));
   const [modo, setModo] = useState<Modo>(modoInicial);
+  /* La factura que se está corrigiendo (modo «corregir»). */
+  const [facturaCorregida, setFacturaCorregida] = useState<FacturaCiclo | null>(null);
   const [adjuntos, setAdjuntos] = useState<{ tabla: string; id: string; titulo: string } | null>(null);
   // Los cuatro siempre, en el mismo orden: son hooks y no se pueden cortar con ||.
   const registraRecepcion = usePuede("recepcion.registrar");
@@ -104,6 +107,7 @@ export function CicloOrden({
     ver: `${orden.numero} · ${orden.proveedor}`,
     recibir: `Recepción · ${orden.numero}`,
     facturar: `Factura contra ${orden.numero}`,
+    corregir: `Corregir factura ${facturaCorregida?.documento ?? ""} · ${orden.numero}`,
     nc: `Nota de crédito · ${orden.numero}`,
     cerrar: `Cerrar saldo · ${orden.numero}`,
   };
@@ -116,7 +120,7 @@ export function CicloOrden({
           {estado.estado === "error" ? estado.mensaje : "Cargando la orden…"}
         </p>
       ) : modo === "ver" ? (
-        <Resumen orden={orden} ciclo={estado.datos} alModo={setModo} alAdjuntos={setAdjuntos}
+        <Resumen orden={orden} ciclo={estado.datos} alModo={setModo} alCorregir={(f) => { setFacturaCorregida(f); setModo("corregir"); }} alAdjuntos={setAdjuntos}
           puedeRecibir={puedeRecibir} puedeFacturar={puedeFacturar} alCerrar={alCerrar}
           avisoPagnol={avisoPagnol} alCambio={hecho}
           pagnolOC={pagnolOC} puedeAnunciar={emiteOrdenes || cargaGestion} alCambioPagnol={() => { setVersionPagnol((v) => v + 1); recargar(); alCambiar(); }} />
@@ -126,6 +130,8 @@ export function CicloOrden({
           alVolver={() => setModo("ver")} alHecho={hecho} />
       ) : modo === "facturar" ? (
         <FormFactura orden={orden} ciclo={estado.datos} alVolver={() => setModo("ver")} alHecho={hecho} />
+      ) : modo === "corregir" && facturaCorregida ? (
+        <FormFactura orden={orden} ciclo={estado.datos} factura={facturaCorregida} alVolver={() => setModo("ver")} alHecho={hecho} />
       ) : modo === "nc" ? (
         <FormNotaCredito ciclo={estado.datos} alVolver={() => setModo("ver")} alHecho={hecho} />
       ) : (
@@ -139,10 +145,12 @@ export function CicloOrden({
 
 type AvisoPagnol = { tono: "info" | "aviso"; texto: string } | null;
 
-function Resumen({ orden, ciclo, alModo, alAdjuntos, puedeRecibir, puedeFacturar, alCerrar, avisoPagnol, alCambio, pagnolOC, puedeAnunciar, alCambioPagnol }: {
+function Resumen({ orden, ciclo, alModo, alCorregir, alAdjuntos, puedeRecibir, puedeFacturar, alCerrar, avisoPagnol, alCambio, pagnolOC, puedeAnunciar, alCambioPagnol }: {
   orden: Orden;
   ciclo: Ciclo;
   alModo: (m: Modo) => void;
+  /** Abre una factura para cambiar qué líneas cubre, su N° o su monto. */
+  alCorregir: (f: FacturaCiclo) => void;
   alAdjuntos: (a: { tabla: string; id: string; titulo: string }) => void;
   puedeRecibir: boolean;
   puedeFacturar: boolean;
@@ -301,6 +309,10 @@ function Resumen({ orden, ciclo, alModo, alAdjuntos, puedeRecibir, puedeFacturar
                     </span>
                     <div className="flex shrink-0 items-center gap-2">
                       <Chip tono={f.estadoPago === "pagada" ? "bueno" : "neutro"}>{f.estadoPago === "pagada" ? "Pagada" : "Por pagar"}</Chip>
+                      {puedeFacturar && f.estadoPago !== "pagada" && f.notas.length === 0 && (
+                        <button type="button" onClick={() => alCorregir(f)}
+                          className="text-xs font-semibold text-cyan-deep hover:underline">Corregir</button>
+                      )}
                       <button type="button" onClick={() => alAdjuntos({ tabla: "compras", id: f.id, titulo: `Factura ${f.documento}` })}
                         className="text-xs font-semibold text-cyan-deep hover:underline">PDF</button>
                     </div>
@@ -424,12 +436,22 @@ function CantidadesPorLinea({ lineas, cantidades, alCambiar, maximo, columna }: 
 }) {
   const visibles = lineas.filter((l) => maximo(l) > 0);
   const neto = visibles.reduce((t, l) => t + (cantidades[l.id] ?? 0) * l.precioUnitario, 0);
+  const marcadas = visibles.filter((l) => (cantidades[l.id] ?? 0) > 0).length;
+  // Marcar una línea la toma entera (hasta su máximo); la cantidad se puede bajar a mano para una parcial.
+  const marcar = (l: LineaCiclo, si: boolean) => alCambiar({ ...cantidades, [l.id]: si ? maximo(l) : 0 });
+  const todas = (si: boolean) => alCambiar({ ...cantidades, ...Object.fromEntries(visibles.map((l) => [l.id, si ? maximo(l) : 0])) });
   return (
     <Ancho>
+      <div className="mb-2 flex flex-wrap items-center gap-3 text-sm text-ink-soft">
+        <span>{marcadas} de {visibles.length} {visibles.length === 1 ? "línea" : "líneas"} en esta {columna === "Factura" ? "factura" : "operación"}</span>
+        <button type="button" onClick={() => todas(true)} className="font-semibold text-cyan-deep hover:underline">Marcar todas</button>
+        <button type="button" onClick={() => todas(false)} className="font-semibold text-cyan-deep hover:underline">Quitar todas</button>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[34rem] border-collapse text-sm">
           <thead>
             <tr className="border-b border-mist text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
+              <th className="w-8 py-2 pr-2"><span className="sr-only">Incluir</span></th>
               <th className="py-2 pr-3">Línea</th>
               <th className="py-2 pr-3 text-right">Hasta</th>
               <th className="w-28 py-2 pr-3 text-right">{columna}</th>
@@ -439,6 +461,10 @@ function CantidadesPorLinea({ lineas, cantidades, alCambiar, maximo, columna }: 
           <tbody>
             {visibles.map((l) => (
               <tr key={l.id} className="border-b border-mist last:border-0">
+                <td className="py-2 pr-2">
+                  <input type="checkbox" aria-label={`Incluir: ${l.descripcion}`} checked={(cantidades[l.id] ?? 0) > 0}
+                    onChange={(e) => marcar(l, e.target.checked)} className="h-4 w-4 accent-cyan" />
+                </td>
                 <td className="py-2 pr-3 text-ink">{l.descripcion}</td>
                 <td className="py-2 pr-3 text-right tabular-nums text-ink-soft">{formatearNumero(maximo(l))} {l.unidad}</td>
                 <td className="py-2 pr-3">
@@ -546,16 +572,23 @@ function FormRecepcion({ orden, ciclo, alVolver, alHecho }: { orden: Orden; cicl
 
 /* ── Factura ──────────────────────────────────────────────────────────────── */
 
-function FormFactura({ orden, ciclo, alVolver, alHecho }: { orden: Orden; ciclo: Ciclo; alVolver: () => void; alHecho: () => void }) {
+function FormFactura({ orden, ciclo, factura, alVolver, alHecho }: { orden: Orden; ciclo: Ciclo; factura?: FacturaCiclo; alVolver: () => void; alHecho: () => void }) {
   const plazo = diasDe(orden.condicionesPago);
-  // Se propone lo que llegó y falta facturar: es lo que el proveedor debería cobrar.
-  const [cantidades, setCantidades] = useState(() => inicialDe(ciclo.lineas, (l) => Math.min(l.recibidaSinFacturar, facturable(l))));
+  // Parte sin nada marcado: la factura trae solo algunas líneas, y se marcan las que trae.
+  // Si todas partieran marcadas, la primera factura se llevaría la orden entera y no quedaría cómo agregar las demás.
+  // Al corregir, parte con lo que la factura ya cubre; y cada línea puede subir hasta lo que cubre + lo que aún no se factura.
+  const propias = new Map((factura?.lineas ?? []).map((x) => [x.itemId, x.cantidad]));
+  const maximo = (l: LineaCiclo) => facturable(l) + (propias.get(l.id) ?? 0);
+  const [cantidades, setCantidades] = useState(() => inicialDe(ciclo.lineas, (l) => propias.get(l.id) ?? 0));
   const sugerido = netoDe(ciclo.lineas, cantidades);
-  const f = useFormulario({ documento: "", fechaFactura: hoy(), vencimiento: sumarDias(hoy(), plazo), neto: sugerido, iva: Math.round(sugerido * 0.19) });
+  const f = useFormulario(factura
+    ? { documento: factura.documento, fechaFactura: factura.fechaFactura ?? hoy(), vencimiento: factura.vencimiento ?? "", neto: factura.neto, iva: factura.iva }
+    : { documento: "", fechaFactura: hoy(), vencimiento: sumarDias(hoy(), plazo), neto: sugerido, iva: Math.round(sugerido * 0.19) });
+  // Una factura que se corrige conserva su monto hasta que se toque una línea: ahí sigue a las líneas, salvo que se escriba otro.
   const [netoTocado, setNetoTocado] = useState(false);
   // El IVA no se escribe: el 19% del neto, o nada si la factura es exenta.
   // Una orden sin IVA (exámenes médicos, capacitación) llega facturada exenta.
-  const [exento, setExento] = useState(orden.neto > 0 && orden.total === orden.neto);
+  const [exento, setExento] = useState(factura ? factura.neto > 0 && factura.iva === 0 : orden.neto > 0 && orden.total === orden.neto);
   const netoLineas = netoDe(ciclo.lineas, cantidades);
   const noLlegado = ciclo.lineas.reduce((t, l) => t + Math.max(0, (cantidades[l.id] ?? 0) - l.recibidaSinFacturar) * l.precioUnitario, 0);
 
@@ -571,8 +604,15 @@ function FormFactura({ orden, ciclo, alVolver, alHecho }: { orden: Orden; ciclo:
   return (
     <form onSubmit={(e) => {
       e.preventDefault();
-      const r = lineasAEnviar(ciclo.lineas, cantidades, facturable);
+      const r = lineasAEnviar(ciclo.lineas, cantidades, maximo);
       if (r.error) return f.setError(r.error);
+      if (factura) {
+        return f.enviar(() => corregirFacturaOC({
+          compraId: factura.id, documento: f.datos.documento,
+          fechaFactura: f.datos.fechaFactura, vencimiento: f.datos.vencimiento || null,
+          neto: f.datos.neto, iva: ivaDe(f.datos.neto, !exento), lineas: r.filas!,
+        }).then(() => undefined), alHecho);
+      }
       f.enviar(() => registrarFacturaOC({
         ordenId: orden.id, contratoId: orden.contratoId, documento: f.datos.documento,
         fechaFactura: f.datos.fechaFactura, vencimiento: f.datos.vencimiento || null,
@@ -585,7 +625,7 @@ function FormFactura({ orden, ciclo, alVolver, alHecho }: { orden: Orden; ciclo:
           alCambiar={(v) => f.setDatos((d) => ({ ...d, fechaFactura: v, vencimiento: v ? sumarDias(v, plazo) : d.vencimiento }))} />
         <CampoFecha etiqueta="Vence" ayuda={`${plazo} días desde la factura, según la forma de pago de la orden.`} {...f.campo("vencimiento")} />
         <div />
-        <CantidadesPorLinea lineas={ciclo.lineas} cantidades={cantidades} alCambiar={cambiarCantidades} maximo={facturable} columna="Factura" />
+        <CantidadesPorLinea lineas={ciclo.lineas} cantidades={cantidades} alCambiar={cambiarCantidades} maximo={maximo} columna="Factura" />
         {noLlegado > 0 && (
           <Ancho>
             <Aviso tono="aviso">
@@ -599,7 +639,7 @@ function FormFactura({ orden, ciclo, alVolver, alHecho }: { orden: Orden; ciclo:
           valor={f.datos.neto} alCambiar={(v) => { setNetoTocado(true); f.setDatos((d) => ({ ...d, neto: v, iva: Math.round(v * 0.19) })); }} />
         <ResumenIva neto={f.datos.neto} afecto={!exento} alCambiarAfecto={(v) => setExento(!v)} />
       </Campos>
-      <Pie error={f.error} guardando={f.guardando} alCancelar={alVolver} textoGuardar="Registrar factura" />
+      <Pie error={f.error} guardando={f.guardando} alCancelar={alVolver} textoGuardar={factura ? "Guardar cambios" : "Registrar factura"} />
     </form>
   );
 }

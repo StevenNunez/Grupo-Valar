@@ -62,6 +62,8 @@ export function VistaActivos() {
           const conValor = propios.filter((f) => f.valor !== null && f.valor > 0);
           const porIdentificar = filas.filter((f) => !f.identificado);
           const sinValor = propios.filter((f) => !f.valor);
+          const arrendados = filas.filter((f) => f.propiedad === "arrendado");
+          const costoArriendos = arrendados.reduce((t, f) => t + (f.valor ?? 0), 0);
           const patrimonio = conValor.reduce((t, f) => t + (f.valor ?? 0), 0);
 
           // Dónde están: lo que se ve en las tarjetas.
@@ -93,20 +95,20 @@ export function VistaActivos() {
             && (donde === "todos" || dondeDe(f) === donde)
             && (origen === "todos" || (origen === SIN_IDENTIFICAR ? !f.origen : f.origen === origen))
             && coincide(texto, [f.codigo, f.nombre, f.observaciones, nombre(f.origen), nombre(f.contratoUbicacion)]));
-          const seleccion = visibles.filter((f) => elegidos.has(f.pagnolId));
+          const seleccion = visibles.filter((f) => elegidos.has(f.clave));
           const todosElegidos = visibles.length > 0 && seleccion.length === visibles.length;
           const alternar = (id: string) => setElegidos((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
           const columnas: Columna<ActivoFila>[] = [
             ...(puedeEditar ? [{
               clave: "sel", titulo: "", ancho: "w-10",
-              celda: (f: ActivoFila) => <input type="checkbox" aria-label={`Elegir ${f.codigo}`} checked={elegidos.has(f.pagnolId)} onChange={() => alternar(f.pagnolId)} className="h-4 w-4 accent-cyan" />,
+              celda: (f: ActivoFila) => <input type="checkbox" aria-label={`Elegir ${f.codigo}`} checked={elegidos.has(f.clave)} onChange={() => alternar(f.clave)} className="h-4 w-4 accent-cyan" />,
             }] : []),
-            { clave: "codigo", titulo: "Activo", encabezado: true, celda: (f) => <div><span className="font-mono text-xs text-ink-soft">{f.codigo}</span><span className="block text-ink">{f.nombre}</span></div> },
+            { clave: "codigo", titulo: "Activo", encabezado: true, celda: (f) => <div><span className={`text-xs text-ink-soft ${f.pagnolId ? "font-mono" : ""}`}>{f.codigo}</span><span className="block text-ink">{f.nombre}</span></div> },
             { clave: "propiedad", titulo: "Propiedad", celda: (f) => <Chip tono={f.propiedad === "propio" ? "bueno" : "neutro"}>{propiedades.find((p) => p.id === f.propiedad)?.titulo}</Chip> },
-            { clave: "origen", titulo: "Comprado para", celda: (f) => f.origen ? <span>{nombre(f.origen)}{f.origenDeLaOrden && <span className="block text-xs text-ink-soft">de su orden de compra</span>}</span> : <span className="text-ink-soft">—</span> },
+            { clave: "origen", titulo: "Comprado para", celda: (f) => f.origen ? <span>{nombre(f.origen)}{f.origenDeLaOrden && <span className="block text-xs text-ink-soft">{f.pagnolId ? "de su orden de compra" : "de la compra"}</span>}</span> : <span className="text-ink-soft">—</span> },
             { clave: "donde", titulo: "Está en", celda: (f) => f.ubicacion === null ? <Chip tono="aviso">Por identificar</Chip> : <span>{tituloLugar(dondeDe(f))}</span> },
-            { clave: "valor", titulo: "Valor neto", derecha: true, celda: (f) => f.valor ? <span>{formatearPesos(f.valor)}{f.valorDe === "pagnol" && <span className="block text-xs text-ink-soft">de Pagnol</span>}</span> : <span className="text-ink-soft">Sin valor</span> },
+            { clave: "valor", titulo: "Valor neto", derecha: true, celda: (f) => f.valor ? <span>{formatearPesos(f.valor)}{f.valorDe !== "valar" && <span className="block text-xs text-ink-soft">{f.valorDe === "pagnol" ? "de Pagnol" : "de la compra"}</span>}</span> : <span className="text-ink-soft">Sin valor</span> },
             { clave: "fecha", titulo: "Compra", celda: (f) => f.fecha ? formatearFecha(f.fecha) : <span className="text-ink-soft">—</span> },
             { clave: "estado", titulo: "Estado", celda: (f) => estadosActivo[f.estado] ?? f.estado },
             ...(puedeEditar ? [{
@@ -120,6 +122,7 @@ export function VistaActivos() {
               <Resumen datos={[
                 { etiqueta: "Valor de los activos propios", valor: formatearMonto(patrimonio), nota: `${conValor.length} de ${propios.length} propios con valor · neto` },
                 { etiqueta: "Activos", valor: String(filas.length), nota: `${propios.length} propios · ${filas.filter((f) => f.propiedad === "arrendado").length} arrendados · ${filas.filter((f) => f.propiedad === "del_cliente").length} del cliente` },
+                { etiqueta: "Arriendos", valor: formatearMonto(costoArriendos), nota: `${arrendados.length} ${arrendados.length === 1 ? "activo arrendado" : "activos arrendados"} · costo neto, no suma al valor` },
                 { etiqueta: "Por identificar", valor: String(porIdentificar.length), nota: porIdentificar.length ? "Sin contrato de origen ni ubicación confirmados" : "Todos identificados", acento: porIdentificar.length ? "aviso" : "bueno" },
                 { etiqueta: "Propios sin valor", valor: String(sinValor.length), nota: sinValor.length ? "No suman al valor total hasta cargarles el costo" : "Todos con valor", acento: sinValor.length ? "aviso" : "bueno" },
               ]} />
@@ -173,7 +176,7 @@ export function VistaActivos() {
                 {puedeEditar && (
                   <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
                     <label className="inline-flex items-center gap-2 text-ink-soft">
-                      <input type="checkbox" checked={todosElegidos} onChange={() => setElegidos(todosElegidos ? new Set() : new Set(visibles.map((f) => f.pagnolId)))} className="h-4 w-4 accent-cyan" />
+                      <input type="checkbox" checked={todosElegidos} onChange={() => setElegidos(todosElegidos ? new Set() : new Set(visibles.map((f) => f.clave)))} className="h-4 w-4 accent-cyan" />
                       Elegir los {visibles.length} que se ven
                     </label>
                     {seleccion.length > 0 && (
@@ -183,7 +186,7 @@ export function VistaActivos() {
                     )}
                   </div>
                 )}
-                <Tabla filas={visibles} claveDe={(f) => f.pagnolId} columnas={columnas}
+                <Tabla filas={visibles} claveDe={(f) => f.clave} columnas={columnas}
                   vacio={texto.trim() ? "Ningún activo coincide con la búsqueda." : "No hay activos para este filtro."}
                   pie={<><Total colSpan={puedeEditar ? 5 : 4}>Valor neto de los propios que se ven</Total><Total derecha>{formatearPesos(visibles.filter(sumaAlPatrimonio).reduce((t, f) => t + (f.valor ?? 0), 0))}</Total><Total colSpan={puedeEditar ? 3 : 2} /></>} />
               </Panel>
@@ -192,9 +195,9 @@ export function VistaActivos() {
         }}
       </Contenido>
 
-      {edicion && <FormularioActivos key={edicion.pagnolId} filas={[edicion]} contratos={lista} alCerrar={() => setEdicion(null)} alGuardado={alGuardar} />}
+      {edicion && <FormularioActivos key={edicion.clave} filas={[edicion]} contratos={lista} alCerrar={() => setEdicion(null)} alGuardado={alGuardar} />}
       {masivo && activos.estado.estado === "listo" && (
-        <FormularioActivos key="masivo" filas={activos.estado.datos.filter((f) => elegidos.has(f.pagnolId))} contratos={lista} alCerrar={() => setMasivo(false)} alGuardado={alGuardar} />
+        <FormularioActivos key="masivo" filas={activos.estado.datos.filter((f) => elegidos.has(f.clave))} contratos={lista} alCerrar={() => setMasivo(false)} alGuardado={alGuardar} />
       )}
     </>
   );
@@ -229,6 +232,8 @@ function FormularioActivos({ filas, contratos, alCerrar, alGuardado }: {
   const d = f.datos;
   const contratosOpc = contratos.map((c) => ({ id: c.id as string, titulo: etiquetaContrato(c) }));
   const noCambia = (v: string) => v === SIN_CAMBIO;
+  // Un arriendo no se compra ni suma patrimonio: el formulario habla de arrendar, no de comprar.
+  const arriendo = d.propiedad === "arrendado";
 
   function guardar(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
@@ -259,23 +264,25 @@ function FormularioActivos({ filas, contratos, alCerrar, alGuardado }: {
     <Dialogo abierto alCerrar={alCerrar}
       titulo={uno ? `${uno.codigo} · ${uno.nombre}` : `Identificar ${filas.length} activos`}
       descripcion={uno
-        ? "Para qué contrato se compró, dónde está hoy, de quién es y cuánto costó. El valor de Pagnol se usa mientras no pongas uno."
+        ? (arriendo
+          ? "Es un arriendo: no suma al valor de la empresa. Indica para qué contrato se arrienda, dónde se usa hoy y cuánto cuesta."
+          : "Para qué contrato se compró, dónde está hoy, de quién es y cuánto costó. El valor de Pagnol se usa mientras no pongas uno.")
         : "Solo se cambia lo que elijas; lo demás queda como estaba en cada activo."}>
       <form onSubmit={guardar}>
         <Campos>
           <CampoSeleccion etiqueta="Propiedad" opciones={[...sinCambio, ...propiedades]} {...f.campo("propiedad")}
             ayuda="Solo los propios suman al valor. Un arriendo o un equipo del cliente se rastrea pero no es patrimonio." />
-          <CampoSeleccion etiqueta="Comprado para el contrato" opciones={[...sinCambio, { id: "", titulo: "— Ninguno —" }, ...contratosOpc]} {...f.campo("origen")}
-            ayuda="Para qué contrato se compró. No cambia aunque el activo se mueva." />
-          <CampoSeleccion etiqueta="Está hoy en" opciones={[...sinCambio, ...(uno && !uno.identificado ? [{ id: "", titulo: "— Elige —" }] : []), { id: "oficina_central", titulo: "Oficina Central" }, { id: "contrato", titulo: "Un contrato" }]} {...f.campo("ubicacion")} />
+          <CampoSeleccion etiqueta={arriendo ? "Arrendado para el contrato" : "Comprado para el contrato"} opciones={[...sinCambio, { id: "", titulo: "— Ninguno —" }, ...contratosOpc]} {...f.campo("origen")}
+            ayuda={arriendo ? "Para qué contrato se arrienda." : "Para qué contrato se compró. No cambia aunque el activo se mueva."} />
+          <CampoSeleccion etiqueta={arriendo ? "Se usa hoy en" : "Está hoy en"} opciones={[...sinCambio, ...(uno && !uno.identificado ? [{ id: "", titulo: "— Elige —" }] : []), { id: "oficina_central", titulo: "Oficina Central" }, { id: "contrato", titulo: "Un contrato" }]} {...f.campo("ubicacion")} />
           {(d.ubicacion === "contrato" || (noCambia(d.ubicacion) && uno === null)) && (
             <CampoSeleccion etiqueta="En el contrato" opciones={[{ id: "", titulo: "— Elige —" }, ...contratosOpc]} {...f.campo("contratoUbicacion")}
               ayuda={noCambia(d.ubicacion) ? "Solo se usa si cambias «Está hoy en» a «Un contrato»." : undefined} />
           )}
           {uno && <>
-            <CampoDinero etiqueta="Valor de compra (neto)" {...f.campo("valor")}
-              ayuda={uno.valorDe === "pagnol" && d.valor === 0 ? `Pagnol tiene ${formatearPesos(uno.valor ?? 0)}. Déjalo en 0 para usar ese.` : "En 0 se usa el de Pagnol, si tiene."} />
-            <CampoFecha etiqueta="Fecha de compra" {...f.campo("fecha")} />
+            <CampoDinero etiqueta={arriendo ? "Costo del arriendo (neto)" : "Valor de compra (neto)"} {...f.campo("valor")}
+              ayuda={uno.valorDe !== "valar" && d.valor === 0 && uno.valor ? `${uno.valorDe === "compra" ? "La compra tiene" : "Pagnol tiene"} ${formatearPesos(uno.valor)}. Déjalo en 0 para usar ese.` : "En 0 se usa el de Pagnol o el de la compra, si tiene."} />
+            <CampoFecha etiqueta={arriendo ? "Arrendado desde" : "Fecha de compra"} {...f.campo("fecha")} />
             <Ancho><CampoTexto etiqueta="Observaciones" {...f.campo("observaciones")} /></Ancho>
           </>}
         </Campos>
