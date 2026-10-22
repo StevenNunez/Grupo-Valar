@@ -65,6 +65,9 @@ export type FacturaCiclo = {
   neto: number;
   iva: number;
   estadoPago: string;
+  /** Plan de cuotas (0097): cuántas hay y cuántas ya se transfirieron. */
+  cuotas: number;
+  cuotasPagadas: number;
   lineas: { itemId: string; cantidad: number }[];
   notas: NotaCreditoCiclo[];
 };
@@ -110,6 +113,18 @@ export async function cargarCiclo(ordenId: string): Promise<CicloOrden> {
   for (const e of (envios.error ? [] : envios.data ?? []) as { recepcion_id: string; tipo: string; estado: string; error: string | null; external_ref: string }[]) {
     if (e.tipo !== "activo" && e.tipo !== "ingreso") continue;
     enviosPor.set(e.recepcion_id, [...(enviosPor.get(e.recepcion_id) ?? []), e]);
+  }
+  /* Las cuotas de cada factura. Sin la tabla (0097 sin aplicar) todo sale sin cuotas. */
+  const idsFactura = (facturas.data ?? []).map((f) => (f as unknown as { id: string }).id);
+  const cuotas = idsFactura.length
+    ? await supabase.from("pagos_factura").select("compra_id, fecha_pago").in("compra_id", idsFactura)
+    : { data: [], error: null };
+  const cuotasPor = new Map<string, { total: number; pagadas: number }>();
+  for (const q of (cuotas.error ? [] : cuotas.data ?? []) as { compra_id: string; fecha_pago: string | null }[]) {
+    const c = cuotasPor.get(q.compra_id) ?? { total: 0, pagadas: 0 };
+    c.total += 1;
+    if (q.fecha_pago) c.pagadas += 1;
+    cuotasPor.set(q.compra_id, c);
   }
   type Detalle = { item_id: string; cantidad: unknown }[] | null;
   const lineasDe = (d: Detalle) => (d ?? []).map((x) => ({ itemId: x.item_id, cantidad: n(x.cantidad) }));
@@ -166,6 +181,8 @@ export async function cargarCiclo(ordenId: string): Promise<CicloOrden> {
       neto: n(c.neto),
       iva: n(c.iva),
       estadoPago: c.estado_pago,
+      cuotas: cuotasPor.get(c.id)?.total ?? 0,
+      cuotasPagadas: cuotasPor.get(c.id)?.pagadas ?? 0,
       lineas: lineasDe(c.factura_items),
       notas: (c.notas_credito ?? []).map((nc) => ({
         id: nc.id,

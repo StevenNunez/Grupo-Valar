@@ -4,7 +4,7 @@ import { LogoMark } from "./Logo";
 import { FirmaTeoLabs } from "./FirmaTeoLabs";
 import { useEmpresa } from "@/lib/empresa-cliente";
 import { formatearFecha, formatearNumero, formatearPesos } from "@/lib/formato";
-import type { DescuentoDeOrden, Item, Orden } from "@/lib/ordenes";
+import type { DescuentoDeOrden, FirmasImpresas, Item, Orden } from "@/lib/ordenes";
 
 /**
  * La orden de compra lista para imprimir, con el mismo formato que Valar ya
@@ -15,7 +15,7 @@ import type { DescuentoDeOrden, Item, Orden } from "@/lib/ordenes";
  * hacer PDF y no necesita servidor. Las reglas de `@media print` de
  * `globals.css` esconden el resto de la aplicación y dejan solo esta hoja.
  */
-export function OrdenImprimible({ orden, items, descuento }: { orden: Orden; items: Item[]; descuento?: DescuentoDeOrden }) {
+export function OrdenImprimible({ orden, items, descuento, firmas }: { orden: Orden; items: Item[]; descuento?: DescuentoDeOrden; firmas?: FirmasImpresas | null }) {
   const datos = useEmpresa();
   const neto = items.reduce((t, i) => t + i.neto, 0);
   const iva = items.reduce((t, i) => t + i.iva, 0);
@@ -157,16 +157,23 @@ export function OrdenImprimible({ orden, items, descuento }: { orden: Orden; ite
         </div>
       )}
 
-      {/* Firmas */}
-      <div className="mt-12 grid grid-cols-3 gap-6 text-center text-xs">
+      {/* Firmas: las mismas cuatro que lleva el PDF, con la dibujada cuando existe. */}
+      <div className="mt-12 grid grid-cols-2 gap-6 text-center text-xs sm:grid-cols-4">
         {[
-          ["Solicitado por", orden.solicitadoPor],
-          ["Retira", orden.retira],
-          // Fijo: es el representante legal, no cambia por orden.
-          ["Autorizado por", datos.representante],
-        ].map(([etiqueta, nombre]) => (
+          ["Solicitado por", orden.solicitadoPor, null],
+          ["Retira", orden.retira, null],
+          // Quien envía la orden desde la plataforma.
+          ["Emite", orden.emisorNombre, firmas?.emite ?? null],
+          // Por defecto el representante legal; con una firma designada, esa persona.
+          ["Autorizado por", firmas?.autorizaNombre || datos.representante, firmas?.autoriza ?? null],
+        ].map(([etiqueta, nombre, imagen]) => (
           <div key={etiqueta as string}>
-            <div className="mx-auto h-12" />
+            <div className="mx-auto flex h-12 items-end justify-center">
+              {imagen && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={imagen as string} alt={`Firma de ${nombre || etiqueta}`} className="max-h-12 max-w-full object-contain" />
+              )}
+            </div>
             <p className="border-t border-ink pt-2 font-semibold">{nombre || "—"}</p>
             <p className="mt-0.5 text-ink-soft">{etiqueta}</p>
           </div>

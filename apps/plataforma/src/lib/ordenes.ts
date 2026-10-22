@@ -509,6 +509,21 @@ export async function enviarOrdenAlProveedor(
   }
 }
 
+export type FirmasImpresas = { emite: string | null; autoriza: string | null; autorizaNombre: string | null };
+
+/** Las firmas dibujadas para la hoja impresa. Sin ellas la hoja sale con la raya en blanco, como antes. */
+export async function cargarFirmasDeOrden(ordenId: string): Promise<FirmasImpresas | null> {
+  const t = await token();
+  if (!t) return null;
+  try {
+    const r = await fetch(`/api/ordenes/${encodeURIComponent(ordenId)}/firmas/`, { headers: { Authorization: `Bearer ${t}` } });
+    const j = (await r.json()) as Respuesta<FirmasImpresas>;
+    return j.ok ? j.datos : null;
+  } catch {
+    return null;
+  }
+}
+
 /** El PDF que va adjunto, para revisarlo antes de enviar. Se abre en otra pestaña. */
 export async function abrirPdfDeOrden(ordenId: string): Promise<string | null> {
   const t = await token();

@@ -308,8 +308,12 @@ function Resumen({ orden, ciclo, alModo, alCorregir, alAdjuntos, puedeRecibir, p
                       Factura {f.documento} · {formatearPesos(f.neto)} neto
                     </span>
                     <div className="flex shrink-0 items-center gap-2">
-                      <Chip tono={f.estadoPago === "pagada" ? "bueno" : "neutro"}>{f.estadoPago === "pagada" ? "Pagada" : "Por pagar"}</Chip>
-                      {puedeFacturar && f.estadoPago !== "pagada" && f.notas.length === 0 && (
+                      {f.estadoPago !== "pagada" && f.cuotasPagadas > 0 ? (
+                        <Chip tono="aviso">Pagada en parte · {f.cuotasPagadas} de {f.cuotas} cuotas</Chip>
+                      ) : (
+                        <Chip tono={f.estadoPago === "pagada" ? "bueno" : "neutro"}>{f.estadoPago === "pagada" ? "Pagada" : "Por pagar"}</Chip>
+                      )}
+                      {puedeFacturar && f.estadoPago !== "pagada" && f.cuotas === 0 && f.notas.length === 0 && (
                         <button type="button" onClick={() => alCorregir(f)}
                           className="text-xs font-semibold text-cyan-deep hover:underline">Corregir</button>
                       )}

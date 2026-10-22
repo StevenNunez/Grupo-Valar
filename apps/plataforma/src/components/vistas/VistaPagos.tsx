@@ -697,6 +697,34 @@ function DialogoPagar({ linea, corrigiendo, alCerrar, alConfirmar }: {
   );
 }
 
+/** Lo mismo para toda la semana: una sola fecha real para todas las transferencias. */
+function DialogoPagarTodo({ cantidad, semana, alCerrar, alConfirmar }: {
+  cantidad: number;
+  semana: string;
+  alCerrar: () => void;
+  alConfirmar: (fecha: string) => Promise<void>;
+}) {
+  const hoy = new Date().toISOString().slice(0, 10);
+  // La semana programada puede ser futura; el pago real no.
+  const f = useFormulario({ fecha: semana > hoy ? hoy : semana });
+  return (
+    <Dialogo abierto alCerrar={alCerrar} titulo={`Marcar ${cantidad} como pagadas`}
+      descripcion="Indica el día en que se hicieron las transferencias: puede ser anterior a hoy. Las facturas en cuotas pagan su próxima cuota.">
+      <form onSubmit={(e) => {
+        e.preventDefault();
+        if (!f.datos.fecha) return f.setError("Indica el día del pago.");
+        if (f.datos.fecha > hoy) return f.setError("El día del pago no puede ser futuro.");
+        void f.enviar(() => alConfirmar(f.datos.fecha), () => undefined);
+      }}>
+        <Campos>
+          <CampoFecha etiqueta="Día del pago" requerido {...f.campo("fecha")} />
+        </Campos>
+        <Pie error={f.error} guardando={f.guardando} alCancelar={alCerrar} textoGuardar="Confirmar pagos" />
+      </form>
+    </Dialogo>
+  );
+}
+
 /* ── Por proveedor ────────────────────────────────────────────────────────── */
 
 const columnasProveedor: Columna<ProveedorPorPagar>[] = [
@@ -766,18 +794,22 @@ function Semana({
   const grupos = useMemo(() => agrupar(lineas), [lineas]);
   const puedeMarcar = usePuede("pagos.marcar");
 
-  async function pagarTodo() {
+  const [confirmando, setConfirmando] = useState(false);
+
+  async function pagarTodo(fecha: string) {
     setError(null);
     setTrabajando(true);
     try {
       for (const l of lineas) {
         if (!l.compraId) continue;
         // Con plan de cuotas se paga la próxima cuota; la factura se cierra sola al completar el total.
-        if (l.cuotas > 0) await pagarProximaCuota(l.compraId, semana);
-        else await marcarPagada(l.compraId, semana);
+        if (l.cuotas > 0) await pagarProximaCuota(l.compraId, fecha);
+        else await marcarPagada(l.compraId, fecha);
       }
+      setConfirmando(false);
       recargar();
     } catch (e) {
+      setConfirmando(false);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setTrabajando(false);
@@ -842,12 +874,15 @@ function Semana({
 
         {puedeMarcar && (
           <div className="flex justify-end">
-            <Boton onClick={pagarTodo} disabled={trabajando}>
+            <Boton onClick={() => setConfirmando(true)} disabled={trabajando}>
               {trabajando ? "Marcando…" : `Marcar las ${lineas.length} como pagadas`}
             </Boton>
           </div>
         )}
       </div>
+      {confirmando && (
+        <DialogoPagarTodo cantidad={lineas.length} semana={semana} alCerrar={() => setConfirmando(false)} alConfirmar={pagarTodo} />
+      )}
     </>
   );
 }
