@@ -388,6 +388,34 @@ export async function cargarLineasDeOrden(ordenId: string) {
   }));
 }
 
+/* ── Descuento de la orden (0102) ─────────────────────────────────────────── */
+
+/**
+ * Precio que se paga: la lista menos el descuento, a peso entero. Es el que
+ * se guarda como `precio_unitario`, así todo lo que cuelga de la orden (neto, IVA,
+ * facturas, costo) cuadra con su total sin saber que hubo descuento.
+ */
+export const precioConDescuento = (lista: number, porcentaje: number) =>
+  porcentaje > 0 ? Math.round(lista * (1 - porcentaje / 100)) : lista;
+
+export type DescuentoDeOrden = {
+  porcentaje: number;
+  /** Precio de lista por línea (id del ítem). Vacío si la orden no tiene descuento. */
+  listas: Map<string, number>;
+};
+
+/** El descuento de una orden y los precios de lista. Sin la 0102 aplicada, ninguno. */
+export async function cargarDescuentoDeOrden(ordenId: string): Promise<DescuentoDeOrden> {
+  const [orden, items] = await Promise.all([
+    supabase.from("ordenes_compra_proveedor").select("descuento_porcentaje").eq("id", ordenId).maybeSingle(),
+    supabase.from("items_compra").select("id, precio_lista").eq("orden_id", ordenId),
+  ]);
+  if (orden.error || items.error) return { porcentaje: 0, listas: new Map() };
+  const listas = new Map<string, number>();
+  for (const i of items.data ?? []) if (i.precio_lista != null) listas.set(i.id as string, Number(i.precio_lista));
+  return { porcentaje: Number(orden.data?.descuento_porcentaje ?? 0), listas };
+}
+
 /* ── Envío al proveedor (0069) ────────────────────────────────────────────── */
 
 /**

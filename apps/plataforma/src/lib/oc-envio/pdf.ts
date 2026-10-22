@@ -243,8 +243,9 @@ export async function pdfDeOrden(o: OrdenParaEnviar): Promise<Uint8Array> {
     lineas.forEach((l, i) => texto(l, col.desc, y - i * 11, { tam: 8.5 }));
     texto(it.unidad, col.um, y, { tam: 8.5 });
     texto(numero(it.cantidad), col.cant, y, { tam: 8.5, alinear: "der" });
-    texto(pesos(it.precioUnitario), col.pu, y, { tam: 8.5, alinear: "der" });
-    texto(pesos(it.neto), col.total, y, { tam: 8.5, fuente: negrita, alinear: "der" });
+    // Con descuento la línea se imprime a precio de lista; el descuento va aparte, en los totales.
+    texto(pesos(it.precioLista ?? it.precioUnitario), col.pu, y, { tam: 8.5, alinear: "der" });
+    texto(pesos(it.precioLista == null ? it.neto : Math.round(it.cantidad * it.precioLista)), col.total, y, { tam: 8.5, fuente: negrita, alinear: "der" });
     y -= lineas.length * 11 + 4;
     raya(y + 2, 0.4);
     y -= 9;
@@ -253,14 +254,24 @@ export async function pdfDeOrden(o: OrdenParaEnviar): Promise<Uint8Array> {
   /* ── Totales ────────────────────────────────────────────────────────────── */
   const neto = o.items.reduce((t, i) => t + i.neto, 0);
   const iva = o.items.reduce((t, i) => t + i.iva, 0);
-  asegurar(80, false);
+  const subtotal = o.items.reduce((t, i) => t + (i.precioLista == null ? i.neto : Math.round(i.cantidad * i.precioLista)), 0);
+  const descuento = subtotal - neto;
+  asegurar(descuento > 0 ? 110 : 80, false);
   y -= 6;
   const xEtiqueta = derecha - 190;
   texto("Proyecto / Contrato", MARGEN, y, { tam: 8.5, color: SUAVE });
   partir(o.proyecto ?? o.contratoId, xEtiqueta - MARGEN - 110, normal, 8.5)
     .slice(0, 3)
     .forEach((l, i) => texto(l, MARGEN + 100, y - i * 11, { tam: 8.5 }));
-  texto("Subtotal neto", xEtiqueta, y, { tam: 9, color: SUAVE });
+  if (descuento > 0) {
+    texto("Subtotal", xEtiqueta, y, { tam: 9, color: SUAVE });
+    texto(pesos(subtotal), derecha, y, { tam: 9, alinear: "der" });
+    y -= 15;
+    texto(`Descuento ${numero(o.descuentoPorcentaje)}%`, xEtiqueta, y, { tam: 9, color: SUAVE });
+    texto(`-${pesos(descuento)}`, derecha, y, { tam: 9, alinear: "der" });
+    y -= 15;
+  }
+  texto(descuento > 0 ? "Neto" : "Subtotal neto", xEtiqueta, y, { tam: 9, color: SUAVE });
   texto(pesos(neto), derecha, y, { tam: 9, alinear: "der" });
   y -= 15;
   texto(iva === 0 && neto > 0 ? "IVA (exento)" : "IVA 19%", xEtiqueta, y, { tam: 9, color: SUAVE });

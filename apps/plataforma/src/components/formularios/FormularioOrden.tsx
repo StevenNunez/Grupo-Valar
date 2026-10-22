@@ -34,8 +34,10 @@ import { formatearPesos } from "@/lib/formato";
 import {
   cargarLineasDeOrden,
   eliminarOrdenCompleta,
+  cargarDescuentoDeOrden,
   eliminarOrdenConItems,
   estadosOrden,
+  precioConDescuento,
   siguienteNumero,
   ultimoTelefonoDeEmisor,
   type EstadoOrden,
@@ -254,6 +256,10 @@ export function FormularioOrden({
      orden y no de cada línea, porque así se emiten; al editar se deduce de sus
      ítems (todos con IVA cero). */
   const [exenta, setExenta] = useState(false);
+  /** Descuento sobre el subtotal, en % (0102). Los precios de las líneas son los de lista; al guardar se descuentan. */
+  const [descuento, setDescuento] = useState(0);
+  /** El que traía la orden al abrirla: las columnas del descuento (0102) solo se tocan si hubo o hay descuento. */
+  const [descuentoInicial, setDescuentoInicial] = useState(0);
 
   const claveGuardado = editando ? null : `oc-borrador:${usuario.id}:nueva`;
   /* La que quedó de antes, mientras no se decida qué hacer con ella. Hasta
@@ -301,16 +307,19 @@ export function FormularioOrden({
     let vigente = true;
 
     if (orden) {
-      cargarLineasDeOrden(orden.id).then((items) => {
+      Promise.all([cargarLineasDeOrden(orden.id), cargarDescuentoDeOrden(orden.id)]).then(([items, desc]) => {
         if (!vigente) return;
         setExenta(items.length > 0 && items.every((i) => i.iva === 0));
+        setDescuento(desc.porcentaje);
+        setDescuentoInicial(desc.porcentaje);
         setLineas(
           items.map((i) => ({
             id: i.id,
             descripcion: i.descripcion,
             unidad: i.unidad,
             cantidad: i.cantidad,
-            precio_unitario: i.precioUnitario,
+            // Se edita el precio de lista; el descuento se aplica al guardar.
+            precio_unitario: desc.listas.get(i.id) ?? i.precioUnitario,
             tipo: i.tipo,
             categoria_id: i.categoriaId ?? "",
             pagnol_material_id: i.pagnolMaterialId ?? "",
@@ -391,11 +400,12 @@ export function FormularioOrden({
     ...delContrato.map((c) => ({ id: c.id, titulo: c.nombre })),
   ];
 
-  const neto = lineas.reduce((t, l) => t + Math.round(l.cantidad * l.precio_unitario), 0);
+  // Lo que se paga por línea: la lista menos el descuento. Es lo mismo que se guarda.
+  const netoDe = (l: Linea) => Math.round(l.cantidad * precioConDescuento(l.precio_unitario, descuento));
+  const subtotal = lineas.reduce((t, l) => t + Math.round(l.cantidad * l.precio_unitario), 0);
+  const neto = lineas.reduce((t, l) => t + netoDe(l), 0);
   const iva = exenta ? 0 : Math.round(neto * 0.19);
-  const reembolsable = lineas
-    .filter((l) => l.tipo === "reembolsable")
-    .reduce((t, l) => t + Math.round(l.cantidad * l.precio_unitario), 0);
+  const reembolsable = lineas.filter((l) => l.tipo === "reembolsable").reduce((t, l) => t + netoDe(l), 0);
 
   function cambiar(id: string, campo: keyof Linea, valor: unknown) {
     setLineas((ls) => ls.map((l) => (l.id === id ? { ...l, [campo]: valor } : l)));
@@ -455,6 +465,8 @@ export function FormularioOrden({
         return anexo ? proyectoDeAnexo(anexo) : null;
       })(),
       proveedor_id: f.datos.proveedor_id || null,
+      // Sin descuento antes ni ahora no se manda: así guardar sigue andando aunque falte la 0102.
+      ...(descuento > 0 || descuentoInicial > 0 ? { descuento_porcentaje: descuento } : {}),
     };
 
     f.enviar(async () => {
@@ -494,9 +506,11 @@ export function FormularioOrden({
           descripcion: l.descripcion.trim(),
           unidad: l.unidad || "UN",
           cantidad: l.cantidad || 1,
-          precio_unitario: l.precio_unitario,
+          // Con descuento, el precio que se paga es el de lista menos el descuento; la lista queda aparte.
+          precio_unitario: precioConDescuento(l.precio_unitario, descuento),
+          ...(descuento > 0 || descuentoInicial > 0 ? { precio_lista: descuento > 0 ? l.precio_unitario : null } : {}),
           // El IVA de la línea sigue la regla general, salvo en la orden exenta.
-          iva: exenta ? 0 : Math.round(l.cantidad * l.precio_unitario * 0.19),
+          iva: exenta ? 0 : Math.round(l.cantidad * precioConDescuento(l.precio_unitario, descuento) * 0.19),
           tipo: l.tipo,
         };
 
@@ -932,6 +946,28 @@ export function FormularioOrden({
                 Orden exenta de IVA
                 <span className="text-xs font-normal text-ink-soft">(exámenes médicos, capacitación…)</span>
               </label>
+              <label className="mb-1 flex items-center gap-2 text-sm font-semibold text-ink">
+                Descuento
+                <input
+                  type="number" min={0} max={99.99} step="any" inputMode="decimal"
+                  aria-label="Descuento sobre el subtotal, en porcentaje"
+                  value={descuento === 0 ? "" : descuento}
+                  placeholder="0"
+                  onChange={(e) => setDescuento(Math.min(99.99, Math.max(0, Number(e.target.value) || 0)))}
+                  className="w-20 rounded-lg border border-mist-deep px-2.5 py-1.5 text-right text-sm tabular-nums text-ink focus:border-cyan focus:outline-none focus:ring-2 focus:ring-cyan/20"
+                />
+                <span className="text-xs font-normal text-ink-soft">% del subtotal</span>
+              </label>
+              {descuento > 0 && (
+                <>
+                  <p className="text-ink-soft">
+                    Subtotal <span className="ml-2 tabular-nums">{formatearPesos(subtotal)}</span>
+                  </p>
+                  <p className="text-ink-soft">
+                    Descuento {descuento.toLocaleString("es-CL")}% <span className="ml-2 tabular-nums">−{formatearPesos(subtotal - neto)}</span>
+                  </p>
+                </>
+              )}
               <p className="text-ink-soft">
                 Neto <span className="ml-2 font-semibold tabular-nums text-ink">{formatearPesos(neto)}</span>
               </p>

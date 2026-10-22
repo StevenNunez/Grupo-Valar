@@ -47,6 +47,8 @@ export default async function PaginaOrdenProveedor({ params }: Props) {
   const { orden: o, envio } = r;
   const neto = o.items.reduce((t, i) => t + i.neto, 0);
   const iva = o.items.reduce((t, i) => t + i.iva, 0);
+  const subtotal = o.items.reduce((t, i) => t + (i.precioLista == null ? i.neto : Math.round(i.cantidad * i.precioLista)), 0);
+  const descuento = subtotal - neto;
 
   return (
     <Marco empresa={o.empresa}>
@@ -98,13 +100,19 @@ export default async function PaginaOrdenProveedor({ params }: Props) {
                   <td className="py-2 pr-3 text-ink">{i.descripcion}</td>
                   <td className="py-2 pr-3 text-ink-soft">{i.unidad}</td>
                   <td className="py-2 pr-3 text-right tabular-nums">{i.cantidad.toLocaleString("es-CL")}</td>
-                  <td className="py-2 pr-3 text-right tabular-nums">{formatearPesos(i.precioUnitario)}</td>
-                  <td className="py-2 text-right font-semibold tabular-nums">{formatearPesos(i.neto)}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{formatearPesos(i.precioLista ?? i.precioUnitario)}</td>
+                  <td className="py-2 text-right font-semibold tabular-nums">{formatearPesos(i.precioLista == null ? i.neto : Math.round(i.cantidad * i.precioLista))}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           <div className="mt-4 flex flex-col items-end gap-1 text-sm">
+            {descuento > 0 && (
+              <>
+                <p className="text-ink-soft">Subtotal <span className="ml-2 tabular-nums">{formatearPesos(subtotal)}</span></p>
+                <p className="text-ink-soft">Descuento {o.descuentoPorcentaje.toLocaleString("es-CL")}% <span className="ml-2 tabular-nums">−{formatearPesos(descuento)}</span></p>
+              </>
+            )}
             <p className="text-ink-soft">Neto <span className="ml-2 tabular-nums text-ink">{formatearPesos(neto)}</span></p>
             <p className="text-ink-soft">IVA 19% <span className="ml-2 tabular-nums">{formatearPesos(iva)}</span></p>
             <p className="font-display text-lg font-semibold text-ink">Total {formatearPesos(neto + iva)}</p>

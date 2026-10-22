@@ -4,7 +4,7 @@ import { LogoMark } from "./Logo";
 import { FirmaTeoLabs } from "./FirmaTeoLabs";
 import { useEmpresa } from "@/lib/empresa-cliente";
 import { formatearFecha, formatearNumero, formatearPesos } from "@/lib/formato";
-import type { Item, Orden } from "@/lib/ordenes";
+import type { DescuentoDeOrden, Item, Orden } from "@/lib/ordenes";
 
 /**
  * La orden de compra lista para imprimir, con el mismo formato que Valar ya
@@ -15,10 +15,15 @@ import type { Item, Orden } from "@/lib/ordenes";
  * hacer PDF y no necesita servidor. Las reglas de `@media print` de
  * `globals.css` esconden el resto de la aplicación y dejan solo esta hoja.
  */
-export function OrdenImprimible({ orden, items }: { orden: Orden; items: Item[] }) {
+export function OrdenImprimible({ orden, items, descuento }: { orden: Orden; items: Item[]; descuento?: DescuentoDeOrden }) {
   const datos = useEmpresa();
   const neto = items.reduce((t, i) => t + i.neto, 0);
   const iva = items.reduce((t, i) => t + i.iva, 0);
+  // Con descuento (0102) las líneas se imprimen a precio de lista y el descuento va en los totales.
+  const lista = (i: Item) => descuento?.listas.get(i.id) ?? null;
+  const totalLinea = (i: Item) => { const l = lista(i); return l == null ? i.neto : Math.round(i.cantidad * l); };
+  const subtotal = items.reduce((t, i) => t + totalLinea(i), 0);
+  const rebaja = subtotal - neto;
 
   return (
     <article className="hoja mx-auto w-full max-w-[210mm] bg-white p-8 text-ink lg:p-12">
@@ -100,9 +105,9 @@ export function OrdenImprimible({ orden, items }: { orden: Orden; items: Item[] 
               </td>
               <td className="py-2.5">{i.unidad}</td>
               <td className="py-2.5 text-right tabular-nums">{formatearNumero(i.cantidad)}</td>
-              <td className="py-2.5 text-right tabular-nums">{formatearPesos(i.precioUnitario)}</td>
+              <td className="py-2.5 text-right tabular-nums">{formatearPesos(lista(i) ?? i.precioUnitario)}</td>
               <td className="py-2.5 text-right font-semibold tabular-nums">
-                {formatearPesos(i.neto)}
+                {formatearPesos(totalLinea(i))}
               </td>
             </tr>
           ))}
@@ -124,7 +129,13 @@ export function OrdenImprimible({ orden, items }: { orden: Orden; items: Item[] 
         </div>
 
         <dl className="w-full max-w-xs text-sm">
-          <Linea etiqueta="Subtotal neto" valor={formatearPesos(neto)} />
+          {rebaja > 0 && descuento && (
+            <>
+              <Linea etiqueta="Subtotal" valor={formatearPesos(subtotal)} />
+              <Linea etiqueta={`Descuento ${formatearNumero(descuento.porcentaje)}%`} valor={`−${formatearPesos(rebaja)}`} />
+            </>
+          )}
+          <Linea etiqueta={rebaja > 0 ? "Neto" : "Subtotal neto"} valor={formatearPesos(neto)} />
           <Linea etiqueta={iva === 0 && neto > 0 ? "IVA (exento)" : "IVA 19%"} valor={formatearPesos(iva)} />
           <div className="mt-2 flex justify-between border-t-2 border-ink pt-2">
             <dt className="font-display font-semibold">TOTAL</dt>

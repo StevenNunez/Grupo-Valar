@@ -45,11 +45,15 @@ export type OrdenParaEnviar = {
   proyecto: string | null;
   observaciones: string | null;
   fechaComprometida: string | null;
+  /** Descuento sobre el subtotal, en % (0102). */
+  descuentoPorcentaje: number;
   items: {
     descripcion: string;
     unidad: string;
     cantidad: number;
     precioUnitario: number;
+    /** Precio de lista antes del descuento de la orden (0102); nulo si no hay descuento. */
+    precioLista: number | null;
     neto: number;
     iva: number;
     tipo: "ordinario" | "reembolsable";
@@ -69,7 +73,7 @@ export async function cargarOrdenParaEnviar(
 
   const { data: items, error: e2 } = await sb
     .from("items_compra")
-    .select("descripcion, unidad, cantidad, precio_unitario, neto, iva, tipo")
+    .select("*")
     .eq("empresa_id", o.empresa_id)
     .eq("orden_id", o.id)
     .order("id");
@@ -102,11 +106,13 @@ export async function cargarOrdenParaEnviar(
     proyecto: o.proyecto,
     observaciones: o.observaciones,
     fechaComprometida: o.fecha_comprometida,
+    descuentoPorcentaje: Number(o.descuento_porcentaje ?? 0),
     items: (items ?? []).map((i) => ({
       descripcion: i.descripcion,
       unidad: i.unidad,
       cantidad: Number(i.cantidad),
       precioUnitario: Number(i.precio_unitario),
+      precioLista: i.precio_lista == null ? null : Number(i.precio_lista),
       // `neto` puede venir nulo en filas viejas: se recalcula igual que la pantalla.
       neto: i.neto === null ? Math.round(Number(i.cantidad) * Number(i.precio_unitario)) : Number(i.neto),
       iva: Number(i.iva ?? 0),
