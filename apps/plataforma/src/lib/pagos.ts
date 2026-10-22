@@ -351,6 +351,11 @@ export async function marcarPagada(compraId: string, fecha: string) {
   await actualizar("compras", compraId, { estado_pago: "pagada", fecha_pago: fecha });
 }
 
+/** Corregir el día en que de verdad se transfirió una factura ya dada por pagada. */
+export async function cambiarFechaDePago(compraId: string, fecha: string) {
+  await actualizar("compras", compraId, { fecha_pago: fecha });
+}
+
 /* ── Pago en cuotas (0097) ────────────────────────────────────────────────── */
 
 export type Cuota = {
@@ -421,13 +426,13 @@ export async function quitarCuota(id: string) {
 }
 
 /** Da por transferida la próxima cuota sin pagar de la factura (la de fecha más cercana). */
-export async function pagarProximaCuota(compraId: string, fecha: string) {
+export async function pagarProximaCuota(compraId: string, fecha: string, referencia?: string) {
   const cuotas = await cargarCuotas(compraId);
   const proxima = cuotas
     .filter((c) => !c.fechaPago)
     .sort((a, b) => (a.fechaProgramada ?? "9999").localeCompare(b.fechaProgramada ?? "9999") || a.numero - b.numero)[0];
   if (!proxima) throw new Error("No quedan cuotas por pagar en esa factura.");
-  await cambiarCuota(proxima.id, { fechaPago: fecha });
+  await cambiarCuota(proxima.id, { fechaPago: fecha, ...(referencia ? { referencia } : {}) });
 }
 
 /** Retener o soltar: la factura existe, pero hay una razón para no pagarla. */

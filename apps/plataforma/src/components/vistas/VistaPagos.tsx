@@ -30,6 +30,7 @@ import {
   cargarCuentasPorPagar,
   cargarFlujoDePagos,
   cargarParametrosPago,
+  cambiarFechaDePago,
   marcarPagada,
   montoAPagar,
   nombreEstadoCuenta,
@@ -338,6 +339,8 @@ function PorVencimiento({
   const [texto, setTexto] = useState("");
   /** La factura cuyos pagos en cuotas se están viendo. */
   const [conPagos, setConPagos] = useState<CuentaPorPagar | null>(null);
+  /* Pagar pide el día en que se transfirió: puede ser anterior a hoy. */
+  const [pagando, setPagando] = useState<{ linea: CuentaPorPagar; corrigiendo: boolean } | null>(null);
 
   const visibles = useMemo(() => {
     const cs = datos.cuentas;
@@ -391,7 +394,7 @@ function PorVencimiento({
       <Buscador valor={texto} alCambiar={setTexto} etiqueta="Buscar cuentas por pagar" placeholder="Buscar por N° de OC, proveedor, RUT, factura o contrato…" />
 
       <Tabla
-        columnas={columnasLinea({ semana, trabajando, accion, alFacturar, alPagos: setConPagos, umbralCuotas: datos.parametros.umbralCuotas, puedeProgramar, puedeMarcar })}
+        columnas={columnasLinea({ semana, trabajando, accion, alFacturar, alPagos: setConPagos, alPagar: (linea, corrigiendo) => setPagando({ linea, corrigiendo }), umbralCuotas: datos.parametros.umbralCuotas, puedeProgramar, puedeMarcar })}
         filas={visibles}
         claveDe={(c) => c.id}
         vacio={texto.trim() ? "Ninguna cuenta coincide con la búsqueda." : "Nada en este estado."}
@@ -406,6 +409,21 @@ function PorVencimiento({
           </>
         }
       />
+      {pagando && pagando.linea.compraId && (
+        <DialogoPagar
+          linea={pagando.linea}
+          corrigiendo={pagando.corrigiendo}
+          alCerrar={() => setPagando(null)}
+          alConfirmar={async (fecha, referencia) => {
+            const compraId = pagando.linea.compraId as string;
+            if (pagando.corrigiendo) await cambiarFechaDePago(compraId, fecha);
+            else if (pagando.linea.cuotas > 0) await pagarProximaCuota(compraId, fecha, referencia);
+            else await marcarPagada(compraId, fecha);
+            setPagando(null);
+            recargar();
+          }}
+        />
+      )}
       {conPagos && conPagos.compraId && (
         <PagosDeFactura
           linea={conPagos}
@@ -429,6 +447,7 @@ function columnasLinea({
   puedeProgramar,
   puedeMarcar,
   alPagos,
+  alPagar,
   umbralCuotas,
 }: {
   semana: string;
@@ -437,6 +456,8 @@ function columnasLinea({
   trabajando: string | null;
   /** Abrir los pagos en cuotas de una factura. */
   alPagos: (linea: CuentaPorPagar) => void;
+  /** Pedir el día del pago (o, con `corrigiendo`, cambiar el de una factura ya pagada). */
+  alPagar: (linea: CuentaPorPagar, corrigiendo: boolean) => void;
   /** Registrar la factura y agendarla en una semana. */
   puedeProgramar: boolean;
   /** Retener, soltar y dar por pagada. */
@@ -557,6 +578,9 @@ function columnasLinea({
           return (
             <div className="flex items-center justify-end gap-2">
               <span className="text-xs text-ink-soft">{formatearFecha(c.fechaPago)}</span>
+              {c.cuotas === 0 && c.compraId && puedeMarcar && (
+                <Boton secundario disabled={ocupado} onClick={() => alPagar(c, true)}>Cambiar fecha</Boton>
+              )}
               {c.cuotas > 0 ? (
                 <Boton secundario disabled={ocupado} onClick={() => alPagos(c)}>Ver pagos</Boton>
               ) : (
@@ -626,12 +650,7 @@ function columnasLinea({
             {puedeMarcar && (
             <Boton
               disabled={ocupado}
-              onClick={() =>
-                accion(c.id, () => {
-                  const hoy = new Date().toISOString().slice(0, 10);
-                  return c.cuotas > 0 ? pagarProximaCuota(compraId, hoy) : marcarPagada(compraId, hoy);
-                })
-              }
+              onClick={() => alPagar(c, false)}
             >
               {c.cuotas > 0 ? `Pagar cuota ${c.cuotaNumero ?? ""}`.trim() : "Pagar"}
             </Boton>
@@ -641,6 +660,41 @@ function columnasLinea({
       },
     },
   ];
+}
+
+/* ── El día del pago ──────────────────────────────────────────────────────── */
+
+/**
+ * «Pagar» no da por hecho que se pagó hoy: la transferencia pudo hacerse hace
+ * días y se anota ahora. Sin el día real, después no cuadra con el banco.
+ */
+function DialogoPagar({ linea, corrigiendo, alCerrar, alConfirmar }: {
+  linea: CuentaPorPagar;
+  corrigiendo: boolean;
+  alCerrar: () => void;
+  alConfirmar: (fecha: string, referencia: string) => Promise<void>;
+}) {
+  const hoy = new Date().toISOString().slice(0, 10);
+  const enCuotas = linea.cuotas > 0 && !corrigiendo;
+  const f = useFormulario({ fecha: corrigiendo ? linea.fechaPago ?? hoy : hoy, referencia: "" });
+  return (
+    <Dialogo abierto alCerrar={alCerrar}
+      titulo={corrigiendo ? `Fecha de pago · factura ${linea.documento ?? ""}` : enCuotas ? `Pagar cuota ${linea.cuotaNumero ?? ""} · factura ${linea.documento ?? ""}` : `Pagar factura ${linea.documento ?? ""}`}
+      descripcion={corrigiendo ? "Cambia el día en que se transfirió, para que cuadre con el banco." : "Indica el día en que se hizo la transferencia: puede ser anterior a hoy."}>
+      <form onSubmit={(e) => {
+        e.preventDefault();
+        if (!f.datos.fecha) return f.setError("Indica el día del pago.");
+        if (f.datos.fecha > hoy) return f.setError("El día del pago no puede ser futuro.");
+        void f.enviar(() => alConfirmar(f.datos.fecha, f.datos.referencia), () => undefined);
+      }}>
+        <Campos>
+          <CampoFecha etiqueta="Día del pago" requerido {...f.campo("fecha")} />
+          {enCuotas && <CampoTexto etiqueta="N° de transferencia (opcional)" {...f.campo("referencia")} />}
+        </Campos>
+        <Pie error={f.error} guardando={f.guardando} alCancelar={alCerrar} textoGuardar={corrigiendo ? "Guardar fecha" : "Confirmar pago"} />
+      </form>
+    </Dialogo>
+  );
 }
 
 /* ── Por proveedor ────────────────────────────────────────────────────────── */
