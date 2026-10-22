@@ -30,7 +30,9 @@ export function InformativosDelContrato({ info }: { info: InformativosContrato }
         {
           etiqueta: "Por pagar a proveedores",
           valor: formatearMonto(info.porPagar),
-          nota: "Facturas y servicios sin pagar, con IVA, descontadas las cuotas ya transferidas · informativo",
+          nota: info.deudaPorProveedor.length > 0
+            ? `${info.deudaPorProveedor.map((d) => `${d.proveedor} ${formatearMonto(d.monto)}`).join(" · ")} · con IVA, descontadas las cuotas ya transferidas`
+            : "Facturas y servicios sin pagar, con IVA · informativo",
         },
       ]}
     />

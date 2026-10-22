@@ -18,15 +18,17 @@ export type InformativosContrato = {
   activos: number;
   /** De dónde sale `activos`: el detalle de cada activo o el valor anotado en el contrato. */
   activosFuente: "detalle" | "referencia" | null;
+  /** Lo que se debe, por proveedor, de mayor a menor. */
+  deudaPorProveedor: { proveedor: string; monto: number }[];
 };
 
-const vacio = (): InformativosContrato => ({ porCobrar: 0, porPagar: 0, activos: 0, activosFuente: null });
+const vacio = (): InformativosContrato => ({ porCobrar: 0, porPagar: 0, activos: 0, activosFuente: null, deudaPorProveedor: [] });
 
 export async function cargarInformativos(): Promise<Map<string, InformativosContrato>> {
   const [edps, compras, servicios, cuotas, contratos, activos] = await Promise.all([
     supabase.from("estados_pago").select("contrato_id, monto_neto, monto_cobrado, estado").in("estado", ["presentado", "aprobado", "facturado"]),
-    supabase.from("compras").select("id, contrato_id, total, estado_pago").in("estado_pago", ["pendiente", "retenida"]),
-    supabase.from("servicios").select("contrato_id, total, estado_pago").eq("estado_pago", "pendiente"),
+    supabase.from("compras").select("id, contrato_id, proveedor, total, estado_pago").in("estado_pago", ["pendiente", "retenida"]),
+    supabase.from("servicios").select("contrato_id, proveedor, total, estado_pago").eq("estado_pago", "pendiente"),
     supabase.from("pagos_factura").select("compra_id, monto").not("fecha_pago", "is", null),
     supabase.from("contratos").select("id, valor_activos_referencia"),
     supabase.from("activos_valar").select("contrato_origen_id, valor").not("contrato_origen_id", "is", null),
@@ -43,6 +45,14 @@ export async function cargarInformativos(): Promise<Map<string, InformativosCont
     return f;
   };
 
+  const deber = (contratoId: string, proveedor: string, monto: number) => {
+    const f = de(contratoId);
+    f.porPagar += monto;
+    const previo = f.deudaPorProveedor.find((x) => x.proveedor === proveedor);
+    if (previo) previo.monto += monto;
+    else f.deudaPorProveedor.push({ proveedor, monto });
+  };
+
   for (const e of edps.data ?? []) {
     de(e.contrato_id as string).porCobrar += Math.max(0, Number(e.monto_neto ?? 0) - Number(e.monto_cobrado ?? 0));
   }
@@ -53,10 +63,11 @@ export async function cargarInformativos(): Promise<Map<string, InformativosCont
     pagado.set(q.compra_id as string, (pagado.get(q.compra_id as string) ?? 0) + Number(q.monto ?? 0));
   }
   for (const c of compras.data ?? []) {
-    de(c.contrato_id as string).porPagar += Math.max(0, Number(c.total ?? 0) - (pagado.get(c.id as string) ?? 0));
+    const debe = Math.max(0, Number(c.total ?? 0) - (pagado.get(c.id as string) ?? 0));
+    deber(c.contrato_id as string, (c.proveedor as string | null) ?? "Sin proveedor", debe);
   }
   for (const s of servicios.error ? [] : servicios.data ?? []) {
-    de(s.contrato_id as string).porPagar += Number(s.total ?? 0);
+    deber(s.contrato_id as string, (s.proveedor as string | null) ?? "Sin proveedor", Number(s.total ?? 0));
   }
 
   /* Activos: primero el detalle; si no hay valores cargados, el valor anotado en el contrato. */
@@ -86,8 +97,14 @@ export function sumarInformativos(mapa: Map<string, InformativosContrato>, ids: 
     total.porCobrar += f.porCobrar;
     total.porPagar += f.porPagar;
     total.activos += f.activos;
+    for (const d of f.deudaPorProveedor) {
+      const previo = total.deudaPorProveedor.find((x) => x.proveedor === d.proveedor);
+      if (previo) previo.monto += d.monto;
+      else total.deudaPorProveedor.push({ ...d });
+    }
     if (f.activosFuente) fuentes.add(f.activosFuente);
   }
+  total.deudaPorProveedor.sort((a, b) => b.monto - a.monto);
   total.activosFuente = fuentes.size === 0 ? null : fuentes.size === 1 ? ([...fuentes][0] as "detalle" | "referencia") : "detalle";
   return total;
 }
