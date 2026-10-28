@@ -50,7 +50,7 @@ type Orden = {
   fecha_requerida: string | null;
 };
 
-type ItemOrden = { id: string; descripcion: string; cantidad: number; cantidad_cerrada: number; cantidad_recibida: number; precio_unitario: number; pagnol_material_id: string | null };
+type ItemOrden = { id: string; descripcion: string; unidad: string; cantidad: number; cantidad_cerrada: number; cantidad_recibida: number; precio_unitario: number; pagnol_material_id: string | null };
 
 type Fila = {
   pagnol_compra_id: string | null;
@@ -69,14 +69,14 @@ const refDeLinea = (ordenId: string, itemId: string) => `valar:oc:${ordenId}:ite
 
 /* ── La llamada a Pagnol ──────────────────────────────────────────────────── */
 
-async function llamarPagnol(metodo: "POST" | "PATCH", ruta: string, cuerpo: unknown, llave: string) {
+async function llamarPagnol(metodo: "GET" | "POST" | "PATCH", ruta: string, cuerpo: unknown, llave?: string) {
   const baseUrl = process.env.PAGNOL_API_URL;
   const apiKey = process.env.PAGNOL_API_KEY;
   if (!baseUrl || !apiKey) throw new PagnolNoConfigurado("Faltan PAGNOL_API_URL o PAGNOL_API_KEY en las variables del servidor.");
   const r = await fetch(`${baseUrl}${ruta}`, {
     method: metodo,
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "Idempotency-Key": llave },
-    body: JSON.stringify(cuerpo),
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", ...(llave ? { "Idempotency-Key": llave } : {}) },
+    ...(metodo === "GET" ? {} : { body: JSON.stringify(cuerpo) }),
     signal: AbortSignal.timeout(ESPERA_MAXIMA_MS),
     cache: "no-store",
   });
@@ -97,6 +97,40 @@ function motivoDeRechazo(estado: number, json: unknown) {
   return mensajeEscritura(estado, json);
 }
 
+/* ── Que lo comprado exista en el catálogo de Pagnol ──────────────────────── */
+
+const normalizar = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/s+/g, " ").trim();
+
+const UNIDAD_PAGNOL: Record<string, string> = { un: "Unidad", u: "Unidad", m: "Metro", kg: "Kilo", lt: "Litro", l: "Litro", par: "Par", cj: "Caja", rollo: "Rollo", set: "Set", gl: "Galón" };
+
+/**
+ * La línea de la OC apunta a un material de Pagnol: se busca uno con el mismo
+ * nombre y, si no hay, se crea. Así el pañolero encuentra la compra lista para
+ * recibir y no hay que cargar el catálogo a mano antes de comprar.
+ */
+async function materialParaLinea(item: ItemOrden): Promise<{ id: string } | { error: string }> {
+  try {
+    const busqueda = await llamarPagnol("GET", `/materiales?q=${encodeURIComponent(item.descripcion.trim())}&limit=20`, undefined);
+    if (busqueda.estado === 200) {
+      const lista = (busqueda.json as { data?: { id: string; nombre: string; activo: boolean }[] } | undefined)?.data ?? [];
+      const igual = lista.find((m) => m.activo && normalizar(m.nombre) === normalizar(item.descripcion));
+      if (igual) return { id: igual.id };
+    }
+    const ref = `valar:linea:${item.id}`;
+    const creado = await llamarPagnol(
+      "POST",
+      "/materiales",
+      { nombre: item.descripcion.trim(), unidad_medida: UNIDAD_PAGNOL[item.unidad.trim().toLowerCase()] ?? (item.unidad.trim() || "Unidad"), external_ref: ref },
+      crypto.randomUUID(),
+    );
+    const id = (creado.json as { id?: string } | undefined)?.id;
+    if ((creado.estado === 200 || creado.estado === 201) && id) return { id };
+    return { error: motivoDeRechazo(creado.estado, creado.json) };
+  } catch (e) {
+    return { error: mensajeEscritura(null, undefined, e) };
+  }
+}
+
 /* ── Lectura en Valar ─────────────────────────────────────────────────────── */
 
 async function leerOrden(sb: SupabaseClient, ordenId: string) {
@@ -109,7 +143,7 @@ async function leerOrden(sb: SupabaseClient, ordenId: string) {
   if (!orden) return null;
   const { data: items, error: errItems } = await sb
     .from("items_compra")
-    .select("id, descripcion, cantidad, cantidad_cerrada, cantidad_recibida, precio_unitario, pagnol_material_id")
+    .select("id, descripcion, unidad, cantidad, cantidad_cerrada, cantidad_recibida, precio_unitario, pagnol_material_id")
     .eq("orden_id", ordenId)
     .order("id");
   if (errItems) throw new Error(errItems.message);
@@ -182,6 +216,19 @@ export async function anunciarOrden(sb: SupabaseClient, ordenId: string, panolPe
   if (orden.estado === "anulada") return { ok: false, error: "La orden está anulada." };
 
   const avisos: string[] = [];
+  /* Las líneas que aún aprovechan algo y no están en el catálogo de Pagnol se
+     buscan o se crean allá, y el enlace queda guardado en la línea. */
+  const porResolver = items.filter((i) => !i.pagnol_material_id && Number(i.cantidad) - Number(i.cantidad_cerrada) - Number(i.cantidad_recibida) > 0);
+  const creadas: string[] = [];
+  for (const item of porResolver) {
+    const m = await materialParaLinea(item);
+    if ("error" in m) return { ok: false, error: `No se pudo dejar «${item.descripcion}» en el catálogo de Pagnol: ${m.error}` };
+    const { error } = await sb.from("items_compra").update({ pagnol_material_id: m.id }).eq("id", item.id);
+    if (error) return { ok: false, error: error.message };
+    item.pagnol_material_id = m.id;
+    creadas.push(item.descripcion);
+  }
+  if (creadas.length > 0) avisos.push(`Quedaron en el catálogo de Pagnol: ${creadas.join(", ")}.`);
   const deLaOrden = items.filter((i) => i.pagnol_material_id);
   const sinCatalogo = items.length - deLaOrden.length;
   if (sinCatalogo > 0) avisos.push(`${sinCatalogo} ${sinCatalogo === 1 ? "línea no es" : "líneas no son"} del catálogo de Pagnol y no se anuncian.`);

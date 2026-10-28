@@ -128,8 +128,9 @@ export function PanelPagnolDeOrden({ ordenId, anuncio, puedeEscribir, alCambiar,
             Líneas en el catálogo de Pagnol · {enlazadas} de {lineas.length}
           </h4>
           <p className="mt-1 text-xs text-ink-soft">
-            Pagnol solo espera lo que apunta a un material de su catálogo. Busca el material de cada línea; el texto, la unidad y el precio
-            de la orden no cambian. La cantidad se anuncia tal cual está en la orden: si compras por paquete, ajústala antes.
+            No hace falta crear nada en Pagnol: al anunciar, las líneas sin enlace se buscan por nombre en su catálogo y, si no existen, se crean allá.
+            Si quieres un material en particular, elígelo aquí. El texto, la unidad y el precio de la orden no cambian. La cantidad se anuncia tal
+            cual está en la orden: si compras por paquete, ajústala antes.
           </p>
           <ul className="mt-2 divide-y divide-mist rounded-lg border border-mist">
             {lineas.map((l) => {
