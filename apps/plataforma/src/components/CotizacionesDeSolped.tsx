@@ -18,6 +18,7 @@ import {
   cargarProveedores,
   enviarSolicitudAlProveedor,
   cargarRespuesta,
+  darPorCompletoItem,
   enlaceMailto,
   registrarEnvio,
   TOPE_MAILTO,
@@ -170,6 +171,10 @@ export function CotizacionesDeSolped({
           cuantas={estado.datos.cotizaciones.length}
           cotizaciones={estado.datos.cotizaciones}
           proveedorInicial={cotizando.proveedorId}
+          alAmpliar={(c) => {
+            setCotizando(null);
+            setCorrigiendo(c);
+          }}
           alCerrar={() => setCotizando(null)}
           alGuardado={() => {
             recargar();
@@ -236,6 +241,7 @@ function Comparativo({
   const puedeCotizar = puede(usuario, "cotizacion.gestionar");
   const puedeEmitir = puede(usuario, "ordenes.emitir");
   const [ordenCreada, setOrdenCreada] = useState<string | null>(null);
+  const [completando, setCompletando] = useState<AvanceItem | null>(null);
   const [pidiendo, setPidiendo] = useState(false);
   const [imprimiendo, setImprimiendo] = useState<Cotizacion | null>(null);
   const [enviando, setEnviando] = useState<Cotizacion | null>(null);
@@ -301,10 +307,20 @@ function Comparativo({
             </p>
             <ul className="mt-2 grid gap-x-6 gap-y-1 text-sm text-ink sm:grid-cols-2">
               {faltan.map((i) => (
-                <li key={i.id} className="flex justify-between gap-3">
+                <li key={i.id} className="flex items-center justify-between gap-3">
                   <span className="min-w-0 truncate">{i.descripcion}</span>
-                  <span className="shrink-0 tabular-nums text-ink-soft">
+                  <span className="flex shrink-0 items-center gap-2 tabular-nums text-ink-soft">
                     {formatearNumero(i.cantidadPendiente)} {i.unidad}
+                    {/* Se compró menos de lo pedido porque se vende por paquete: se da por completo. */}
+                    {puedeCotizar && i.cantidadComprada > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setCompletando(i)}
+                        className="rounded-full border border-[#ecd9b0] bg-white px-2.5 py-0.5 text-[11px] font-semibold text-[#8a5a09] transition-colors hover:border-[#8a5a09]"
+                      >
+                        Dar por completo
+                      </button>
+                    )}
                   </span>
                 </li>
               ))}
@@ -494,6 +510,18 @@ function Comparativo({
         </div>
       )}
 
+      {completando && (
+        <DialogoDarPorCompleto
+          solped={solped}
+          item={completando}
+          alCerrar={() => setCompletando(null)}
+          alListo={() => {
+            setCompletando(null);
+            alCambiar();
+          }}
+        />
+      )}
+
       {pidiendo && (
         <DialogoPedirCotizacion
           solped={solped}
@@ -615,6 +643,95 @@ function EstadoDelEnvio({ envio }: { envio: EnvioSolicitud | undefined }) {
   );
 }
 
+/**
+ * Un ítem que se compró en menos cantidad que la pedida, porque el proveedor lo
+ * vende por paquete. Se da por completo: lo pedido pasa a ser lo comprado y el
+ * motivo queda anotado en el ítem, así no figura como pendiente para siempre.
+ */
+function DialogoDarPorCompleto({
+  solped,
+  item,
+  alCerrar,
+  alListo,
+}: {
+  solped: Solped;
+  item: AvanceItem;
+  alCerrar: () => void;
+  alListo: () => void;
+}) {
+  const [motivo, setMotivo] = useState("Se vende por paquete.");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function confirmar() {
+    setError(null);
+    setGuardando(true);
+    try {
+      await darPorCompletoItem({ solpedId: solped.id, solpedItemId: item.id, motivo });
+      alListo();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setGuardando(false);
+    }
+  }
+
+  return (
+    <Dialogo
+      titulo="Dar el ítem por completo"
+      descripcion={`${solped.numero} · ${item.descripcion}`}
+      abierto
+      alCerrar={alCerrar}
+      ancho="max-w-lg"
+    >
+      <div className="px-6 py-6">
+        <p className="rounded-xl bg-mist/40 px-4 py-3 text-sm text-ink">
+          Se pidieron <strong>{formatearNumero(item.cantidadPedida)} {item.unidad}</strong> y se compraron{" "}
+          <strong>{formatearNumero(item.cantidadComprada)}</strong>. Al darlo por completo, lo pedido pasa a ser{" "}
+          {formatearNumero(item.cantidadComprada)} y deja de figurar como pendiente.
+        </p>
+
+        <label className="mt-4 block">
+          <Etiqueta>Motivo</Etiqueta>
+          <textarea
+            value={motivo}
+            onChange={(e) => setMotivo(e.target.value)}
+            rows={2}
+            className="mt-2 w-full rounded-xl border border-mist-deep bg-white px-3.5 py-2.5 text-sm text-ink outline-none transition-colors focus:border-cyan"
+          />
+          <Ayuda>
+            Queda escrito en el ítem junto con la cantidad que se había pedido, para que el cambio se pueda explicar después.
+          </Ayuda>
+        </label>
+
+        {error && (
+          <p role="alert" className="mt-4 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm font-medium text-[#a52f24]">
+            {error}
+          </p>
+        )}
+      </div>
+
+      <div className="flex justify-end gap-3 border-t border-mist px-6 py-5">
+        <button
+          type="button"
+          onClick={alCerrar}
+          disabled={guardando}
+          className="rounded-full border border-mist-deep px-5 py-2.5 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-50"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          onClick={() => void confirmar()}
+          disabled={guardando || !motivo.trim()}
+          className="rounded-full bg-cyan px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:opacity-50"
+        >
+          {guardando ? "Guardando…" : "Dar por completo"}
+        </button>
+      </div>
+    </Dialogo>
+  );
+}
+
 /* ── Cargar una cotización ────────────────────────────────────────────────── */
 
 type Linea = {
@@ -643,6 +760,7 @@ function FormularioCotizacion({
   cotizaciones,
   proveedorInicial,
   corrigiendo = null,
+  alAmpliar,
   alCerrar,
   alGuardado,
 }: {
@@ -658,6 +776,8 @@ function FormularioCotizacion({
   proveedorInicial: string | null;
   /** Corregir una cotización ya cargada: sus valores vienen puestos y se actualiza esa misma. */
   corrigiendo?: { cotizacion: Cotizacion; items: ItemCotizado[] } | null;
+  /** Elegir un proveedor que ya respondió: sus ítems nuevos se agregan a SU cotización, no a una nueva. */
+  alAmpliar?: (cotizacion: Cotizacion) => void;
   alCerrar: () => void;
   alGuardado: () => void;
 }) {
@@ -674,6 +794,15 @@ function FormularioCotizacion({
   const disponibles = proveedores.filter(
     (p) => !yaRespondieron.includes(p.id) && p.estado !== "inactivo",
   );
+
+  /* Una solicitud se compra en varias órdenes: si todavía faltan ítems (uno que
+     nadie cotizó, o cantidad por completar), el proveedor que ya respondió puede
+     cotizarlos también. Se le suman a su misma cotización —hay una por proveedor—,
+     que es lo que después permite elegirlo de nuevo y emitirle otra orden. */
+  const hayPendientes = items.some((i) => i.cantidadPendiente > 0);
+  const ampliables = alAmpliar && hayPendientes
+    ? proveedores.filter((p) => yaRespondieron.includes(p.id) && p.estado !== "inactivo")
+    : [];
 
   /* Los proveedores a los que SE LES PIDIÓ van primero: los precios que se
      cargan son, casi siempre, de ellos. Si hay uno solo, ya viene elegido. */
@@ -731,8 +860,30 @@ function FormularioCotizacion({
     : pendiente
       ? solicitados[proveedorId]
       : undefined;
+  /* Al corregir, además de lo que ya cotizó entran los ítems que todavía faltan
+     por comprar y que esta cotización no tiene: son los que se le agregan. Parten
+     sin precio, y si se dejan así no se guardan. */
+  const nuevosEnCorreccion: Linea[] = corrigiendo
+    ? items
+        .filter((i) => i.cantidadPendiente > 0 && !corrigiendo.items.some((ci) => ci.solpedItemId === i.id))
+        .map((i) => {
+          const p = pedidos.find((x) => x.id === i.id);
+          return {
+            solpedItemId: i.id,
+            descripcion: p?.nombreParaPedir ?? i.descripcion,
+            nombre: p?.nombreParaPedir ?? i.descripcion,
+            articuloId: p?.articuloId ?? null,
+            tieneNombreTecnico: p?.nombreTecnico != null,
+            unidad: i.unidad,
+            cantidad: i.cantidadPendiente,
+            precio: 0,
+            disponible: true,
+          };
+        })
+    : [];
+
   const base: Linea[] = solicitado
-    ? solicitado.items.flatMap((ci) => {
+    ? [...solicitado.items.flatMap((ci) => {
         const p = pedidos.find((x) => x.id === ci.solpedItemId);
         if (!p) return [];
         return [
@@ -752,7 +903,7 @@ function FormularioCotizacion({
             disponible: ci.disponible,
           },
         ];
-      })
+      }), ...nuevosEnCorreccion]
     : (items.some((i) => i.cantidadComprada > 0) && items.some((i) => i.cantidadPendiente > 0)
         ? items.filter((i) => i.cantidadPendiente > 0)
         : items
@@ -902,6 +1053,7 @@ function FormularioCotizacion({
   }
 
   return (
+    <>
     <Dialogo
       titulo={corrigiendo ? `Editar precios · ${corrigiendo.cotizacion.proveedor}` : "Nueva cotización"}
       descripcion={
@@ -924,6 +1076,8 @@ function FormularioCotizacion({
                 </p>
                 <Ayuda>
                   Estás corrigiendo la cotización {corrigiendo.cotizacion.numero ?? corrigiendo.cotizacion.id}.
+                  {nuevosEnCorreccion.length > 0 &&
+                    ` Al final van los ${nuevosEnCorreccion.length} ítems que faltan por comprar y no tenía: ponles precio para sumarlos; los que dejes en cero no se guardan.`}
                   {corrigiendo.cotizacion.seleccionada &&
                     " Este proveedor está elegido: si ya generaste la orden de compra, cambiar los precios acá no la modifica; hay que corregirla aparte."}
                 </Ayuda>
@@ -933,11 +1087,22 @@ function FormularioCotizacion({
               etiqueta="Proveedor"
               requerido
               opciones={opcionesDe(
-                ordenados,
-                new Map(cotizaciones.filter((c) => c.recibidaEn === null).map((c) => [c.proveedorId, c.numero ?? c.id])),
+                [...ordenados, ...ampliables],
+                new Map([
+                  ...cotizaciones
+                    .filter((c) => c.recibidaEn === null)
+                    .map((c): [string, string] => [c.proveedorId, `Esperando respuesta · ${c.numero ?? c.id}`]),
+                  ...ampliables.map((p): [string, string] => [p.id, "Ya respondió · se agregan los ítems que faltan a su cotización"]),
+                ]),
               )}
               valor={proveedorId}
-              alCambiar={setProveedorId}
+              alCambiar={(id) => {
+                const respondida = ampliables.some((p) => p.id === id)
+                  ? cotizaciones.find((c) => c.proveedorId === id && c.recibidaEn !== null)
+                  : undefined;
+                if (respondida && alAmpliar) alAmpliar(respondida);
+                else setProveedorId(id);
+              }}
               marcador={
                 disponibles.length === 0
                   ? "No quedan proveedores por cotizar"
@@ -948,7 +1113,7 @@ function FormularioCotizacion({
               ayuda={
                 pendiente
                   ? `Responde a la solicitud ${pendiente.numero ?? pendiente.id}: aparecen solo los ${lineas.length} ítems que se le pidieron, y los precios se cargan sobre ella.`
-                  : "Cada proveedor cotiza una vez por solicitud. Los que ya respondieron no aparecen."
+                  : "Cada proveedor cotiza una vez por solicitud. Si uno que ya respondió puede cotizar lo que falta, elígelo: se abre su cotización con esos ítems."
               }
             />
             )}
@@ -1251,6 +1416,7 @@ function FormularioCotizacion({
         </div>
       </form>
     </Dialogo>
+    </>
   );
 }
 
@@ -1363,7 +1529,7 @@ function opcionesDe(proveedores: Proveedor[], esperando: Map<string, string> = n
     id: p.id,
     titulo: p.razonSocial,
     nota: [
-      esperando.has(p.id) ? `Esperando respuesta · ${esperando.get(p.id)}` : null,
+      esperando.get(p.id) ?? null,
       formatearRut(p.rut),
       ...p.rubros.slice(0, 2),
     ]

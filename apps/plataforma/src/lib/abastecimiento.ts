@@ -1045,20 +1045,105 @@ export async function cargarRespuesta({
 
   if (error) throw new Error(error.message);
 
+  const { data: existentes, error: falloLectura } = await supabase
+    .from("cotizacion_items")
+    .select("id, solped_item_id")
+    .eq("cotizacion_id", cotizacionId);
+  if (falloLectura) throw new Error(falloLectura.message);
+
+  const yaCotizados = new Set((existentes ?? []).map((f) => f.solped_item_id as string));
+  let ultimo = Math.max(0, ...(existentes ?? []).map((f) => Number(/-(\d+)$/.exec(f.id as string)?.[1] ?? 0)));
+
   for (const p of precios) {
+    const cantidad = p.cantidad !== undefined && p.cantidad > 0 ? p.cantidad : null;
+
+    /* Un ítem que la cotización no tenía (se sumó después, cuando faltaba por
+       comprar) se agrega; si quedó sin precio se ignora, no se guarda en cero. */
+    if (!yaCotizados.has(p.solpedItemId)) {
+      if (!p.disponible || !(p.precioUnitario > 0) || cantidad === null) continue;
+      ultimo += 1;
+      const { error: fallo } = await supabase.from("cotizacion_items").insert({
+        id: `${cotizacionId}-${String(ultimo).padStart(3, "0")}`,
+        cotizacion_id: cotizacionId,
+        solped_item_id: p.solpedItemId,
+        cantidad,
+        precio_unitario: p.precioUnitario,
+        disponible: true,
+        nombre_cotizado: p.nombre?.trim() || null,
+      });
+      if (fallo) throw new Error(mensajeDeNombreCotizado(fallo.message));
+      continue;
+    }
+
     const { error: fallo } = await supabase
       .from("cotizacion_items")
       .update({
         precio_unitario: p.disponible ? p.precioUnitario : 0,
         disponible: p.disponible,
         nombre_cotizado: p.nombre?.trim() || null,
-        ...(p.cantidad !== undefined && p.cantidad > 0 ? { cantidad: p.cantidad } : {}),
+        ...(cantidad !== null ? { cantidad } : {}),
       })
       .eq("cotizacion_id", cotizacionId)
       .eq("solped_item_id", p.solpedItemId);
 
     if (fallo) throw new Error(mensajeDeNombreCotizado(fallo.message));
   }
+}
+
+/**
+ * Da por completo un ítem que se compró en menos cantidad que la pedida.
+ *
+ * Pasa cuando el proveedor lo vende por paquete: se pidieron 10 bolsas, el
+ * paquete trae 10 y se compró 1. El pendiente sale de pedido − comprado, así que
+ * sin corregir lo pedido el ítem queda "faltando" para siempre. Se ajusta la
+ * cantidad pedida a lo comprado y se deja escrito qué se pidió y por qué, en la
+ * observación del ítem: el cambio queda a la vista, no se pierde el original.
+ */
+export async function darPorCompletoItem({
+  solpedId,
+  solpedItemId,
+  motivo,
+}: {
+  solpedId: string;
+  solpedItemId: string;
+  motivo: string;
+}) {
+  const limpio = motivo.trim();
+  if (!limpio) throw new Error("Escribe el motivo: queda anotado en el ítem.");
+
+  const { data: avance, error: falloAvance } = await supabase
+    .from("solped_items_avance")
+    .select("cantidad_pedida, cantidad_comprada, observacion, unidad")
+    .eq("id", solpedItemId)
+    .single();
+  if (falloAvance) throw new Error(falloAvance.message);
+
+  const pedida = Number(avance.cantidad_pedida);
+  const comprada = Number(avance.cantidad_comprada);
+  if (!(comprada > 0)) throw new Error("Este ítem todavía no se compra: no hay nada que dar por completo.");
+  if (comprada >= pedida) return;
+
+  /* Mientras la solicitud espera aprobación o compra, cambiar un ítem la devuelve
+     a aprobación (trigger). Acá ya hay compra, pero si el estado fuera otro se avisa
+     en vez de reabrirla sin querer. */
+  const { data: solped, error: falloSolped } = await supabase
+    .from("solped")
+    .select("estado")
+    .eq("id", solpedId)
+    .single();
+  if (falloSolped) throw new Error(falloSolped.message);
+  if (["aprobada", "en-cotizacion", "cotizada"].includes(solped.estado as string)) {
+    throw new Error("Esta solicitud todavía no está en compra: cambiar el ítem la devolvería a aprobación.");
+  }
+
+  const nota = `Se pidieron ${pedida} ${avance.unidad}; se compraron ${comprada}. ${limpio}`;
+  const observacion = [avance.observacion as string | null, nota].filter(Boolean).join(" · ");
+
+  const { error } = await supabase
+    .from("solped_items")
+    .update({ cantidad: comprada, observacion })
+    .eq("id", solpedItemId);
+  if (error) throw new Error(error.message);
 }
 
 /** Si la migración 0088 no está aplicada, decirlo en claro en vez de un error de columna. */
