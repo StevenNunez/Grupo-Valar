@@ -126,6 +126,9 @@ export function CotizacionesDeSolped({
   const [cotizando, setCotizando] = useState<{ proveedorId: string | null } | null>(null);
   const [eligiendo, setEligiendo] = useState<Cotizacion | null>(null);
   const [corrigiendo, setCorrigiendo] = useState<Cotizacion | null>(null);
+  /* Se abrió para sumarle lo que falta a un proveedor que ya respondió: ahí se ven
+     solo los ítems pendientes, no lo que ya se compró en su orden anterior. */
+  const [soloFaltantes, setSoloFaltantes] = useState(false);
 
   return (
     <>
@@ -173,6 +176,7 @@ export function CotizacionesDeSolped({
           proveedorInicial={cotizando.proveedorId}
           alAmpliar={(c) => {
             setCotizando(null);
+            setSoloFaltantes(true);
             setCorrigiendo(c);
           }}
           alCerrar={() => setCotizando(null)}
@@ -188,7 +192,11 @@ export function CotizacionesDeSolped({
           solped={solped}
           cotizacion={corrigiendo}
           datos={estado.datos}
-          alCerrar={() => setCorrigiendo(null)}
+          soloFaltantes={soloFaltantes}
+          alCerrar={() => {
+            setCorrigiendo(null);
+            setSoloFaltantes(false);
+          }}
           alGuardado={() => {
             recargar();
             alCambiar();
@@ -587,12 +595,14 @@ function CorregirPrecios({
   solped,
   cotizacion,
   datos,
+  soloFaltantes,
   alCerrar,
   alGuardado,
 }: {
   solped: Solped;
   cotizacion: Cotizacion;
   datos: Datos;
+  soloFaltantes: boolean;
   alCerrar: () => void;
   alGuardado: () => void;
 }) {
@@ -619,6 +629,7 @@ function CorregirPrecios({
       cotizaciones={datos.cotizaciones}
       proveedorInicial={cotizacion.proveedorId}
       corrigiendo={{ cotizacion, items: estado.datos }}
+      soloFaltantes={soloFaltantes}
       alCerrar={alCerrar}
       alGuardado={alGuardado}
     />
@@ -760,6 +771,7 @@ function FormularioCotizacion({
   cotizaciones,
   proveedorInicial,
   corrigiendo = null,
+  soloFaltantes = false,
   alAmpliar,
   alCerrar,
   alGuardado,
@@ -776,6 +788,8 @@ function FormularioCotizacion({
   proveedorInicial: string | null;
   /** Corregir una cotización ya cargada: sus valores vienen puestos y se actualiza esa misma. */
   corrigiendo?: { cotizacion: Cotizacion; items: ItemCotizado[] } | null;
+  /** Al corregir, mostrar solo lo que falta por comprar (la cantidad que falta), no lo ya comprado. */
+  soloFaltantes?: boolean;
   /** Elegir un proveedor que ya respondió: sus ítems nuevos se agregan a SU cotización, no a una nueva. */
   alAmpliar?: (cotizacion: Cotizacion) => void;
   alCerrar: () => void;
@@ -882,10 +896,14 @@ function FormularioCotizacion({
         })
     : [];
 
+  const pendientePorItem = new Map(items.map((i) => [i.id, i.cantidadPendiente]));
+
   const base: Linea[] = solicitado
     ? [...solicitado.items.flatMap((ci) => {
         const p = pedidos.find((x) => x.id === ci.solpedItemId);
         if (!p) return [];
+        // Ya comprado por completo: no se vuelve a mostrar ni a tocar.
+        if (soloFaltantes && !((pendientePorItem.get(ci.solpedItemId) ?? 0) > 0)) return [];
         return [
           {
             solpedItemId: p.id,
@@ -897,7 +915,8 @@ function FormularioCotizacion({
             articuloId: p.articuloId,
             tieneNombreTecnico: p.nombreTecnico !== null,
             unidad: p.unidad,
-            cantidad: ci.cantidad,
+            // Sumando lo que falta, la cantidad es la que falta, no la de la compra anterior.
+            cantidad: soloFaltantes ? (pendientePorItem.get(ci.solpedItemId) ?? ci.cantidad) : ci.cantidad,
             // Una cotización nueva parte en cero; al corregir, de lo ya cargado.
             precio: ci.precioUnitario,
             disponible: ci.disponible,
@@ -1076,8 +1095,10 @@ function FormularioCotizacion({
                 </p>
                 <Ayuda>
                   Estás corrigiendo la cotización {corrigiendo.cotizacion.numero ?? corrigiendo.cotizacion.id}.
-                  {nuevosEnCorreccion.length > 0 &&
-                    ` Al final van los ${nuevosEnCorreccion.length} ítems que faltan por comprar y no tenía: ponles precio para sumarlos; los que dejes en cero no se guardan.`}
+                  {soloFaltantes
+                    ? ` Solo se muestran los ítems que faltan por comprar, con la cantidad que falta: lo que ya se compró no se toca. Ponles precio y los que dejes en cero no se guardan.`
+                    : nuevosEnCorreccion.length > 0 &&
+                      ` Al final van los ${nuevosEnCorreccion.length} ítems que faltan por comprar y no tenía: ponles precio para sumarlos; los que dejes en cero no se guardan.`}
                   {corrigiendo.cotizacion.seleccionada &&
                     " Este proveedor está elegido: si ya generaste la orden de compra, cambiar los precios acá no la modifica; hay que corregirla aparte."}
                 </Ayuda>
@@ -1644,20 +1665,21 @@ function DialogoGenerarOrden({
   }
 
   const porSolpedItem = new Map(avance.map((a) => [a.id, a]));
-  const comprables = estado.datos.cotizados.filter(
-    (i) => i.disponible && i.precioUnitario > 0,
-  );
+  const conPrecio = estado.datos.cotizados.filter((i) => i.disponible && i.precioUnitario > 0);
 
-  /* Por omisión entra lo que todavía no se ha comprado. Lo que ya se compró en
-     una orden anterior arranca desmarcado: marcarlo de nuevo sería pedir dos
-     veces lo mismo. */
-  const marcados =
-    elegidos ??
-    new Set(
-      comprables
-        .filter((i) => (porSolpedItem.get(i.solpedItemId)?.cantidadPendiente ?? 1) > 0)
-        .map((i) => i.solpedItemId),
-    );
+  /* Una solicitud se compra en varias órdenes. Lo que ya se compró por completo
+     en una orden anterior no se ofrece de nuevo: esta orden es solo por lo que
+     falta. Lo que dejó de estar en lista se avisa, para que no parezca perdido. */
+  const pendienteDe = (i: ItemCotizado) => porSolpedItem.get(i.solpedItemId)?.cantidadPendiente;
+  const comprables = conPrecio.filter((i) => (pendienteDe(i) ?? 1) > 0);
+  const yaCompradosCount = conPrecio.length - comprables.length;
+
+  /* La cantidad de esta orden es la que falta (si falta menos de lo cotizado), no la
+     que se cotizó: la compra anterior ya cubrió el resto. */
+  const cantidadDe = (i: ItemCotizado) =>
+    cantidades[i.solpedItemId] ?? Math.min(i.cantidad, pendienteDe(i) ?? i.cantidad);
+
+  const marcados = elegidos ?? new Set(comprables.map((i) => i.solpedItemId));
 
   const alternar = (id: string) => {
     const copia = new Set(marcados);
@@ -1668,7 +1690,7 @@ function DialogoGenerarOrden({
 
   const netoElegido = comprables
     .filter((i) => marcados.has(i.solpedItemId))
-    .reduce((t, i) => t + Math.round((cantidades[i.solpedItemId] ?? i.cantidad) * i.precioUnitario), 0);
+    .reduce((t, i) => t + Math.round(cantidadDe(i) * i.precioUnitario), 0);
   const flete = conFlete ? cotizacion.flete : 0;
   const total = netoElegido + flete;
 
@@ -1690,7 +1712,7 @@ function DialogoGenerarOrden({
         numero,
         emisor,
         soloItems: [...marcados],
-        cantidades,
+        cantidades: Object.fromEntries(comprables.map((i) => [i.solpedItemId, cantidadDe(i)])),
         incluirFlete: conFlete && cotizacion.flete > 0,
         anexoId: anexoId || null,
         proyecto: (() => {
@@ -1753,6 +1775,8 @@ function DialogoGenerarOrden({
         <p className="mt-1 text-sm text-ink-soft">
           Lo que dejes fuera queda pendiente en la solicitud y puede ir en otra orden, a
           otro proveedor.
+          {yaCompradosCount > 0 &&
+            ` No se listan ${yaCompradosCount} ítems de esta cotización que ya se compraron por completo en una orden anterior.`}
         </p>
 
         <div className="mt-4 overflow-x-auto">
@@ -1800,7 +1824,7 @@ function DialogoGenerarOrden({
                           type="number"
                           min="0"
                           step="any"
-                          value={cantidades[i.solpedItemId] ?? i.cantidad}
+                          value={cantidadDe(i)}
                           onChange={(e) =>
                             setCantidades((c) => ({ ...c, [i.solpedItemId]: Number(e.target.value) || 0 }))
                           }
@@ -1814,7 +1838,7 @@ function DialogoGenerarOrden({
                       {formatearPesos(i.precioUnitario)}
                     </td>
                     <td className="py-2 text-right tabular-nums text-ink">
-                      {formatearPesos(Math.round((cantidades[i.solpedItemId] ?? i.cantidad) * i.precioUnitario))}
+                      {formatearPesos(Math.round(cantidadDe(i) * i.precioUnitario))}
                     </td>
                   </tr>
                 );
