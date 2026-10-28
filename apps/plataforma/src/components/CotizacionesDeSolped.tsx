@@ -129,6 +129,23 @@ export function CotizacionesDeSolped({
   /* Se abrió para sumarle lo que falta a un proveedor que ya respondió: ahí se ven
      solo los ítems pendientes, no lo que ya se compró en su orden anterior. */
   const [soloFaltantes, setSoloFaltantes] = useState(false);
+  /* Recién se le cargaron los precios de lo que faltaba: lo que sigue es elegirlo y
+     emitirle la orden, así que se abre solo en vez de dejar buscar el botón. Se guarda
+     el código y no la fila, porque la fila cambia cuando termina de recargar. */
+  const [porElegirId, setPorElegirId] = useState<string | null>(null);
+  const [porGenerarId, setPorGenerarId] = useState<string | null>(null);
+  const encadenada =
+    porElegirId && estado.estado === "listo"
+      ? (estado.datos.cotizaciones.find((c) => c.id === porElegirId) ?? null)
+      : null;
+  // Si ya era el elegido no hay nada que elegir: se pasa directo a la orden.
+  useEffect(() => {
+    if (encadenada?.seleccionada) {
+      setPorGenerarId(encadenada.id);
+      setPorElegirId(null);
+    }
+  }, [encadenada]);
+  const aElegir = eligiendo ?? (encadenada?.seleccionada ? null : encadenada);
 
   return (
     <>
@@ -156,6 +173,8 @@ export function CotizacionesDeSolped({
             alAgregar={(proveedorId) => setCotizando({ proveedorId: proveedorId ?? null })}
             alElegir={setEligiendo}
             alCorregir={setCorrigiendo}
+            generarId={porGenerarId}
+            alGenerarAbierto={() => setPorGenerarId(null)}
             alCambiar={() => {
               recargar();
               alCambiar();
@@ -198,23 +217,34 @@ export function CotizacionesDeSolped({
             setSoloFaltantes(false);
           }}
           alGuardado={() => {
+            // Sumó lo que faltaba a su cotización: se sigue con elegirla y emitir la orden.
+            if (soloFaltantes) setPorElegirId(corrigiendo.id);
             recargar();
             alCambiar();
           }}
         />
       )}
 
-      {eligiendo && (
+      {aElegir && (
         <DialogoSeleccion
           solped={solped}
-          cotizacion={eligiendo}
+          cotizacion={aElegir}
+          motivoInicial={
+            porElegirId ? "Compra de los ítems que faltaban, en una orden aparte." : undefined
+          }
           mejor={
             estado.estado === "listo"
               ? Math.min(...estado.datos.cotizaciones.map((c) => c.costoPuesto))
-              : eligiendo.costoPuesto
+              : aElegir.costoPuesto
           }
-          alCerrar={() => setEligiendo(null)}
+          alCerrar={() => {
+            setEligiendo(null);
+            setPorElegirId(null);
+          }}
           alElegido={() => {
+            if (porElegirId) setPorGenerarId(porElegirId);
+            setPorElegirId(null);
+            setEligiendo(null);
             recargar();
             alCambiar();
           }}
@@ -232,10 +262,15 @@ function Comparativo({
   alAgregar,
   alElegir,
   alCorregir,
+  generarId,
+  alGenerarAbierto,
   alCambiar,
 }: {
   solped: Solped;
   datos: Datos;
+  /** Cotización recién elegida para la que se abre sola la orden de compra. */
+  generarId: string | null;
+  alGenerarAbierto: () => void;
   /** Cargar precios; con el proveedor, cuando se entra desde su solicitud. */
   alAgregar: (proveedorId?: string) => void;
   alElegir: (c: Cotizacion) => void;
@@ -260,6 +295,14 @@ function Comparativo({
   const recibidas = datos.cotizaciones.filter((c) => c.recibidaEn !== null);
   const mejor = recibidas.length > 0 ? Math.min(...recibidas.map((c) => c.costoPuesto)) : 0;
   const elegida = datos.cotizaciones.find((c) => c.seleccionada);
+
+  // Espera a que la recarga traiga al proveedor ya elegido y abre la orden.
+  useEffect(() => {
+    if (generarId && elegida?.id === generarId && puedeEmitir) {
+      setGenerando(true);
+      alGenerarAbierto();
+    }
+  }, [generarId, elegida?.id, puedeEmitir]);
 
   return (
     <div className="px-6 py-6">
@@ -1447,17 +1490,21 @@ function DialogoSeleccion({
   solped,
   cotizacion,
   mejor,
+  motivoInicial,
   alCerrar,
   alElegido,
 }: {
   solped: Solped;
   cotizacion: Cotizacion;
   mejor: number;
+  motivoInicial?: string;
   alCerrar: () => void;
   alElegido: () => void;
 }) {
   const esElMasBarato = cotizacion.costoPuesto <= mejor;
-  const [motivo, setMotivo] = useState(esElMasBarato ? "Menor costo puesto en obra" : "");
+  const [motivo, setMotivo] = useState(
+    motivoInicial ?? (esElMasBarato ? "Menor costo puesto en obra" : ""),
+  );
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
 
