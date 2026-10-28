@@ -50,7 +50,7 @@ type Orden = {
   fecha_requerida: string | null;
 };
 
-type ItemOrden = { id: string; descripcion: string; cantidad: number; cantidad_cerrada: number; precio_unitario: number; pagnol_material_id: string | null };
+type ItemOrden = { id: string; descripcion: string; cantidad: number; cantidad_cerrada: number; cantidad_recibida: number; precio_unitario: number; pagnol_material_id: string | null };
 
 type Fila = {
   pagnol_compra_id: string | null;
@@ -109,7 +109,7 @@ async function leerOrden(sb: SupabaseClient, ordenId: string) {
   if (!orden) return null;
   const { data: items, error: errItems } = await sb
     .from("items_compra")
-    .select("id, descripcion, cantidad, cantidad_cerrada, precio_unitario, pagnol_material_id")
+    .select("id, descripcion, cantidad, cantidad_cerrada, cantidad_recibida, precio_unitario, pagnol_material_id")
     .eq("orden_id", ordenId)
     .order("id");
   if (errItems) throw new Error(errItems.message);
@@ -185,12 +185,27 @@ export async function anunciarOrden(sb: SupabaseClient, ordenId: string, panolPe
   const deLaOrden = items.filter((i) => i.pagnol_material_id);
   const sinCatalogo = items.length - deLaOrden.length;
   if (sinCatalogo > 0) avisos.push(`${sinCatalogo} ${sinCatalogo === 1 ? "línea no es" : "líneas no son"} del catálogo de Pagnol y no se anuncian.`);
-  const lineas: LineaAnunciada[] = deLaOrden
-    .map((i) => ({ item_id: i.id, external_ref: refDeLinea(orden.id, i.id), cantidad: Number(i.cantidad) - Number(i.cantidad_cerrada) }))
-    .filter((l) => l.cantidad > 0);
-  if (lineas.length === 0) return { ok: false, error: "Ninguna línea de la orden es del catálogo de Pagnol." };
+  if (deLaOrden.length === 0) return { ok: false, error: "Ninguna línea de la orden es del catálogo de Pagnol." };
 
   const previa = await filaDe(sb, ordenId);
+  const yaAnunciada = !!previa?.pagnol_compra_id && previa.estado !== "error";
+
+  /* La primera vez, lo que ya se recibió en Valar no se pide de nuevo a Pagnol:
+     el pañolero lo recibiría otra vez y la línea quedaría contada dos veces. Una
+     vez anunciada, lo recibido ya es el de Pagnol y la cantidad es la de la orden. */
+  const lineas: LineaAnunciada[] = deLaOrden
+    .map((i) => ({
+      item_id: i.id,
+      external_ref: refDeLinea(orden.id, i.id),
+      cantidad: Number(i.cantidad) - Number(i.cantidad_cerrada) - (yaAnunciada ? 0 : Number(i.cantidad_recibida)),
+    }))
+    .filter((l) => l.cantidad > 0);
+  if (lineas.length === 0) {
+    return { ok: false, error: "Todo lo enlazado ya se recibió en Valar o está cerrado: no queda nada que Pagnol espere." };
+  }
+  const yaRecibidoEnValar = !yaAnunciada && deLaOrden.some((i) => Number(i.cantidad_recibida) > 0);
+  if (yaRecibidoEnValar) avisos.push("Parte de la orden ya se recibió en Valar: a Pagnol solo se anuncia lo que falta.");
+
   const panolId = panolPedido ?? previa?.panol_id ?? (await panolHabitual(sb, orden.contrato_id));
   if (!panolId) return { ok: false, error: "Elige el pañol de Pagnol donde va a llegar esta orden." };
 

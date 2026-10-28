@@ -207,7 +207,8 @@ function Resumen({ orden, ciclo, alModo, alCorregir, alAdjuntos, puedeRecibir, p
 
         {pagnolOC?.modo === "pagnol" && orden.estado !== "borrador" && orden.estado !== "anulada" && (
           <div className="mt-4">
-            <PanelPagnolDeOrden ordenId={orden.id} anuncio={pagnolOC.anuncio} puedeEscribir={puedeAnunciar} alCambiar={alCambioPagnol} />
+            <PanelPagnolDeOrden ordenId={orden.id} anuncio={pagnolOC.anuncio} puedeEscribir={puedeAnunciar} alCambiar={alCambioPagnol}
+              lineas={ciclo.lineas.map((l) => ({ id: l.id, descripcion: l.descripcion, unidad: l.unidad, pedida: l.pedida, recibida: l.recibida, pagnolMaterialId: l.pagnolMaterialId }))} />
           </div>
         )}
 
