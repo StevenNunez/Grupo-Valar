@@ -14,6 +14,8 @@ export type Columna<T> = {
   ancho?: string;
   /** La primera columna hace de encabezado de fila para lectores de pantalla. */
   encabezado?: boolean;
+  /** Queda pegada al borde derecho al hacer scroll (p. ej. los botones de acción). */
+  fija?: boolean;
   celda: (fila: T) => React.ReactNode;
 };
 
@@ -48,7 +50,7 @@ export function Tabla<T>({
                 scope="col"
                 className={`whitespace-nowrap py-4 ${c.ancho ?? ""} ${
                   c.derecha ? "text-right" : ""
-                } ${orillas(i, columnas.length)}`}
+                } ${c.fija ? FIJA_ENCABEZADO : ""} ${orillas(i, columnas.length)}`}
               >
                 {c.titulo}
               </th>
@@ -60,7 +62,7 @@ export function Tabla<T>({
           {filas.map((fila) => (
             <tr
               key={claveDe(fila)}
-              className="border-b border-mist transition-colors last:border-0 hover:bg-mist/30"
+              className="group border-b border-mist transition-colors last:border-0 hover:bg-mist/30"
             >
               {columnas.map((c, i) =>
                 c.encabezado ? (
@@ -74,7 +76,9 @@ export function Tabla<T>({
                 ) : (
                   <td
                     key={c.clave}
-                    className={`py-4 ${c.derecha ? "text-right tabular-nums" : ""} ${orillas(
+                    className={`py-4 ${c.derecha ? "text-right tabular-nums" : ""} ${
+                      c.fija ? FIJA_CELDA : ""
+                    } ${orillas(
                       i,
                       columnas.length,
                     )}`}
@@ -100,6 +104,10 @@ export function Tabla<T>({
 }
 
 /** Más aire en la primera y la última columna, para que no toquen el borde. */
+/* Fondo sólido: la columna se monta sobre lo que corre por debajo. */
+const FIJA_ENCABEZADO = "sticky right-0 bg-white";
+const FIJA_CELDA = "sticky right-0 bg-white shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.12)] group-hover:bg-mist";
+
 function orillas(i: number, total: number) {
   if (i === 0) return "pl-6 pr-4 lg:pl-8";
   if (i === total - 1) return "pl-4 pr-6 lg:pr-8";

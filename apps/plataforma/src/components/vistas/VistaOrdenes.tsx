@@ -22,6 +22,7 @@ import {
   cargarFirmasDeOrden,
   cargarItemsDeOrden,
   cargarOrdenes,
+  pagoDeOrden,
   type EnvioOrden as Envio,
   type EstadoOrden,
   type Item,
@@ -420,14 +421,19 @@ const columnas = (
   {
     clave: "estado",
     titulo: "Estado",
-    celda: (o) => (
+    celda: (o) => {
+      const pago = pagoDeOrden(o);
+      return (
       <div className="flex flex-col items-start gap-1">
         <Chip tono={estados[o.estado].tono}>{estados[o.estado].titulo}</Chip>
+        {pago?.tipo === "total" && <Chip tono="bueno">Pagada</Chip>}
+        {pago?.tipo === "parcial" && <Chip tono="info">Pagada {pago.pct} %</Chip>}
         {/* Lo último que pasó con el envío al proveedor. */}
         {envios.get(o.id)?.[0] && <EstadoEnvio envio={envios.get(o.id)![0]} />}
         {o.reembolsable > 0 && <Etiqueta destacada>Con reembolsables</Etiqueta>}
       </div>
-    ),
+      );
+    },
   },
   {
     clave: "neto",
@@ -445,6 +451,7 @@ const columnas = (
     clave: "acciones",
     titulo: "",
     derecha: true,
+    fija: true,
     celda: (o) => (
       <div className="flex items-center justify-end gap-1">
         {puedeEmitir && (

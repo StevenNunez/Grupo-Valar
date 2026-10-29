@@ -79,6 +79,10 @@ export type Orden = {
   facturas: number;
   /** Lleva más de 5 días facturado algo que no llegó. */
   solicitarNc: boolean;
+  /** Lo que cobraron las facturas reales de la OC (con IVA, neto de NC). */
+  facturadoReal: number;
+  /** Lo ya pagado de esas facturas, entero o en cuotas. */
+  pagadoReal: number;
 };
 
 type FilaOrden = {
@@ -168,7 +172,54 @@ function mapear(f: FilaOrden): Orden {
     pagado: f.pagado ?? 0,
     facturas: f.facturas ?? 0,
     solicitarNc: f.solicitar_nc ?? false,
+    facturadoReal: 0,
+    pagadoReal: 0,
   };
+}
+
+/**
+ * Lo facturado y lo pagado de cada OC, sacado de sus facturas reales (las mismas
+ * que ve Pagos): con IVA, neto de notas de crédito, y lo pagado entero o en
+ * cuotas. La vista de resumen calcula a precio de la orden y no sabe de cuotas.
+ * Si la consulta falla, las órdenes salen sin marca de pago y nada se rompe.
+ */
+async function pagosPorOrden(ids?: string[]): Promise<Map<string, { facturado: number; pagado: number }>> {
+  const mapa = new Map<string, { facturado: number; pagado: number }>();
+  let consulta = supabase
+    .from("compras")
+    .select("orden_id, total, pagado, estado_pago, notas_credito(total)")
+    .not("orden_id", "is", null)
+    .neq("estado_pago", "anulada");
+  if (ids) consulta = consulta.in("orden_id", ids);
+  const { data, error } = await consulta;
+  if (error) {
+    console.warn("No se pudo leer el pago de las órdenes:", error.message);
+    return mapa;
+  }
+  for (const c of (data ?? []) as unknown as {
+    orden_id: string;
+    total: number;
+    pagado: number | null;
+    estado_pago: string;
+    notas_credito: { total: number }[] | null;
+  }[]) {
+    const facturado = Number(c.total) - (c.notas_credito ?? []).reduce((t, nc) => t + Number(nc.total), 0);
+    const pagado = c.estado_pago === "pagada" ? facturado : Math.min(Number(c.pagado ?? 0), facturado);
+    const previo = mapa.get(c.orden_id) ?? { facturado: 0, pagado: 0 };
+    mapa.set(c.orden_id, { facturado: previo.facturado + facturado, pagado: previo.pagado + pagado });
+  }
+  return mapa;
+}
+
+/**
+ * El pago de una OC, para la marca del estado. Nada si no hay facturas; "total"
+ * cuando todo lo facturado está pagado; "parcial" con el porcentaje si no.
+ */
+export function pagoDeOrden(o: Orden): { tipo: "total" } | { tipo: "parcial"; pct: number } | null {
+  if (o.estado === "borrador" || o.estado === "anulada") return null;
+  if (o.facturadoReal <= 0 || o.pagadoReal <= 0) return null;
+  if (o.pagadoReal >= o.facturadoReal) return { tipo: "total" };
+  return { tipo: "parcial", pct: Math.floor((o.pagadoReal / o.facturadoReal) * 100) };
 }
 
 export async function cargarOrdenes(): Promise<Orden[]> {
@@ -178,14 +229,29 @@ export async function cargarOrdenes(): Promise<Orden[]> {
     .order("fecha_emision", { ascending: false });
 
   if (error) throw new Error(error.message);
-  return ((data ?? []) as FilaOrden[]).map(mapear);
+  const ordenes = ((data ?? []) as FilaOrden[]).map(mapear);
+  const pagos = await pagosPorOrden();
+  for (const o of ordenes) {
+    const p = pagos.get(o.id);
+    if (p) {
+      o.facturadoReal = p.facturado;
+      o.pagadoReal = p.pagado;
+    }
+  }
+  return ordenes;
 }
 
 /** Una sola orden, con su avance. */
 export async function cargarOrden(id: string): Promise<Orden> {
   const { data, error } = await supabase.from("ordenes_proveedor_resumen").select("*").eq("id", id).single();
   if (error) throw new Error(error.message);
-  return mapear(data as FilaOrden);
+  const orden = mapear(data as FilaOrden);
+  const p = (await pagosPorOrden([id])).get(id);
+  if (p) {
+    orden.facturadoReal = p.facturado;
+    orden.pagadoReal = p.pagado;
+  }
+  return orden;
 }
 
 /**
