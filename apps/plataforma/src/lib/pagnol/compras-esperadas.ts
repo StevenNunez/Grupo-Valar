@@ -232,7 +232,15 @@ export async function anunciarOrden(sb: SupabaseClient, ordenId: string, panolPe
   const deLaOrden = items.filter((i) => i.pagnol_material_id);
   const sinCatalogo = items.length - deLaOrden.length;
   if (sinCatalogo > 0) avisos.push(`${sinCatalogo} ${sinCatalogo === 1 ? "línea no es" : "líneas no son"} del catálogo de Pagnol y no se anuncian.`);
-  if (deLaOrden.length === 0) return { ok: false, error: "Ninguna línea de la orden es del catálogo de Pagnol." };
+  if (deLaOrden.length === 0) {
+    /* Sin líneas enlazadas y sin nada por resolver: no es un problema del catálogo,
+       es que no queda nada pendiente de recibir (todo recibido o cerrado en Valar). */
+    if (items.length === 0) return { ok: false, error: "La orden no tiene líneas." };
+    if (porResolver.length === 0) {
+      return { ok: false, error: "Esta orden ya se recibió completa en Valar (o sus saldos están cerrados): no queda nada que Pagnol espere." };
+    }
+    return { ok: false, error: "Ninguna línea de la orden es del catálogo de Pagnol." };
+  }
 
   const previa = await filaDe(sb, ordenId);
   const yaAnunciada = !!previa?.pagnol_compra_id && previa.estado !== "error";
