@@ -45,6 +45,8 @@ export type OrdenParaEnviar = {
   proyecto: string | null;
   observaciones: string | null;
   fechaComprometida: string | null;
+  /** Número de la cotización del proveedor (0104). */
+  numeroCotizacion: string | null;
   /** Descuento sobre el subtotal, en % (0102). */
   descuentoPorcentaje: number;
   items: {
@@ -106,6 +108,7 @@ export async function cargarOrdenParaEnviar(
     proyecto: o.proyecto,
     observaciones: o.observaciones,
     fechaComprometida: o.fecha_comprometida,
+    numeroCotizacion: (o.numero_cotizacion as string | null | undefined) ?? null,
     descuentoPorcentaje: Number(o.descuento_porcentaje ?? 0),
     items: (items ?? []).map((i) => ({
       descripcion: i.descripcion,

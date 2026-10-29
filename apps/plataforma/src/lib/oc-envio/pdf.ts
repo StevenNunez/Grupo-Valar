@@ -190,6 +190,10 @@ export async function pdfDeOrden(o: OrdenParaEnviar): Promise<Uint8Array> {
     );
   });
   y -= 36;
+  if (o.numeroCotizacion?.trim()) {
+    texto(`COTIZACIÓN N°  ${o.numeroCotizacion.trim()}`, MARGEN, y + 6, { tam: 8.5, fuente: negrita });
+    y -= 12;
+  }
   raya(y);
   y -= 22;
 

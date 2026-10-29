@@ -75,6 +75,7 @@ export function OrdenImprimible({ orden, items, descuento, firmas }: { orden: Or
         <Dato etiqueta="Forma de pago" valor={orden.condicionesPago} destacado />
         <Dato etiqueta="Requerida para" valor={formatearFecha(orden.fechaRequerida)} destacado />
         <Dato etiqueta="Lugar de entrega" valor={orden.lugarEntrega} destacado />
+        {descuento?.cotizacion && <Dato etiqueta="N.º de cotización" valor={descuento.cotizacion} destacado />}
       </div>
 
       {/* Ítems */}

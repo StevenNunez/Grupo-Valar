@@ -468,18 +468,24 @@ export type DescuentoDeOrden = {
   porcentaje: number;
   /** Precio de lista por línea (id del ítem). Vacío si la orden no tiene descuento. */
   listas: Map<string, number>;
+  /** Número de la cotización del proveedor (0104). Vacío si no se anotó. */
+  cotizacion: string;
 };
 
 /** El descuento de una orden y los precios de lista. Sin la 0102 aplicada, ninguno. */
 export async function cargarDescuentoDeOrden(ordenId: string): Promise<DescuentoDeOrden> {
   const [orden, items] = await Promise.all([
-    supabase.from("ordenes_compra_proveedor").select("descuento_porcentaje").eq("id", ordenId).maybeSingle(),
+    supabase.from("ordenes_compra_proveedor").select("descuento_porcentaje, numero_cotizacion").eq("id", ordenId).maybeSingle(),
     supabase.from("items_compra").select("id, precio_lista").eq("orden_id", ordenId),
   ]);
-  if (orden.error || items.error) return { porcentaje: 0, listas: new Map() };
+  if (orden.error || items.error) return { porcentaje: 0, listas: new Map(), cotizacion: "" };
   const listas = new Map<string, number>();
   for (const i of items.data ?? []) if (i.precio_lista != null) listas.set(i.id as string, Number(i.precio_lista));
-  return { porcentaje: Number(orden.data?.descuento_porcentaje ?? 0), listas };
+  return {
+    porcentaje: Number(orden.data?.descuento_porcentaje ?? 0),
+    listas,
+    cotizacion: (orden.data?.numero_cotizacion as string | null | undefined) ?? "",
+  };
 }
 
 /* ── Envío al proveedor (0069) ────────────────────────────────────────────── */

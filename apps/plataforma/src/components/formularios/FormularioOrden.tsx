@@ -260,6 +260,9 @@ export function FormularioOrden({
   const [descuento, setDescuento] = useState(0);
   /** El que traía la orden al abrirla: las columnas del descuento (0102) solo se tocan si hubo o hay descuento. */
   const [descuentoInicial, setDescuentoInicial] = useState(0);
+  /** Número de la cotización del proveedor (0104), opcional. Aparte de `f.datos` para que guardar siga andando sin la migración. */
+  const [cotizacion, setCotizacion] = useState("");
+  const [cotizacionInicial, setCotizacionInicial] = useState("");
 
   const claveGuardado = editando ? null : `oc-borrador:${usuario.id}:nueva`;
   /* La que quedó de antes, mientras no se decida qué hacer con ella. Hasta
@@ -312,6 +315,8 @@ export function FormularioOrden({
         setExenta(items.length > 0 && items.every((i) => i.iva === 0));
         setDescuento(desc.porcentaje);
         setDescuentoInicial(desc.porcentaje);
+        setCotizacion(desc.cotizacion);
+        setCotizacionInicial(desc.cotizacion);
         setLineas(
           items.map((i) => ({
             id: i.id,
@@ -467,6 +472,8 @@ export function FormularioOrden({
       proveedor_id: f.datos.proveedor_id || null,
       // Sin descuento antes ni ahora no se manda: así guardar sigue andando aunque falte la 0102.
       ...(descuento > 0 || descuentoInicial > 0 ? { descuento_porcentaje: descuento } : {}),
+      // Igual: sin número antes ni ahora no se manda (y se puede borrar uno ya puesto).
+      ...(cotizacion.trim() || cotizacionInicial ? { numero_cotizacion: cotizacion.trim() || null } : {}),
     };
 
     f.enviar(async () => {
@@ -682,6 +689,13 @@ export function FormularioOrden({
               opciones={opcionesCondicionPago}
               ayuda="Viene de la ficha del proveedor. Con esto se calcula el vencimiento de su factura."
               {...f.campo("condiciones_pago")}
+            />
+            <CampoTexto
+              etiqueta="N.º de cotización"
+              marcador="Opcional"
+              ayuda="El número que el proveedor le puso a su cotización."
+              valor={cotizacion}
+              alCambiar={setCotizacion}
             />
             <CampoTexto etiqueta="Lugar de entrega" marcador="Faena Coya Sur" {...f.campo("lugar_entrega")} />
             <CampoTexto etiqueta="Solicitado por" {...f.campo("solicitado_por")} />
