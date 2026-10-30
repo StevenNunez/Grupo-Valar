@@ -15,14 +15,21 @@ import { cargarArticulos, type Articulo } from "@/lib/articulos";
 import { useConsulta } from "@/lib/consulta";
 import {
   cargarAprobaciones,
+  cargarNumerosSolped,
+  cargarPaginaSolped,
   cargarPendientesPorSolped,
-  cargarSolped,
+  cargarResumenSolped,
   firmar,
   nombreEstadoSolped,
   type Aprobacion,
   type EstadoSolped,
+  type FiltrosSolped,
+  type NumeroDeSolped,
+  type OrdenDeListaSolped,
+  type ResumenSolped,
   type Solped,
 } from "@/lib/abastecimiento";
+import { useListaServidor, useRetardado } from "@/lib/lista-servidor";
 import { cargarContratosBreve, type ContratoBreve } from "@/lib/contratos";
 import { actualizar } from "@/lib/crud";
 import { cargarDashboard, type FilaCategoria } from "@/lib/dashboard";
@@ -62,19 +69,37 @@ const opciones: { id: Filtrado; titulo: string }[] = [
 
 const CERRADAS: EstadoSolped[] = ["cerrada", "rechazada", "anulada"];
 
+const opcionesOrden: { id: OrdenDeListaSolped; titulo: string }[] = [
+  { id: "numero-desc", titulo: "N° mayor a menor" },
+  { id: "numero-asc", titulo: "N° menor a mayor" },
+  { id: "fecha-desc", titulo: "Más recientes" },
+  { id: "fecha-asc", titulo: "Más antiguas" },
+  { id: "requerida", titulo: "Fecha requerida (más próxima)" },
+  { id: "antiguedad", titulo: "Más días abiertas" },
+  { id: "solicitante", titulo: "Solicitante A–Z" },
+];
+
+const nombreMes = (aaaamm: string) => {
+  const [a, m] = aaaamm.split("-").map(Number);
+  const t = new Date(a, m - 1, 1).toLocaleDateString("es-CL", { month: "long", year: "numeric" });
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+
 type Datos = {
-  solped: Solped[];
   contratos: ContratoBreve[];
   categorias: FilaCategoria[];
   /** El maestro, para autocompletar los ítems al armar la solicitud. */
   articulos: Articulo[];
   /** Ítems que todavía faltan por comprar, por solicitud. */
   pendientes: Record<string, number>;
+  /** Solo para proponer el siguiente N° al crear una solicitud. */
+  numeros: NumeroDeSolped[];
+  /** Las cifras de arriba, sobre todas las solicitudes (la lista trae solo las recientes). */
+  resumen: ResumenSolped;
 };
 
 async function cargar(): Promise<Datos> {
-  const [solped, contratos, dashboard, articulos, pendientes] = await Promise.all([
-    cargarSolped(),
+  const [contratos, dashboard, articulos, pendientes, numeros, resumen] = await Promise.all([
     cargarContratosBreve(),
     cargarDashboard(),
     /* El catálogo no puede tumbar la pantalla: si la 0027 todavía no está
@@ -82,16 +107,60 @@ async function cargar(): Promise<Datos> {
     cargarArticulos().catch(() => [] as Articulo[]),
     // Un dato de apoyo: si falla, la lista se ve igual, sin el aviso de faltantes.
     cargarPendientesPorSolped().catch(() => ({}) as Record<string, number>),
+    cargarNumerosSolped(),
+    cargarResumenSolped(),
   ]);
-  return { solped, contratos, categorias: dashboard.categorias, articulos, pendientes };
+  return { contratos, categorias: dashboard.categorias, articulos, pendientes, numeros, resumen };
 }
 
+/** En compra a medias: ya salió alguna orden y todavía faltan ítems por cubrir. */
+const enCompraIncompleta = (s: Solped, pendientes: Record<string, number>) =>
+  !CERRADAS.includes(s.estado) && s.cantidadComprada > 0 && (pendientes[s.id] ?? 0) > 0;
+
 export function VistaSolped() {
-  const { estado, recargar } = useConsulta<Datos>(cargar);
+  const usuario = useUsuario();
+  // Con clave, la pantalla abre al tiro con lo último que se vio y se refresca por detrás.
+  const { estado, recargar: recargarBase } = useConsulta<Datos>(cargar, `${usuario.id}:${usuario.empresa}:solped-v2`);
   const edicion = useEdicion<Solped>("solped");
   const [firmando, setFirmando] = useState<Solped | null>(null);
   const [expediente, setExpediente] = useState<Solped | null>(null);
   const [cotizando, setCotizando] = useState<Solped | null>(null);
+
+  const [filtro, setFiltro] = useFiltro<Filtrado>("solped:estado", "todas");
+  const [mes, setMes] = useFiltro("solped:mes", "");
+  const [texto, setTexto] = useState("");
+  const [orden, setOrden] = useState<OrdenDeListaSolped>("fecha-desc");
+  const buscado = useRetardado(texto);
+
+  // Lo que la base resuelve. «Faltan ítems por comprar» además se afina acá abajo.
+  const filtros = useMemo<FiltrosSolped>(
+    () => ({
+      estados: filtro === "por-aprobar" ? ["en-aprobacion"] : filtro === "cerradas" ? CERRADAS : null,
+      excluir: filtro === "abiertas" || filtro === "incompletas" ? CERRADAS : null,
+      conCompra: filtro === "incompletas",
+      mes,
+      texto: buscado,
+      orden,
+    }),
+    [filtro, mes, buscado, orden],
+  );
+
+  const pendientes = estado.estado === "listo" ? estado.datos.pendientes : null;
+  const soloIncompletas = useMemo(
+    () => (filtro === "incompletas" && pendientes ? (s: Solped) => enCompraIncompleta(s, pendientes) : null),
+    [filtro, pendientes],
+  );
+
+  const lista = useListaServidor<Solped, FiltrosSolped>({
+    traer: cargarPaginaSolped,
+    filtros,
+    filtroLocal: soloIncompletas,
+  });
+
+  const recargar = () => {
+    recargarBase();
+    lista.recargar();
+  };
 
   return (
     <>
@@ -105,8 +174,16 @@ export function VistaSolped() {
         {(datos) => (
           <>
             <Contenidos
-              filas={datos.solped}
-              pendientes={datos.pendientes}
+              datos={datos}
+              lista={lista}
+              filtro={filtro}
+              alFiltrar={setFiltro}
+              mes={mes}
+              alElegirMes={setMes}
+              texto={texto}
+              alBuscar={setTexto}
+              orden={orden}
+              alOrdenar={setOrden}
               edicion={edicion}
               alFirmar={setFirmando}
               alVerExpediente={setExpediente}
@@ -116,7 +193,7 @@ export function VistaSolped() {
             {edicion.editando && (
               <FormularioSolped
                 solped={edicion.registro}
-                todas={datos.solped}
+                todas={datos.numeros}
                 contratos={datos.contratos}
                 categorias={datos.categorias}
                 articulos={datos.articulos}
@@ -176,45 +253,42 @@ export function VistaSolped() {
   );
 }
 
-/** En compra a medias: ya salió alguna orden y todavía faltan ítems por cubrir. */
-const enCompraIncompleta = (s: Solped, pendientes: Record<string, number>) =>
-  !CERRADAS.includes(s.estado) && s.cantidadComprada > 0 && (pendientes[s.id] ?? 0) > 0;
-
 function Contenidos({
-  filas,
-  pendientes,
+  datos,
+  lista,
+  filtro,
+  alFiltrar,
+  mes,
+  alElegirMes,
+  texto,
+  alBuscar,
+  orden,
+  alOrdenar,
   edicion,
   alFirmar,
   alVerExpediente,
   alCotizar,
 }: {
-  filas: Solped[];
-  pendientes: Record<string, number>;
+  datos: Datos;
+  lista: ReturnType<typeof useListaServidor<Solped, FiltrosSolped>>;
+  filtro: Filtrado;
+  alFiltrar: (f: Filtrado) => void;
+  mes: string;
+  alElegirMes: (m: string) => void;
+  texto: string;
+  alBuscar: (t: string) => void;
+  orden: OrdenDeListaSolped;
+  alOrdenar: (o: OrdenDeListaSolped) => void;
   edicion: ReturnType<typeof useEdicion<Solped>>;
   alFirmar: (s: Solped) => void;
   alVerExpediente: (s: Solped) => void;
   alCotizar: (s: Solped) => void;
 }) {
-  const [filtro, setFiltro] = useFiltro<Filtrado>("solped:estado", "todas");
   // Mandar a aprobar es de quien crea solicitudes; firmar, de quien aprueba.
   const permisos = { enviar: usePuede("solped.crear"), aprobar: usePuede("solped.aprobar") };
+  const { resumen, pendientes } = datos;
 
-  const visibles = useMemo(() => {
-    if (filtro === "por-aprobar") return filas.filter((s) => s.estado === "en-aprobacion");
-    if (filtro === "abiertas") return filas.filter((s) => !CERRADAS.includes(s.estado));
-    if (filtro === "incompletas") return filas.filter((s) => enCompraIncompleta(s, pendientes));
-    if (filtro === "cerradas") return filas.filter((s) => CERRADAS.includes(s.estado));
-    return filas;
-  }, [filas, filtro, pendientes]);
-
-  const porAprobar = filas.filter((s) => s.estado === "en-aprobacion");
-  const abiertas = filas.filter((s) => !CERRADAS.includes(s.estado));
-  // Una solicitud que lleva más de una semana esperando ya es un problema, no
-  // una demora.
-  const trabadas = abiertas.filter((s) => s.diasAbierta > 7);
-  const urgentes = abiertas.filter((s) => s.prioridad === "urgente");
-
-  if (filas.length === 0) {
+  if (resumen.cantidad === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-mist-deep bg-white p-10 text-center">
         <p className="font-display text-lg font-semibold text-ink">
@@ -234,43 +308,102 @@ function Contenidos({
         datos={[
           {
             etiqueta: "Esperando aprobación",
-            valor: String(porAprobar.length),
-            nota: porAprobar.length === 0 ? "Nada pendiente de firma" : "No se puede cotizar hasta que se firmen",
-            acento: porAprobar.length > 0 ? "aviso" : "bueno",
+            valor: String(resumen.porAprobar),
+            nota: resumen.porAprobar === 0 ? "Nada pendiente de firma" : "No se puede cotizar hasta que se firmen",
+            acento: resumen.porAprobar > 0 ? "aviso" : "bueno",
           },
           {
             etiqueta: "Abiertas",
-            valor: String(abiertas.length),
-            nota: `de ${filas.length} solicitudes en total`,
+            valor: String(resumen.abiertas),
+            nota: `de ${resumen.cantidad} solicitudes en total`,
           },
           {
             etiqueta: "Trabadas",
-            valor: String(trabadas.length),
+            valor: String(resumen.trabadas),
+            // Una solicitud que lleva más de una semana esperando ya es un problema, no una demora.
             nota: "Más de 7 días sin cerrarse",
-            acento: trabadas.length > 0 ? "critico" : "bueno",
+            acento: resumen.trabadas > 0 ? "critico" : "bueno",
           },
           {
             etiqueta: "Urgentes",
-            valor: String(urgentes.length),
+            valor: String(resumen.urgentes),
             nota: "Marcadas como urgentes y todavía abiertas",
-            acento: urgentes.length > 0 ? "aviso" : undefined,
+            acento: resumen.urgentes > 0 ? "aviso" : undefined,
           },
         ]}
       />
 
       <Panel
         titulo="Detalle"
-        nota={`${visibles.length} de ${filas.length} solicitudes`}
-        filtros={
-          <Filtro etiqueta="Estado" opciones={opciones} valor={filtro} alCambiar={setFiltro} />
-        }
+        nota={`${lista.filas.length}${lista.hayMas ? "+" : ""} mostradas · ${resumen.cantidad} en total`}
+        filtros={<Filtro etiqueta="Estado" opciones={opciones} valor={filtro} alCambiar={alFiltrar} />}
       >
-        <Tabla
-          columnas={columnas(edicion, alFirmar, alVerExpediente, alCotizar, permisos, pendientes)}
-          filas={visibles}
-          claveDe={(s) => s.id}
-          vacio="Ninguna solicitud en este estado."
-        />
+        <div className="flex flex-wrap items-center gap-3 border-b border-mist px-6 py-4 lg:px-8">
+          <input
+            type="search"
+            value={texto}
+            onChange={(e) => alBuscar(e.target.value)}
+            placeholder="Buscar por N° de solicitud, solicitante, área o contrato…"
+            aria-label="Buscar solicitudes"
+            className="min-w-[16rem] flex-1 rounded-full border border-mist-deep bg-white px-4 py-2 text-sm text-ink outline-none transition-colors placeholder:text-ink-soft/60 focus:border-cyan focus:ring-2 focus:ring-cyan/20"
+          />
+          <select
+            value={mes}
+            onChange={(e) => alElegirMes(e.target.value)}
+            aria-label="Mes de emisión"
+            className="rounded-full border border-mist-deep bg-white px-4 py-2 text-sm font-semibold text-ink-soft"
+          >
+            <option value="">Todos los meses</option>
+            {resumen.meses.map((m) => (
+              <option key={m} value={m}>
+                {nombreMes(m)}
+              </option>
+            ))}
+          </select>
+          <select
+            value={orden}
+            onChange={(e) => alOrdenar(e.target.value as OrdenDeListaSolped)}
+            aria-label="Ordenar por"
+            className="rounded-full border border-mist-deep bg-white px-4 py-2 text-sm font-semibold text-ink-soft"
+          >
+            {opcionesOrden.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.titulo}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {lista.error ? (
+          <p role="alert" className="px-6 py-10 text-center text-sm text-[#a52f24] lg:px-8">
+            No se pudo cargar la lista: {lista.error}{" "}
+            <button type="button" onClick={lista.recargar} className="font-semibold underline">
+              Reintentar
+            </button>
+          </p>
+        ) : lista.cargando && lista.filas.length === 0 ? (
+          <p className="px-6 py-14 text-center text-sm text-ink-soft lg:px-8">Cargando solicitudes…</p>
+        ) : (
+          <Tabla
+            columnas={columnas(edicion, alFirmar, alVerExpediente, alCotizar, permisos, pendientes)}
+            filas={lista.filas}
+            claveDe={(s) => s.id}
+            vacio={texto || mes || filtro !== "todas" ? "Ninguna solicitud con este filtro." : "Ninguna solicitud."}
+          />
+        )}
+
+        {lista.hayMas && !lista.error && (
+          <div className="flex justify-center border-t border-mist px-6 py-4">
+            <button
+              type="button"
+              onClick={lista.cargarMas}
+              disabled={lista.cargandoMas}
+              className="rounded-full border border-mist-deep px-5 py-2 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-60"
+            >
+              {lista.cargandoMas ? "Cargando…" : "Cargar más"}
+            </button>
+          </div>
+        )}
       </Panel>
     </>
   );

@@ -24,6 +24,7 @@ import {
   siguienteNumeroSolped,
   tiposGasto,
   type ItemSolped,
+  type NumeroDeSolped,
   type Prioridad,
   type Solped,
 } from "@/lib/abastecimiento";
@@ -106,7 +107,7 @@ export function FormularioSolped({
   alGuardado,
 }: {
   solped: Solped | null;
-  todas: Solped[];
+  todas: NumeroDeSolped[];
   contratos: ContratoBreve[];
   categorias: FilaCategoria[];
   /** El maestro, para autocompletar y dejar el ítem enlazado. */

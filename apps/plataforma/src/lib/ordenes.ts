@@ -2,6 +2,7 @@
 
 import { eliminar } from "./crud";
 import { emisorOC } from "./empresa";
+import { traerTodo } from "./paginar";
 import { supabase } from "./supabase";
 
 /**
@@ -83,6 +84,8 @@ export type Orden = {
   facturadoReal: number;
   /** Lo ya pagado de esas facturas, entero o en cuotas. */
   pagadoReal: number;
+  /** N.º de la cotización del proveedor en que se basa la OC (0104). */
+  numeroCotizacion: string | null;
 };
 
 type FilaOrden = {
@@ -174,7 +177,38 @@ function mapear(f: FilaOrden): Orden {
     solicitarNc: f.solicitar_nc ?? false,
     facturadoReal: 0,
     pagadoReal: 0,
+    numeroCotizacion: null,
   };
+}
+
+/**
+ * El N.º de cotización de cada OC. Va aparte de la vista de resumen (no lo
+ * trae); si la consulta falla —p. ej. sin la migración 0104— las órdenes salen
+ * sin él y nada se rompe.
+ */
+async function cotizacionesPorOrden(ids?: string[]): Promise<Map<string, string>> {
+  const mapa = new Map<string, string>();
+  type Fila = { id: string; numero_cotizacion: string | null };
+  let filas: Fila[];
+  try {
+    filas = await traerTodo<Fila>((desde, hasta) => {
+      let consulta = supabase
+        .from("ordenes_compra_proveedor")
+        .select("id, numero_cotizacion")
+        .not("numero_cotizacion", "is", null)
+        .order("id")
+        .range(desde, hasta);
+      if (ids) consulta = consulta.in("id", ids);
+      return consulta as unknown as PromiseLike<{ data: Fila[] | null; error: { message: string } | null }>;
+    });
+  } catch (e) {
+    console.warn("No se pudo leer el N.º de cotización de las órdenes:", e instanceof Error ? e.message : e);
+    return mapa;
+  }
+  for (const f of filas) {
+    if (f.numero_cotizacion?.trim()) mapa.set(f.id, f.numero_cotizacion.trim());
+  }
+  return mapa;
 }
 
 /**
@@ -185,24 +219,31 @@ function mapear(f: FilaOrden): Orden {
  */
 async function pagosPorOrden(ids?: string[]): Promise<Map<string, { facturado: number; pagado: number }>> {
   const mapa = new Map<string, { facturado: number; pagado: number }>();
-  let consulta = supabase
-    .from("compras")
-    .select("orden_id, total, pagado, estado_pago, notas_credito(total)")
-    .not("orden_id", "is", null)
-    .neq("estado_pago", "anulada");
-  if (ids) consulta = consulta.in("orden_id", ids);
-  const { data, error } = await consulta;
-  if (error) {
-    console.warn("No se pudo leer el pago de las órdenes:", error.message);
-    return mapa;
-  }
-  for (const c of (data ?? []) as unknown as {
+  type Fila = {
     orden_id: string;
     total: number;
     pagado: number | null;
     estado_pago: string;
     notas_credito: { total: number }[] | null;
-  }[]) {
+  };
+  let filas: Fila[];
+  try {
+    filas = await traerTodo<Fila>((desde, hasta) => {
+      let consulta = supabase
+        .from("compras")
+        .select("orden_id, total, pagado, estado_pago, notas_credito(total)")
+        .not("orden_id", "is", null)
+        .neq("estado_pago", "anulada")
+        .order("id")
+        .range(desde, hasta);
+      if (ids) consulta = consulta.in("orden_id", ids);
+      return consulta as unknown as PromiseLike<{ data: Fila[] | null; error: { message: string } | null }>;
+    });
+  } catch (e) {
+    console.warn("No se pudo leer el pago de las órdenes:", e instanceof Error ? e.message : e);
+    return mapa;
+  }
+  for (const c of filas) {
     const facturado = Number(c.total) - (c.notas_credito ?? []).reduce((t, nc) => t + Number(nc.total), 0);
     const pagado = c.estado_pago === "pagada" ? facturado : Math.min(Number(c.pagado ?? 0), facturado);
     const previo = mapa.get(c.orden_id) ?? { facturado: 0, pagado: 0 };
@@ -223,22 +264,148 @@ export function pagoDeOrden(o: Orden): { tipo: "total" } | { tipo: "parcial"; pc
 }
 
 export async function cargarOrdenes(): Promise<Orden[]> {
-  const { data, error } = await supabase
-    .from("ordenes_proveedor_resumen")
-    .select("*")
-    .order("fecha_emision", { ascending: false });
-
-  if (error) throw new Error(error.message);
-  const ordenes = ((data ?? []) as FilaOrden[]).map(mapear);
-  const pagos = await pagosPorOrden();
+  // Todas, no solo las primeras 1000 que devuelve la API por defecto.
+  const data = await traerTodo<FilaOrden>(
+    (desde, hasta) =>
+      supabase
+        .from("ordenes_proveedor_resumen")
+        .select("*")
+        .order("fecha_emision", { ascending: false })
+        .order("id")
+        .range(desde, hasta) as unknown as PromiseLike<{ data: FilaOrden[] | null; error: { message: string } | null }>,
+  );
+  const ordenes = data.map(mapear);
+  const [pagos, cotizaciones] = await Promise.all([pagosPorOrden(), cotizacionesPorOrden()]);
   for (const o of ordenes) {
     const p = pagos.get(o.id);
     if (p) {
       o.facturadoReal = p.facturado;
       o.pagadoReal = p.pagado;
     }
+    o.numeroCotizacion = cotizaciones.get(o.id) ?? null;
   }
   return ordenes;
+}
+
+/* ── La lista de Órdenes, por partes ──────────────────────────────────────────
+   La pantalla abre con las más recientes y el resto se busca: filtros, buscador
+   y orden se resuelven en la base, no sobre una lista completa en el navegador. */
+
+export type OrdenDeLista = "numero-desc" | "numero-asc" | "fecha-desc" | "fecha-asc" | "monto-desc" | "monto-asc" | "proveedor";
+
+export type FiltrosOrdenes = {
+  /** Nulo = todos los estados. */
+  estados: EstadoOrden[] | null;
+  /** "AAAA-MM", o vacío. */
+  mes: string;
+  texto: string;
+  orden: OrdenDeLista;
+};
+
+/** Saca lo que rompería la sintaxis de `.or()` de PostgREST. */
+const limpiarBusqueda = (t: string) => t.replace(/[,()*%\\"]/g, " ").replace(/\s+/g, " ").trim();
+
+/** Primer día del mes siguiente, para el rango [mes, siguiente). */
+function mesSiguiente(aaaamm: string): string {
+  const [a, m] = aaaamm.split("-").map(Number);
+  return m === 12 ? `${a + 1}-01-01` : `${a}-${String(m + 1).padStart(2, "0")}-01`;
+}
+
+export async function cargarPaginaOrdenes(f: FiltrosOrdenes, desde: number, cuantos: number): Promise<Orden[]> {
+  let q = supabase.from("ordenes_proveedor_resumen").select("*");
+
+  if (f.estados) q = q.in("estado", f.estados);
+  if (f.mes) q = q.gte("fecha_emision", `${f.mes}-01`).lt("fecha_emision", mesSiguiente(f.mes));
+
+  const texto = limpiarBusqueda(f.texto);
+  if (texto) {
+    const condiciones = ["numero", "proveedor", "rut_proveedor", "proyecto", "contrato_id"].map((c) => `${c}.ilike.*${texto}*`);
+    // El N.º de cotización no está en la vista: se buscan primero las órdenes que lo tienen.
+    const { data: porCotizacion, error } = await supabase
+      .from("ordenes_compra_proveedor")
+      .select("id")
+      .ilike("numero_cotizacion", `%${texto}%`)
+      .limit(200);
+    if (!error && porCotizacion?.length) condiciones.push(`id.in.(${porCotizacion.map((o) => o.id).join(",")})`);
+    q = q.or(condiciones.join(","));
+  }
+
+  switch (f.orden) {
+    case "numero-desc": q = q.order("numero", { ascending: false }); break;
+    case "numero-asc": q = q.order("numero", { ascending: true }); break;
+    case "fecha-asc": q = q.order("fecha_emision", { ascending: true }); break;
+    case "monto-desc": q = q.order("total", { ascending: false }); break;
+    case "monto-asc": q = q.order("total", { ascending: true }); break;
+    case "proveedor": q = q.order("proveedor", { ascending: true }); break;
+    default: q = q.order("fecha_emision", { ascending: false });
+  }
+  // Desempate fijo: sin él, las páginas siguientes pueden repetir o saltarse filas.
+  const { data, error } = await q.order("id").range(desde, desde + cuantos - 1);
+  if (error) throw new Error(error.message);
+
+  const ordenes = ((data ?? []) as FilaOrden[]).map(mapear);
+  if (ordenes.length > 0) {
+    const ids = ordenes.map((o) => o.id);
+    const [pagos, cotizaciones] = await Promise.all([pagosPorOrden(ids), cotizacionesPorOrden(ids)]);
+    for (const o of ordenes) {
+      const p = pagos.get(o.id);
+      if (p) {
+        o.facturadoReal = p.facturado;
+        o.pagadoReal = p.pagado;
+      }
+      o.numeroCotizacion = cotizaciones.get(o.id) ?? null;
+    }
+  }
+  return ordenes;
+}
+
+export type ResumenOrdenes = {
+  cantidad: number;
+  neto: number;
+  abiertas: number;
+  /** Comprometido en órdenes abiertas que el proveedor aún no facturó. */
+  porFacturar: number;
+  reembolsable: number;
+  ultimoNumero: string | null;
+  /** Los meses con órdenes, del más reciente al más antiguo ("AAAA-MM"). */
+  meses: string[];
+};
+
+/**
+ * Las cifras de arriba de la pantalla, sobre TODAS las órdenes (la lista solo
+ * trae las más recientes). Pide pocas columnas y de a tandas.
+ */
+export async function cargarResumenOrdenes(): Promise<ResumenOrdenes> {
+  type Fila = { numero: string; estado: EstadoOrden; fecha_emision: string; neto: number; facturado: number; reembolsable: number };
+  const filas = await traerTodo<Fila>(
+    (desde, hasta) =>
+      supabase
+        .from("ordenes_proveedor_resumen")
+        .select("numero, estado, fecha_emision, neto, facturado, reembolsable")
+        .order("id")
+        .range(desde, hasta) as unknown as PromiseLike<{ data: Fila[] | null; error: { message: string } | null }>,
+  );
+  const correlativo = (n: string) => Number(/(\d+)\D*$/.exec(n ?? "")?.[1] ?? 0);
+  let neto = 0, abiertas = 0, porFacturar = 0, reembolsable = 0;
+  let ultimo: Fila | null = null;
+  for (const o of filas) {
+    neto += Number(o.neto);
+    reembolsable += Number(o.reembolsable);
+    if (o.estado === "emitida" || o.estado === "parcial") {
+      abiertas++;
+      porFacturar += Number(o.neto) - Number(o.facturado);
+    }
+    if (!ultimo || correlativo(o.numero) > correlativo(ultimo.numero)) ultimo = o;
+  }
+  return {
+    cantidad: filas.length,
+    neto,
+    abiertas,
+    porFacturar,
+    reembolsable,
+    ultimoNumero: ultimo?.numero ?? null,
+    meses: [...new Set(filas.map((o) => o.fecha_emision.slice(0, 7)))].sort().reverse(),
+  };
 }
 
 /** Una sola orden, con su avance. */
@@ -246,11 +413,13 @@ export async function cargarOrden(id: string): Promise<Orden> {
   const { data, error } = await supabase.from("ordenes_proveedor_resumen").select("*").eq("id", id).single();
   if (error) throw new Error(error.message);
   const orden = mapear(data as FilaOrden);
-  const p = (await pagosPorOrden([id])).get(id);
+  const [pagos, cotizaciones] = await Promise.all([pagosPorOrden([id]), cotizacionesPorOrden([id])]);
+  const p = pagos.get(id);
   if (p) {
     orden.facturadoReal = p.facturado;
     orden.pagadoReal = p.pagado;
   }
+  orden.numeroCotizacion = cotizaciones.get(id) ?? null;
   return orden;
 }
 
@@ -511,15 +680,27 @@ export type EnvioOrden = {
 
 /** Todos, del más nuevo al más viejo. Sin la 0069 aplicada, ninguno. */
 export async function cargarEnvios(): Promise<EnvioOrden[]> {
-  const { data, error } = await supabase
-    .from("ordenes_envios")
-    .select("id, orden_id, enviada_en, enviada_por_nombre, para, cc, vista_en, vistas, confirmada_en, confirmada_por, fecha_entrega, comentario")
-    .order("enviada_en", { ascending: false });
-  if (error) {
-    console.warn("No se pudieron leer los envíos de OC:", error.message);
+  type Fila = {
+    id: string; orden_id: string; enviada_en: string; enviada_por_nombre: string | null; para: string;
+    cc: string[] | null; vista_en: string | null; vistas: number | null; confirmada_en: string | null;
+    confirmada_por: string | null; fecha_entrega: string | null; comentario: string | null;
+  };
+  let data: Fila[];
+  try {
+    data = await traerTodo<Fila>(
+      (desde, hasta) =>
+        supabase
+          .from("ordenes_envios")
+          .select("id, orden_id, enviada_en, enviada_por_nombre, para, cc, vista_en, vistas, confirmada_en, confirmada_por, fecha_entrega, comentario")
+          .order("enviada_en", { ascending: false })
+          .order("id")
+          .range(desde, hasta) as unknown as PromiseLike<{ data: Fila[] | null; error: { message: string } | null }>,
+    );
+  } catch (e) {
+    console.warn("No se pudieron leer los envíos de OC:", e instanceof Error ? e.message : e);
     return [];
   }
-  return (data ?? []).map((e) => ({
+  return data.map((e) => ({
     id: e.id,
     ordenId: e.orden_id,
     enviadaEn: e.enviada_en,

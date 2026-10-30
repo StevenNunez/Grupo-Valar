@@ -1,5 +1,6 @@
 "use client";
 
+import { traerTodo } from "./paginar";
 import { supabase } from "./supabase";
 import { emisorOC as emisorSolicitud } from "./empresa";
 import { formatearFecha } from "./formato";
@@ -345,14 +346,127 @@ type FilaSolped = {
 };
 
 export async function cargarSolped(): Promise<Solped[]> {
-  const { data, error } = await supabase
-    .from("solped_resumen")
-    .select("*")
-    .order("fecha_emision", { ascending: false });
+  // Todas, no solo las primeras 1000 que devuelve la API por defecto.
+  const data = await traerTodo<FilaSolped>(
+    (desde, hasta) =>
+      supabase
+        .from("solped_resumen")
+        .select("*")
+        .order("fecha_emision", { ascending: false })
+        .order("id")
+        .range(desde, hasta) as unknown as PromiseLike<{ data: FilaSolped[] | null; error: { message: string } | null }>,
+  );
 
+  return data.map(mapearSolped);
+}
+
+/* ── La lista de Solicitudes, por partes ───────────────────────────────────────
+   Abre con las más recientes; el resto se busca. Filtros, buscador y orden se
+   resuelven en la base. */
+
+export type OrdenDeListaSolped = "numero-desc" | "numero-asc" | "fecha-desc" | "fecha-asc" | "requerida" | "antiguedad" | "solicitante";
+
+export type FiltrosSolped = {
+  /** Nulo = todos. Es lo que la base puede decidir del filtro de estado. */
+  estados: EstadoSolped[] | null;
+  /** Para «abiertas»: todo menos estos. */
+  excluir: EstadoSolped[] | null;
+  /** «Faltan ítems por comprar»: al menos algo ya comprado. */
+  conCompra: boolean;
+  mes: string;
+  texto: string;
+  orden: OrdenDeListaSolped;
+};
+
+const limpiarBusqueda = (t: string) => t.replace(/[,()*%\\"]/g, " ").replace(/\s+/g, " ").trim();
+
+export async function cargarPaginaSolped(f: FiltrosSolped, desde: number, cuantos: number): Promise<Solped[]> {
+  let q = supabase.from("solped_resumen").select("*");
+
+  if (f.estados) q = q.in("estado", f.estados);
+  if (f.excluir) q = q.not("estado", "in", `(${f.excluir.join(",")})`);
+  if (f.conCompra) q = q.gt("cantidad_comprada", 0);
+  if (f.mes) {
+    const [a, m] = f.mes.split("-").map(Number);
+    const siguiente = m === 12 ? `${a + 1}-01-01` : `${a}-${String(m + 1).padStart(2, "0")}-01`;
+    q = q.gte("fecha_emision", `${f.mes}-01`).lt("fecha_emision", siguiente);
+  }
+
+  const texto = limpiarBusqueda(f.texto);
+  if (texto) {
+    q = q.or(
+      ["numero", "solicitante_nombre", "solicitante_cargo", "area", "contrato_id", "contrato"]
+        .map((c) => `${c}.ilike.*${texto}*`)
+        .join(","),
+    );
+  }
+
+  switch (f.orden) {
+    case "numero-desc": q = q.order("numero", { ascending: false }); break;
+    case "numero-asc": q = q.order("numero", { ascending: true }); break;
+    case "fecha-asc": q = q.order("fecha_emision", { ascending: true }); break;
+    case "requerida": q = q.order("fecha_requerida", { ascending: true, nullsFirst: false }); break;
+    case "antiguedad": q = q.order("dias_abierta", { ascending: false }); break;
+    case "solicitante": q = q.order("solicitante_nombre", { ascending: true }); break;
+    default: q = q.order("fecha_emision", { ascending: false });
+  }
+  // Desempate fijo: sin él, las páginas siguientes pueden repetir o saltarse filas.
+  const { data, error } = await q.order("id").range(desde, desde + cuantos - 1);
   if (error) throw new Error(error.message);
+  return ((data ?? []) as FilaSolped[]).map(mapearSolped);
+}
 
-  return ((data ?? []) as FilaSolped[]).map((f) => ({
+export type ResumenSolped = {
+  cantidad: number;
+  porAprobar: number;
+  abiertas: number;
+  /** Abiertas con más de 7 días. */
+  trabadas: number;
+  urgentes: number;
+  meses: string[];
+};
+
+/** Las cifras de arriba de la pantalla, sobre TODAS las solicitudes. */
+export async function cargarResumenSolped(): Promise<ResumenSolped> {
+  type Fila = { estado: EstadoSolped; prioridad: Prioridad; dias_abierta: number; fecha_emision: string };
+  const filas = await traerTodo<Fila>(
+    (desde, hasta) =>
+      supabase
+        .from("solped_resumen")
+        .select("estado, prioridad, dias_abierta, fecha_emision")
+        .order("id")
+        .range(desde, hasta) as unknown as PromiseLike<{ data: Fila[] | null; error: { message: string } | null }>,
+  );
+  const cerrada = (e: EstadoSolped) => e === "cerrada" || e === "rechazada" || e === "anulada";
+  const abiertas = filas.filter((s) => !cerrada(s.estado));
+  return {
+    cantidad: filas.length,
+    porAprobar: filas.filter((s) => s.estado === "en-aprobacion").length,
+    abiertas: abiertas.length,
+    trabadas: abiertas.filter((s) => Number(s.dias_abierta) > 7).length,
+    urgentes: abiertas.filter((s) => s.prioridad === "urgente").length,
+    meses: [...new Set(filas.map((s) => s.fecha_emision.slice(0, 7)))].sort().reverse(),
+  };
+}
+
+/** Solo los números y contratos, para proponer el siguiente N° al crear una solicitud. */
+export type NumeroDeSolped = Pick<Solped, "numero" | "contratoId">;
+
+export async function cargarNumerosSolped(): Promise<NumeroDeSolped[]> {
+  type Fila = { numero: string; contrato_id: string };
+  const filas = await traerTodo<Fila>(
+    (desde, hasta) =>
+      supabase
+        .from("solped_resumen")
+        .select("numero, contrato_id")
+        .order("id")
+        .range(desde, hasta) as unknown as PromiseLike<{ data: Fila[] | null; error: { message: string } | null }>,
+  );
+  return filas.map((f) => ({ numero: f.numero, contratoId: f.contrato_id }));
+}
+
+function mapearSolped(f: FilaSolped): Solped {
+  return {
     anexoId: (f.anexo_id as string | null | undefined) ?? null,
     id: f.id,
     numero: f.numero,
@@ -372,7 +486,7 @@ export async function cargarSolped(): Promise<Solped[]> {
     cantidadRecibida: Number(f.cantidad_recibida),
     compradoNeto: Number(f.comprado_neto),
     diasAbierta: Number(f.dias_abierta),
-  }));
+  };
 }
 
 export type ItemSolped = {
@@ -457,10 +571,10 @@ export async function cargarCotizacion(id: string) {
  * Compara la parte numérica, no el texto: "SOLPED-9" no le gana a "SOLPED-097".
  */
 export function siguienteNumeroSolped(
-  solped: Solped[],
+  solped: NumeroDeSolped[],
   contrato?: { id: string; nombreCorto?: string },
 ) {
-  const ultimo = (lista: Solped[]) =>
+  const ultimo = (lista: NumeroDeSolped[]) =>
     Math.max(0, ...lista.map((s) => Number(/(\d+)\s*$/.exec(s.numero)?.[1] ?? 0)));
   if (!contrato) return `SOLPED-${String(ultimo(solped) + 1).padStart(3, "0")}`;
 
@@ -655,13 +769,20 @@ export async function cargarAvanceDeSolped(solpedId: string): Promise<AvanceItem
  * Solo salen las que tienen alguno pendiente.
  */
 export async function cargarPendientesPorSolped(): Promise<Record<string, number>> {
-  const { data, error } = await supabase
-    .from("solped_items_avance")
-    .select("solped_id")
-    .gt("cantidad_pendiente", 0);
-  if (error) throw new Error(error.message);
+  // Una fila por ítem pendiente: pasa de 1000 con facilidad, y contar de menos
+  // escondería el aviso «Faltan ítems por comprar».
+  const data = await traerTodo<{ solped_id: string }>(
+    (desde, hasta) =>
+      supabase
+        .from("solped_items_avance")
+        .select("solped_id")
+        .gt("cantidad_pendiente", 0)
+        .order("solped_id")
+        .order("id")
+        .range(desde, hasta) as unknown as PromiseLike<{ data: { solped_id: string }[] | null; error: { message: string } | null }>,
+  );
   const cuenta: Record<string, number> = {};
-  for (const f of (data ?? []) as { solped_id: string }[]) cuenta[f.solped_id] = (cuenta[f.solped_id] ?? 0) + 1;
+  for (const f of data) cuenta[f.solped_id] = (cuenta[f.solped_id] ?? 0) + 1;
   return cuenta;
 }
 

@@ -21,13 +21,18 @@ import {
   cargarDescuentoDeOrden,
   cargarFirmasDeOrden,
   cargarItemsDeOrden,
-  cargarOrdenes,
+  cargarPaginaOrdenes,
+  cargarResumenOrdenes,
   pagoDeOrden,
   type EnvioOrden as Envio,
   type EstadoOrden,
+  type FiltrosOrdenes,
   type Item,
   type Orden,
+  type OrdenDeLista,
+  type ResumenOrdenes,
 } from "@/lib/ordenes";
+import { useListaServidor, useRetardado } from "@/lib/lista-servidor";
 import { usePuede, useUsuario } from "@/lib/sesion";
 import { supabase } from "@/lib/supabase";
 
@@ -43,29 +48,30 @@ const estados: Record<EstadoOrden, { titulo: string; tono: Tono }> = {
 type Categoria = { id: string; nombre: string; contratoId: string };
 
 type Datos = {
-  ordenes: Orden[];
+  /** Las cifras de arriba, sobre todas las órdenes (la lista trae solo las recientes). */
+  resumen: ResumenOrdenes;
   contratos: ContratoBreve[];
   categorias: Categoria[];
   proveedores: Proveedor[];
   /** Por orden, del más nuevo al más viejo. */
-  envios: Map<string, Envio[]>;
+  envios: Record<string, Envio[]>;
 };
 
 async function cargar(): Promise<Datos> {
-  const [ordenes, contratos, categorias, proveedores, envios] = await Promise.all([
-    cargarOrdenes(),
+  const [resumen, contratos, categorias, proveedores, envios] = await Promise.all([
+    cargarResumenOrdenes(),
     cargarContratosBreve(),
     supabase.from("categorias_costo").select("id, nombre, contrato_id").order("orden"),
     cargarProveedores(),
     cargarEnvios(),
   ]);
-  const porOrden = new Map<string, Envio[]>();
-  for (const e of envios) porOrden.set(e.ordenId, [...(porOrden.get(e.ordenId) ?? []), e]);
+  const porOrden: Record<string, Envio[]> = {};
+  for (const e of envios) (porOrden[e.ordenId] ??= []).push(e);
 
   if (categorias.error) throw new Error(categorias.error.message);
 
   return {
-    ordenes,
+    resumen,
     contratos,
     proveedores,
     envios: porOrden,
@@ -83,46 +89,23 @@ const opciones: { id: Filtrado; titulo: string }[] = [
   { id: "cerradas", titulo: "Cerradas" },
 ];
 
-type Orden_ =
-  | "numero-desc"
-  | "numero-asc"
-  | "fecha-desc"
-  | "fecha-asc"
-  | "monto-desc"
-  | "monto-asc"
-  | "proveedor";
+type FiltradoPago = "todas" | "pagadas" | "por-pagar";
 
-const opcionesOrden: { id: Orden_; titulo: string }[] = [
-  { id: "numero-desc", titulo: "N° mayor a menor" },
-  { id: "numero-asc", titulo: "N° menor a mayor" },
+const opcionesPago: { id: FiltradoPago; titulo: string }[] = [
+  { id: "todas", titulo: "Todas" },
+  { id: "pagadas", titulo: "Pagadas" },
+  { id: "por-pagar", titulo: "Por pagar" },
+];
+
+const opcionesOrden: { id: OrdenDeLista; titulo: string }[] = [
   { id: "fecha-desc", titulo: "Más recientes" },
   { id: "fecha-asc", titulo: "Más antiguas" },
+  { id: "numero-desc", titulo: "N° mayor a menor" },
+  { id: "numero-asc", titulo: "N° menor a mayor" },
   { id: "monto-desc", titulo: "Monto mayor a menor" },
   { id: "monto-asc", titulo: "Monto menor a mayor" },
   { id: "proveedor", titulo: "Proveedor A–Z" },
 ];
-
-/** La parte numérica del N°: como texto, "OC22-9" le ganaría a "OC22-001128". */
-const correlativo = (numero: string) => {
-  const m = /(\d+)\D*$/.exec(numero ?? "");
-  return m ? Number(m[1]) : 0;
-};
-
-const porNumero = (a: Orden, b: Orden) =>
-  correlativo(a.numero) - correlativo(b.numero) || a.numero.localeCompare(b.numero, "es", { numeric: true });
-
-const comparadores: Record<Orden_, (a: Orden, b: Orden) => number> = {
-  "numero-desc": (a, b) => porNumero(b, a),
-  "numero-asc": porNumero,
-  "fecha-desc": (a, b) => b.fechaEmision.localeCompare(a.fechaEmision) || porNumero(b, a),
-  "fecha-asc": (a, b) => a.fechaEmision.localeCompare(b.fechaEmision) || porNumero(a, b),
-  "monto-desc": (a, b) => b.total - a.total,
-  "monto-asc": (a, b) => a.total - b.total,
-  proveedor: (a, b) => a.proveedor.localeCompare(b.proveedor, "es") || porNumero(b, a),
-};
-
-/** Minúsculas y sin tildes, para que "Cañería" se encuentre escribiendo "caneria". */
-const normalizar = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 const nombreMes = (aaaamm: string) => {
   const [a, m] = aaaamm.split("-").map(Number);
@@ -131,12 +114,59 @@ const nombreMes = (aaaamm: string) => {
 };
 
 export function VistaOrdenes() {
-  const { estado, recargar } = useConsulta<Datos>(cargar);
-  const edicion = useEdicion<Orden>("ordenes_compra_proveedor");
   const usuario = useUsuario();
+  // Con clave, la pantalla abre al tiro con lo último que se vio y se refresca por detrás.
+  const { estado, recargar: recargarBase } = useConsulta<Datos>(cargar, `${usuario.id}:${usuario.empresa}:ordenes-v2`);
+  const edicion = useEdicion<Orden>("ordenes_compra_proveedor");
   const [imprimiendo, setImprimiendo] = useState<Orden | null>(null);
   const [recepcion, setRecepcion] = useState<Orden | null>(null);
   const [enviando, setEnviando] = useState<Orden | null>(null);
+
+  const [filtro, setFiltro] = useFiltro<Filtrado>("ordenes:estado", "todas");
+  const [pago, setPago] = useFiltro<FiltradoPago>("ordenes:pago", "todas");
+  const [mes, setMes] = useFiltro("ordenes:mes", "");
+  const [texto, setTexto] = useState("");
+  const [orden, setOrden] = useState<OrdenDeLista>("fecha-desc");
+  const buscado = useRetardado(texto);
+
+  // Lo que la base resuelve: estado, mes, texto y orden. Solo viajan las más recientes.
+  const filtros = useMemo<FiltrosOrdenes>(
+    () => ({
+      estados:
+        filtro === "borrador"
+          ? ["borrador"]
+          : filtro === "cerradas"
+            ? ["cerrada", "anulada"]
+            : filtro === "abiertas"
+              ? ["emitida", "parcial", "recibida"]
+              : null,
+      mes,
+      texto: buscado,
+      orden,
+    }),
+    [filtro, mes, buscado, orden],
+  );
+
+  // El pago sale de las facturas, no de la orden: se afina sobre lo cargado, y la
+  // lista sigue pidiendo páginas hasta llenar la tabla.
+  const soloPago = useMemo(() => {
+    if (pago === "pagadas") return (o: Orden) => pagoDeOrden(o)?.tipo === "total";
+    if (pago === "por-pagar") {
+      return (o: Orden) => o.estado !== "borrador" && o.estado !== "anulada" && pagoDeOrden(o)?.tipo !== "total";
+    }
+    return null;
+  }, [pago]);
+
+  const lista = useListaServidor<Orden, FiltrosOrdenes>({
+    traer: cargarPaginaOrdenes,
+    filtros,
+    filtroLocal: soloPago,
+  });
+
+  const recargar = () => {
+    recargarBase();
+    lista.recargar();
+  };
 
   return (
     <>
@@ -150,7 +180,18 @@ export function VistaOrdenes() {
         {(datos) => (
           <>
             <Contenidos
-              filas={datos.ordenes}
+              resumen={datos.resumen}
+              lista={lista}
+              filtro={filtro}
+              alFiltrar={setFiltro}
+              pago={pago}
+              alFiltrarPago={setPago}
+              mes={mes}
+              alElegirMes={setMes}
+              texto={texto}
+              alBuscar={setTexto}
+              orden={orden}
+              alOrdenar={setOrden}
               edicion={edicion}
               alImprimir={setImprimiendo}
               alRecepcionar={setRecepcion}
@@ -162,7 +203,7 @@ export function VistaOrdenes() {
               <EnvioOrden
                 orden={enviando}
                 correoProveedor={datos.proveedores.find((p) => p.id === enviando.proveedorId)?.correo ?? null}
-                envios={datos.envios.get(enviando.id) ?? []}
+                envios={datos.envios[enviando.id] ?? []}
                 alCerrar={() => setEnviando(null)}
                 alEnviada={recargar}
               />
@@ -222,60 +263,47 @@ export function VistaOrdenes() {
 }
 
 function Contenidos({
-  filas,
+  resumen,
+  lista,
+  filtro,
+  alFiltrar,
+  pago,
+  alFiltrarPago,
+  mes,
+  alElegirMes,
+  texto,
+  alBuscar,
+  orden,
+  alOrdenar,
   edicion,
   alImprimir,
   alRecepcionar,
   alEnviar,
   envios,
 }: {
-  filas: Orden[];
+  resumen: ResumenOrdenes;
+  lista: ReturnType<typeof useListaServidor<Orden, FiltrosOrdenes>>;
+  filtro: Filtrado;
+  alFiltrar: (f: Filtrado) => void;
+  pago: FiltradoPago;
+  alFiltrarPago: (p: FiltradoPago) => void;
+  mes: string;
+  alElegirMes: (m: string) => void;
+  texto: string;
+  alBuscar: (t: string) => void;
+  orden: OrdenDeLista;
+  alOrdenar: (o: OrdenDeLista) => void;
   edicion: ReturnType<typeof useEdicion<Orden>>;
   alImprimir: (o: Orden) => void;
   alRecepcionar: (o: Orden) => void;
   alEnviar: (o: Orden) => void;
-  envios: Map<string, Envio[]>;
+  envios: Record<string, Envio[]>;
 }) {
-  const [filtro, setFiltro] = useFiltro<Filtrado>("ordenes:estado", "todas");
   const puedeEmitir = usePuede("ordenes.emitir");
 
-  const [texto, setTexto] = useState("");
-  const [mes, setMes] = useFiltro("ordenes:mes", "");
-  const [orden, setOrden] = useState<Orden_>("numero-desc");
-
-  // Los meses que tienen órdenes, del más reciente al más antiguo.
-  const meses = useMemo(
-    () => [...new Set(filas.map((o) => o.fechaEmision.slice(0, 7)))].sort().reverse(),
-    [filas],
-  );
-
-  const visibles = useMemo(() => {
-    let r = filas;
-    if (filtro === "borrador") r = r.filter((o) => o.estado === "borrador");
-    else if (filtro === "cerradas") r = r.filter((o) => o.estado === "cerrada" || o.estado === "anulada");
-    else if (filtro === "abiertas") r = r.filter((o) => ["emitida", "parcial", "recibida"].includes(o.estado));
-
-    if (mes) r = r.filter((o) => o.fechaEmision.startsWith(mes));
-
-    const q = normalizar(texto.trim());
-    if (q) {
-      r = r.filter((o) =>
-        normalizar([o.numero, o.proveedor, o.rutProveedor, o.proyecto, o.contratoId, o.id].filter(Boolean).join(" ")).includes(q),
-      );
-    }
-
-    return [...r].sort(comparadores[orden]);
-  }, [filas, filtro, mes, texto, orden]);
-
-  const ultimo = useMemo(
-    () => filas.reduce<Orden | null>((m, o) => (!m || correlativo(o.numero) > correlativo(m.numero) ? o : m), null),
-    [filas],
-  );
-
-  const neto = visibles.reduce((t, o) => t + o.neto, 0);
-  const total = visibles.reduce((t, o) => t + o.total, 0);
-  const abiertas = filas.filter((o) => ["emitida", "parcial"].includes(o.estado));
-  const porRecibir = abiertas.reduce((t, o) => t + (o.neto - o.facturado), 0);
+  // Los totales de abajo son de lo que se está mostrando.
+  const neto = lista.filas.reduce((t, o) => t + o.neto, 0);
+  const total = lista.filas.reduce((t, o) => t + o.total, 0);
 
   return (
     <>
@@ -283,23 +311,23 @@ function Contenidos({
         datos={[
           {
             etiqueta: "Emitido en órdenes",
-            valor: formatearMonto(filas.reduce((t, o) => t + o.neto, 0)),
-            nota: `${filas.length} ${filas.length === 1 ? "orden" : "órdenes"}`,
+            valor: formatearMonto(resumen.neto),
+            nota: `${resumen.cantidad} ${resumen.cantidad === 1 ? "orden" : "órdenes"}`,
           },
           {
             etiqueta: "Órdenes abiertas",
-            valor: String(abiertas.length),
+            valor: String(resumen.abiertas),
             nota: "Emitidas o con recepción parcial",
-            acento: abiertas.length > 0 ? "aviso" : undefined,
+            acento: resumen.abiertas > 0 ? "aviso" : undefined,
           },
           {
             etiqueta: "Pendiente de facturar",
-            valor: formatearMonto(porRecibir),
+            valor: formatearMonto(resumen.porFacturar),
             nota: "Comprometido que el proveedor no ha facturado",
           },
           {
             etiqueta: "Reembolsables",
-            valor: formatearMonto(filas.reduce((t, o) => t + o.reembolsable, 0)),
+            valor: formatearMonto(resumen.reembolsable),
             nota: "Se le cobran al mandante",
           },
         ]}
@@ -307,26 +335,32 @@ function Contenidos({
 
       <Panel
         titulo="Detalle"
-        nota={`${visibles.length} de ${filas.length} órdenes${ultimo ? ` · último N°: ${ultimo.numero}` : ""}`}
-        filtros={<Filtro etiqueta="Estado" opciones={opciones} valor={filtro} alCambiar={setFiltro} />}
+        nota={`${lista.filas.length}${lista.hayMas ? "+" : ""} mostradas · ${resumen.cantidad} en total${resumen.ultimoNumero ? ` · último N°: ${resumen.ultimoNumero}` : ""}`}
+        filtrosAbajo
+        filtros={
+          <>
+            <Filtro etiqueta="Estado" opciones={opciones} valor={filtro} alCambiar={alFiltrar} />
+            <Filtro etiqueta="Pago" opciones={opcionesPago} valor={pago} alCambiar={alFiltrarPago} />
+          </>
+        }
       >
         <div className="flex flex-wrap items-center gap-3 border-b border-mist px-6 py-4 lg:px-8">
           <input
             type="search"
             value={texto}
-            onChange={(e) => setTexto(e.target.value)}
-            placeholder="Buscar por N°, proveedor, RUT o contrato…"
+            onChange={(e) => alBuscar(e.target.value)}
+            placeholder="Buscar por N°, proveedor, RUT, contrato o cotización…"
             aria-label="Buscar órdenes"
             className="min-w-[16rem] flex-1 rounded-full border border-mist-deep bg-white px-4 py-2 text-sm text-ink outline-none transition-colors placeholder:text-ink-soft/60 focus:border-cyan focus:ring-2 focus:ring-cyan/20"
           />
           <select
             value={mes}
-            onChange={(e) => setMes(e.target.value)}
+            onChange={(e) => alElegirMes(e.target.value)}
             aria-label="Mes de emisión"
             className="rounded-full border border-mist-deep bg-white px-4 py-2 text-sm font-semibold text-ink-soft"
           >
             <option value="">Todos los meses</option>
-            {meses.map((m) => (
+            {resumen.meses.map((m) => (
               <option key={m} value={m}>
                 {nombreMes(m)}
               </option>
@@ -334,7 +368,7 @@ function Contenidos({
           </select>
           <select
             value={orden}
-            onChange={(e) => setOrden(e.target.value as Orden_)}
+            onChange={(e) => alOrdenar(e.target.value as OrdenDeLista)}
             aria-label="Ordenar por"
             className="rounded-full border border-mist-deep bg-white px-4 py-2 text-sm font-semibold text-ink-soft"
           >
@@ -345,20 +379,45 @@ function Contenidos({
             ))}
           </select>
         </div>
-        <Tabla
-          columnas={columnas(edicion, alImprimir, alRecepcionar, puedeEmitir, alEnviar, envios)}
-          filas={visibles}
-          claveDe={(o) => o.id}
-          vacio="Ninguna orden con este filtro."
-          pie={
-            <>
-              <Total colSpan={4}>Total</Total>
-              <Total derecha>{formatearMonto(neto)}</Total>
-              <Total derecha>{formatearMonto(total)}</Total>
-              <Total colSpan={2} />
-            </>
-          }
-        />
+
+        {lista.error ? (
+          <p role="alert" className="px-6 py-10 text-center text-sm text-[#a52f24] lg:px-8">
+            No se pudo cargar la lista: {lista.error}{" "}
+            <button type="button" onClick={lista.recargar} className="font-semibold underline">
+              Reintentar
+            </button>
+          </p>
+        ) : lista.cargando && lista.filas.length === 0 ? (
+          <p className="px-6 py-14 text-center text-sm text-ink-soft lg:px-8">Cargando órdenes…</p>
+        ) : (
+          <Tabla
+            columnas={columnas(edicion, alImprimir, alRecepcionar, puedeEmitir, alEnviar, envios)}
+            filas={lista.filas}
+            claveDe={(o) => o.id}
+            vacio="Ninguna orden con este filtro."
+            pie={
+              <>
+                <Total colSpan={4}>Total de lo mostrado</Total>
+                <Total derecha>{formatearMonto(neto)}</Total>
+                <Total derecha>{formatearMonto(total)}</Total>
+                <Total />
+              </>
+            }
+          />
+        )}
+
+        {lista.hayMas && !lista.error && (
+          <div className="flex justify-center border-t border-mist px-6 py-4">
+            <button
+              type="button"
+              onClick={lista.cargarMas}
+              disabled={lista.cargandoMas}
+              className="rounded-full border border-mist-deep px-5 py-2 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-60"
+            >
+              {lista.cargandoMas ? "Cargando…" : "Cargar más"}
+            </button>
+          </div>
+        )}
       </Panel>
     </>
   );
@@ -370,7 +429,7 @@ const columnas = (
   alRecepcionar: (o: Orden) => void,
   puedeEmitir: boolean,
   alEnviar: (o: Orden) => void,
-  envios: Map<string, Envio[]>,
+  envios: Record<string, Envio[]>,
 ): Columna<Orden>[] => [
   {
     clave: "numero",
@@ -394,6 +453,9 @@ const columnas = (
         <span className="mt-0.5 block text-xs text-ink-soft">
           {o.proyecto ?? o.contratoId}
         </span>
+        {o.numeroCotizacion && (
+          <span className="mt-0.5 block text-xs text-ink-soft">Cotización {o.numeroCotizacion}</span>
+        )}
       </>
     ),
   },
@@ -429,7 +491,7 @@ const columnas = (
         {pago?.tipo === "total" && <Chip tono="bueno">Pagada</Chip>}
         {pago?.tipo === "parcial" && <Chip tono="info">Pagada {pago.pct} %</Chip>}
         {/* Lo último que pasó con el envío al proveedor. */}
-        {envios.get(o.id)?.[0] && <EstadoEnvio envio={envios.get(o.id)![0]} />}
+        {envios[o.id]?.[0] && <EstadoEnvio envio={envios[o.id][0]} />}
         {o.reembolsable > 0 && <Etiqueta destacada>Con reembolsables</Etiqueta>}
       </div>
       );
