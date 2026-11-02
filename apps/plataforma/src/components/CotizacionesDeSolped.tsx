@@ -950,9 +950,10 @@ function FormularioCotizacion({
         return [
           {
             solpedItemId: p.id,
-            descripcion: p.nombreParaPedir,
+            descripcion: ci.nombrePedido ?? p.nombreParaPedir,
             nombre:
               ci.nombreCotizado ??
+              ci.nombrePedido ??
               (p.articuloId ? solicitado.nombres.get(p.articuloId) : undefined) ??
               p.nombreParaPedir,
             articuloId: p.articuloId,
@@ -2275,6 +2276,8 @@ function DialogoPedirCotizacion({
   );
   /* Cantidad a pedirle a este proveedor cuando difiere de la de faena. */
   const [cantidades, setCantidades] = useState<Record<string, number>>({});
+  /* Nombre con el que se le pide a ESTE proveedor, cuando se corrige. La solicitud de faena no cambia. */
+  const [nombres, setNombres] = useState<Record<string, string>>({});
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -2304,12 +2307,21 @@ function DialogoPedirCotizacion({
         numero: siguienteNumeroSolicitud(cotizaciones),
         items: items
           .filter((i) => elegidos.has(i.id))
-          .map((i) => ({ solpedItemId: i.id, cantidad: cantidades[i.id] || cantidadBase(i) })),
+          .map((i) => {
+            const escrito = (nombres[i.id] ?? i.nombreParaPedir).trim();
+            return {
+              solpedItemId: i.id,
+              cantidad: cantidades[i.id] || cantidadBase(i),
+              // Solo se guarda si cambió: lo demás sale con el nombre de siempre.
+              nombrePedido: escrito && escrito !== i.nombreParaPedir ? escrito : null,
+            };
+          }),
         observaciones: observaciones.trim() || null,
       });
       alPedida(id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const m = e instanceof Error ? e.message : String(e);
+      setError(/nombre_pedido/.test(m) ? "Falta aplicar la migración 0108 en la base." : m);
       setGuardando(false);
     }
   }
@@ -2371,10 +2383,16 @@ function DialogoPedirCotizacion({
                 className="mt-0.5 h-4 w-4 rounded border-mist-deep accent-cyan"
               />
               <span className="min-w-0 flex-1">
-                {/* Se muestra el nombre con el que se va a imprimir. */}
-                <span className="block text-ink">{i.nombreParaPedir}</span>
-                {i.nombreParaPedir !== i.descripcion && (
-                  <span className="block text-xs text-ink-soft">
+                {/* El nombre con el que se le va a pedir a este proveedor: se puede
+                    corregir acá sin tocar lo que pidió faena. */}
+                <input
+                  value={nombres[i.id] ?? i.nombreParaPedir}
+                  onChange={(e) => setNombres((n) => ({ ...n, [i.id]: e.target.value }))}
+                  aria-label={`Nombre con que se pide: ${i.descripcion}`}
+                  className="w-full rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-sm text-ink outline-none hover:border-mist-deep focus:border-cyan focus:bg-white"
+                />
+                {(nombres[i.id] ?? i.nombreParaPedir).trim() !== i.descripcion.trim() && (
+                  <span className="block px-1.5 text-xs text-ink-soft">
                     faena lo pidió como «{i.descripcion}»
                   </span>
                 )}
@@ -2388,7 +2406,7 @@ function DialogoPedirCotizacion({
                   step="any"
                   value={cantidades[i.id] ?? cantidadBase(i)}
                   onChange={(e) => setCantidades((c) => ({ ...c, [i.id]: Number(e.target.value) || 0 }))}
-                  aria-label={`Cantidad a pedir de ${i.nombreParaPedir}`}
+                  aria-label={`Cantidad a pedir de ${nombres[i.id] ?? i.nombreParaPedir}`}
                   className="w-20 rounded-md border border-mist-deep bg-white px-2 py-1 text-right text-sm tabular-nums text-ink outline-none focus:border-cyan"
                 />
                 {i.unidad}
@@ -2397,8 +2415,8 @@ function DialogoPedirCotizacion({
           ))}
         </ul>
         <p className="mt-2 text-xs text-ink-soft">
-          Cambia la cantidad si el proveedor lo vende en otra presentación (paquetes, cajas). Faena sigue viendo lo
-          que pidió.
+          Puedes corregir el nombre (toca el texto) y la cantidad si el proveedor lo vende en otra presentación
+          (paquetes, cajas). Solo cambia lo que se le pide a este proveedor: faena sigue viendo lo que pidió.
         </p>
 
         <label className="mt-5 block">
@@ -2495,7 +2513,7 @@ function VistaSolicitud({
               linea: n + 1,
               // El nombre técnico si se conoce: es el único con el que el
               // proveedor sabe qué mandar sin preguntar.
-              descripcion: pedido?.nombreParaPedir ?? "Ítem",
+              descripcion: c.nombrePedido ?? pedido?.nombreParaPedir ?? "Ítem",
 
               especificacion: pedido?.especificacion ?? null,
               unidad: pedido?.unidad ?? "un",
@@ -2609,7 +2627,7 @@ function DialogoEnviar({
     const pedido = estado.datos.pedidos.find((p) => p.id === c.solpedItemId);
     return {
       linea: n + 1,
-      descripcion: pedido?.nombreParaPedir ?? "Ítem",
+      descripcion: c.nombrePedido ?? pedido?.nombreParaPedir ?? "Ítem",
       unidad: pedido?.unidad ?? "un",
       cantidad: c.cantidad,
     };

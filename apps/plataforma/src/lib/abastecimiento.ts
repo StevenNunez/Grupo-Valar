@@ -960,6 +960,8 @@ export type ItemCotizado = {
   observacion: string | null;
   /** Como lo cotizó el proveedor (nombre técnico). Nulo = no se editó. */
   nombreCotizado: string | null;
+  /** Con el que se le PIDIÓ a este proveedor, si se corrigió al pedir. Nulo = el del catálogo o el de faena. */
+  nombrePedido: string | null;
 };
 
 export async function cargarItemsDeCotizacion(cotizacionId: string): Promise<ItemCotizado[]> {
@@ -981,6 +983,7 @@ export async function cargarItemsDeCotizacion(cotizacionId: string): Promise<Ite
     plazoDias: f.plazo_dias === null ? null : Number(f.plazo_dias),
     observacion: (f.observacion as string | null) ?? null,
     nombreCotizado: (f.nombre_cotizado as string | null)?.trim() || null,
+    nombrePedido: (f.nombre_pedido as string | null)?.trim() || null,
   }));
 }
 
@@ -1057,7 +1060,7 @@ export async function pedirCotizacion({
   proveedorId: string;
   numero: string;
   /** Qué se le pide a este proveedor: ítem de la solicitud y cuánto. */
-  items: { solpedItemId: string; cantidad: number }[];
+  items: { solpedItemId: string; cantidad: number; nombrePedido?: string | null }[];
   validezHasta?: string | null;
   observaciones?: string | null;
 }) {
@@ -1100,6 +1103,8 @@ export async function pedirCotizacion({
       cotizacion_id: id,
       solped_item_id: i.solpedItemId,
       cantidad: i.cantidad,
+      // Solo si se corrigió (y así nada se rompe antes de aplicar la 0108): la solicitud de faena no se toca.
+      ...(i.nombrePedido?.trim() ? { nombre_pedido: i.nombrePedido.trim() } : {}),
       // Nace sin precio: el proveedor todavía no responde.
       precio_unitario: 0,
       disponible: true,

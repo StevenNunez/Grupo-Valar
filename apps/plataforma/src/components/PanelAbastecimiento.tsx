@@ -249,9 +249,9 @@ function Tarjeta({
   const hay = filas.some(Boolean) && filas.length > 0;
 
   return (
-    <section className="rounded-2xl border border-mist-deep bg-white p-6">
+    <section className="min-w-0 rounded-2xl border border-mist-deep bg-white p-5 sm:p-6">
       <div className="flex items-start justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <h2 className="font-display text-base font-semibold text-ink">{titulo}</h2>
           <p className="mt-1 text-sm text-ink-soft">{nota}</p>
         </div>

@@ -94,7 +94,7 @@ export function Panel({
           {nota && <p className="mt-1 text-sm text-ink-soft">{nota}</p>}
           {avisos && <div className="mt-3 flex flex-wrap gap-2">{avisos}</div>}
         </div>
-        {filtros && !filtrosAbajo && <div className="flex shrink-0 items-center gap-2">{filtros}</div>}
+        {filtros && !filtrosAbajo && <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 *:min-w-0 *:max-w-full">{filtros}</div>}
       </div>
       {filtros && filtrosAbajo && (
         <div className="flex flex-wrap items-end gap-x-6 gap-y-3 border-b border-mist bg-mist/20 px-6 py-4 lg:px-8">
