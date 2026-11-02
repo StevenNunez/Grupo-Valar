@@ -28,7 +28,7 @@ export async function cargarInformativos(): Promise<Map<string, InformativosCont
   const [edps, compras, servicios, cuotas, contratos, activos] = await Promise.all([
     supabase.from("estados_pago").select("contrato_id, monto_neto, monto_cobrado, estado").in("estado", ["presentado", "aprobado", "facturado"]),
     supabase.from("compras").select("id, contrato_id, proveedor, total, estado_pago").in("estado_pago", ["pendiente", "retenida"]),
-    supabase.from("servicios").select("contrato_id, proveedor, total, estado_pago").eq("estado_pago", "pendiente"),
+    supabase.from("servicios").select("contrato_id, contratista, total, estado_pago").eq("estado_pago", "pendiente"),
     supabase.from("pagos_factura").select("compra_id, monto").not("fecha_pago", "is", null),
     supabase.from("contratos").select("id, valor_activos_referencia"),
     supabase.from("activos_valar").select("contrato_origen_id, valor").not("contrato_origen_id", "is", null),
@@ -67,7 +67,7 @@ export async function cargarInformativos(): Promise<Map<string, InformativosCont
     deber(c.contrato_id as string, (c.proveedor as string | null) ?? "Sin proveedor", debe);
   }
   for (const s of servicios.error ? [] : servicios.data ?? []) {
-    deber(s.contrato_id as string, (s.proveedor as string | null) ?? "Sin proveedor", Number(s.total ?? 0));
+    deber(s.contrato_id as string, (s.contratista as string | null) ?? "Sin proveedor", Number(s.total ?? 0));
   }
 
   /* Activos: primero el detalle; si no hay valores cargados, el valor anotado en el contrato. */
