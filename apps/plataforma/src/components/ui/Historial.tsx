@@ -210,7 +210,7 @@ export function AccionesFila({
   const conLapiz = !permiso || puedeEditar;
 
   return (
-    <div className="flex items-center justify-end gap-1">
+    <div className="flex items-center justify-end gap-0">
       {alVerAdjuntos && (
         <BotonAdjuntos cuantos={cuantosAdjuntos} onClick={alVerAdjuntos} alVer={alVerRespaldo} />
       )}

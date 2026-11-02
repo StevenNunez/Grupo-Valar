@@ -1,3 +1,4 @@
+import { BienvenidaAvisos } from "@/components/BienvenidaAvisos";
 import { Guardia } from "@/components/Guardia";
 import { Avisos } from "@/components/ui/Avisos";
 import { ProveedorEmpresa } from "@/lib/empresa-cliente";
@@ -16,6 +17,7 @@ export default function LayoutPrivado({
     <Guardia>
       <ProveedorEmpresa>{children}</ProveedorEmpresa>
       <Avisos />
+      <BienvenidaAvisos />
     </Guardia>
   );
 }

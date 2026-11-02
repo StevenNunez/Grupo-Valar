@@ -515,7 +515,7 @@ const columnas = (
     derecha: true,
     fija: true,
     celda: (o) => (
-      <div className="flex items-center justify-end gap-1">
+      <div className="flex items-center justify-end gap-0">
         {puedeEmitir && (
           <BotonIcono titulo="Enviar al proveedor" onClick={() => alEnviar(o)}>
             <path d="M21 3 10 14M21 3l-7 18-4-7-7-4 18-7Z" strokeLinecap="round" strokeLinejoin="round" />

@@ -2389,7 +2389,7 @@ function DialogoPedirCotizacion({
                   value={nombres[i.id] ?? i.nombreParaPedir}
                   onChange={(e) => setNombres((n) => ({ ...n, [i.id]: e.target.value }))}
                   aria-label={`Nombre con que se pide: ${i.descripcion}`}
-                  className="w-full rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-sm text-ink outline-none hover:border-mist-deep focus:border-cyan focus:bg-white"
+                  className="w-full rounded-md border border-mist-deep bg-white px-2 py-1 text-sm text-ink outline-none hover:border-ink/40 focus:border-cyan"
                 />
                 {(nombres[i.id] ?? i.nombreParaPedir).trim() !== i.descripcion.trim() && (
                   <span className="block px-1.5 text-xs text-ink-soft">
