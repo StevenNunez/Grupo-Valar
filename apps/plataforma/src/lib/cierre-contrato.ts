@@ -44,7 +44,7 @@ export async function cargarCierre(contratoId: string): Promise<DatosCierre> {
     cargarContratosBreve(),
     cargarCategorias(),
     /* Un extra: si falla, la ficha sale igual sin ellos. */
-    cargarInformativos().then((m) => m.get(contratoId) ?? null).catch(() => null),
+    cargarInformativos().then((m) => m[contratoId] ?? null).catch(() => null),
   ]);
   if (resultado.error) throw new Error(resultado.error.message);
 

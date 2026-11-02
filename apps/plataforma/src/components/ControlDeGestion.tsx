@@ -288,7 +288,7 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
 
   /* Por cobrar, activos y por pagar a proveedores de los contratos a la vista: informativos, no
      dependen del período. Un extra: si falla, el Dashboard sale igual sin ellos. */
-  const informativos = useConsulta(cargarInformativos, `${usuario.id}:${usuario.empresa}:informativos-v1`);
+  const informativos = useConsulta(cargarInformativos, `${usuario.id}:${usuario.empresa}:informativos-v2`);
   const informativosVisibles = useMemo(() => {
     if (soloOficina || informativos.estado.estado !== "listo") return null;
     const ids = new Set(mesesAlcance.map((f) => f.padreId ?? f.contratoId));

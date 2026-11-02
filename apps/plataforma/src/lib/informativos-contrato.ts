@@ -24,7 +24,7 @@ export type InformativosContrato = {
 
 const vacio = (): InformativosContrato => ({ porCobrar: 0, porPagar: 0, activos: 0, activosFuente: null, deudaPorProveedor: [] });
 
-export async function cargarInformativos(): Promise<Map<string, InformativosContrato>> {
+export async function cargarInformativos(): Promise<Record<string, InformativosContrato>> {
   const [edps, compras, servicios, cuotas, contratos, activos] = await Promise.all([
     supabase.from("estados_pago").select("contrato_id, monto_neto, monto_cobrado, estado").in("estado", ["presentado", "aprobado", "facturado"]),
     supabase.from("compras").select("id, contrato_id, proveedor, total, estado_pago").in("estado_pago", ["pendiente", "retenida"]),
@@ -84,15 +84,16 @@ export async function cargarInformativos(): Promise<Map<string, InformativosCont
     else if (referencia > 0) Object.assign(de(id), { activos: referencia, activosFuente: "referencia" });
   }
 
-  return mapa;
+  /* Objeto plano, no Map: useConsulta lo guarda como JSON y un Map volvería vacío. */
+  return Object.fromEntries(mapa);
 }
 
 /** La suma de varios contratos (lo que el Dashboard tiene a la vista). */
-export function sumarInformativos(mapa: Map<string, InformativosContrato>, ids: Iterable<string>): InformativosContrato {
+export function sumarInformativos(mapa: Record<string, InformativosContrato>, ids: Iterable<string>): InformativosContrato {
   const total = vacio();
   const fuentes = new Set<string>();
   for (const id of ids) {
-    const f = mapa.get(id);
+    const f = mapa[id];
     if (!f) continue;
     total.porCobrar += f.porCobrar;
     total.porPagar += f.porPagar;
