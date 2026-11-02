@@ -13,6 +13,19 @@ const nextConfig: NextConfig = {
 
   /** URLs con barra final: es como quedaron publicadas y no se rompen enlaces guardados. */
   trailingSlash: true,
+
+  /** El service worker nunca se cachea: si no, una versión vieja queda pegada en los teléfonos. */
+  async headers() {
+    return [
+      {
+        source: '/sw.js',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+          { key: 'Content-Type', value: 'application/javascript; charset=utf-8' },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

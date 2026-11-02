@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useUsuario } from "@/lib/sesion";
 import { supabase } from "@/lib/supabase";
+import { Campana } from "./Campana";
 
 /**
  * Barra superior común a todo el panel: quién eres y cómo salir.
@@ -32,6 +33,7 @@ export function BarraSuperior({ izquierda }: { izquierda?: React.ReactNode }) {
             DEMO
           </span>
         )}
+        <Campana />
         <div className="hidden min-w-0 text-right sm:block">
           <p className="truncate text-sm font-semibold text-ink">{usuario.nombre}</p>
           <p className="truncate text-xs text-ink-soft">{usuario.cargo}</p>
