@@ -3,20 +3,40 @@
 import { detalleDeOtrosHaberes, type Haberes } from "./haberes";
 import { supabase } from "./supabase";
 
-export const categoriasOficina = [
-  { id: "compras", titulo: "Compras" },
-  { id: "arriendos", titulo: "Arriendos" },
-  { id: "insumos", titulo: "Insumos" },
-  { id: "activos", titulo: "Compra de activos" },
-  { id: "reembolsos", titulo: "Reembolsos" },
-] as const;
+/**
+ * Dos preguntas distintas sobre cada egreso de Oficina Central (migración 0110):
+ *  · la CATEGORÍA dice qué tipo de gasto es (compras, internet, mantención…);
+ *  · el CENTRO DE COSTO dice para quién o para qué se gastó (Pagnol, Tokio, general…).
+ * Las dos listas las edita la empresa desde la pantalla. Un egreso va siempre a
+ * una categoría y a un solo centro: nunca se reparte.
+ */
+export type CategoriaOficina = {
+  id: string;
+  titulo: string;
+  /** Inversión (equipos, herramientas): va aparte del gasto operativo. */
+  esActivo: boolean;
+  activa: boolean;
+  orden: number;
+};
 
-export type CategoriaOficina = (typeof categoriasOficina)[number]["id"];
+export type CentroCosto = {
+  id: string;
+  nombre: string;
+  activo: boolean;
+  orden: number;
+};
+
+export const CENTRO_GENERAL = "general";
+
+/** Categorías cuyo egreso no es mercadería: no se informan a Pagnol como ingreso. */
+export const categoriasSinIngresoAPagnol: readonly string[] = ["arriendos", "servicios", "mantenciones"];
+
 export type EstadoEgresoOficina = "pendiente" | "pagado";
 
 export type EgresoOficina = {
   id: string;
-  categoria: CategoriaOficina;
+  categoria: string;
+  centro_costo: string;
   fecha: string;
   proveedor: string;
   descripcion: string;
@@ -26,23 +46,63 @@ export type EgresoOficina = {
   total: number;
   estado: EstadoEgresoOficina;
   observaciones: string | null;
+  /** Resueltos al cargar, para no pasar el catálogo por todas las pantallas. */
+  categoriaTitulo: string;
+  esActivo: boolean;
+  centroNombre: string;
 };
 
-export type DatosEgresoOficina = Omit<EgresoOficina, "id" | "total">;
+export type DatosEgresoOficina = Pick<EgresoOficina,
+  "categoria" | "centro_costo" | "fecha" | "proveedor" | "descripcion" | "documento" | "neto" | "iva" | "estado" | "observaciones">;
 
-export async function cargarEgresosOficina(): Promise<EgresoOficina[]> {
-  const { data, error } = await supabase
-    .from("egresos_oficina_central")
-    .select("id, categoria, fecha, proveedor, descripcion, documento, neto, iva, total, estado, observaciones")
-    .order("fecha", { ascending: false })
-    .order("creado_en", { ascending: false });
-  if (error) throw new Error(error.message);
-  return (data ?? []).map((fila) => ({
+export async function cargarCatalogoOficina(): Promise<{ categorias: CategoriaOficina[]; centros: CentroCosto[] }> {
+  const [cat, cen] = await Promise.all([
+    supabase.from("categorias_oficina").select("id, titulo, es_activo, activa, orden").order("orden").order("titulo"),
+    supabase.from("centros_costo_oficina").select("id, nombre, activo, orden").order("orden").order("nombre"),
+  ]);
+  if (cat.error) throw new Error(cat.error.message);
+  if (cen.error) throw new Error(cen.error.message);
+  return {
+    categorias: (cat.data ?? []).map((c) => ({ id: c.id, titulo: c.titulo, esActivo: c.es_activo, activa: c.activa, orden: c.orden })),
+    centros: (cen.data ?? []).map((c) => ({ id: c.id, nombre: c.nombre, activo: c.activo, orden: c.orden })),
+  };
+}
+
+type Catalogo = Awaited<ReturnType<typeof cargarCatalogoOficina>>;
+
+export async function cargarEgresosOficina(catalogoDado?: Catalogo): Promise<EgresoOficina[]> {
+  const [egresos, catalogo] = await Promise.all([
+    supabase
+      .from("egresos_oficina_central")
+      .select("id, categoria, centro_costo, fecha, proveedor, descripcion, documento, neto, iva, total, estado, observaciones")
+      .order("fecha", { ascending: false })
+      .order("creado_en", { ascending: false }),
+    catalogoDado ?? cargarCatalogoOficina(),
+  ]);
+  if (egresos.error) throw new Error(egresos.error.message);
+  const categorias = new Map(catalogo.categorias.map((c) => [c.id, c]));
+  const centros = new Map(catalogo.centros.map((c) => [c.id, c]));
+  return (egresos.data ?? []).map((fila) => ({
     ...fila,
     neto: Number(fila.neto),
     iva: Number(fila.iva),
     total: Number(fila.total),
+    categoriaTitulo: categorias.get(fila.categoria)?.titulo ?? fila.categoria,
+    esActivo: categorias.get(fila.categoria)?.esActivo ?? false,
+    centroNombre: centros.get(fila.centro_costo)?.nombre ?? fila.centro_costo,
   })) as EgresoOficina[];
+}
+
+/** La pantalla de Oficina Central: egresos y catálogo en una sola carga. */
+export async function cargarOficina() {
+  const catalogo = await cargarCatalogoOficina();
+  return { ...catalogo, egresos: await cargarEgresosOficina(catalogo) };
+}
+
+/** Identificador legible para una categoría o un centro nuevo: «Mantención 4x4» → «mantencion_4x4». */
+export function idDesdeNombre(nombre: string) {
+  return nombre.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40);
 }
 
 export function totalOficina(filas: EgresoOficina[]) {

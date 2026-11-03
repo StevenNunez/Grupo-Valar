@@ -41,7 +41,7 @@ import {
 } from "@/lib/formato";
 import { useUsuario } from "@/lib/sesion";
 import { useVistaGuardada } from "@/lib/vista-guardada";
-import { categoriasOficina, totalOficina, type EgresoOficina } from "@/lib/oficina-central";
+import { totalOficina, type EgresoOficina } from "@/lib/oficina-central";
 import Link from "next/link";
 
 /**
@@ -297,8 +297,8 @@ function Tablero({ datos }: { datos: DatosDashboard }) {
   }, [informativos.estado, mesesAlcance, unidades, soloOficina]);
 
   const total = sumar(filas);
-  const operativosOficina = totalOficina(oficinaVisible.filter((f) => f.categoria !== "activos")) + personalOficina;
-  const activosOficina = totalOficina(oficinaVisible.filter((f) => f.categoria === "activos"));
+  const operativosOficina = totalOficina(oficinaVisible.filter((f) => !f.esActivo)) + personalOficina;
+  const activosOficina = totalOficina(oficinaVisible.filter((f) => f.esActivo));
   /* Finiquitos del período: los de contratos siguen el filtro de contratos; los de
      Oficina Central solo cuentan en el resultado de la empresa (sin filtro de contrato). */
   const { finiquitos, finiquitosOficina } = useMemo(() => {
@@ -650,8 +650,8 @@ function IndicadoresParalelos({
   filas, personal, margenContratos, finiquitos, conOficina, activosDeContratos,
 }: { filas: EgresoOficina[]; personal: number; margenContratos: number; finiquitos: number; conOficina: boolean; activosDeContratos: { total: number; contratos: number } }) {
   // La nómina de la oficina es gasto operativo: sin ella el resultado se ve mejor de lo que es.
-  const operativos = totalOficina(filas.filter((fila) => fila.categoria !== "activos")) + personal;
-  const activosDirectos = totalOficina(filas.filter((fila) => fila.categoria === "activos"));
+  const operativos = totalOficina(filas.filter((fila) => !fila.esActivo)) + personal;
+  const activosDirectos = totalOficina(filas.filter((fila) => fila.esActivo));
   // Lo que Oficina Central gastó en activos. Lo de contratos cerrados no entra: ahí ya se gastó.
   const activos = activosDirectos;
   const consolidado = margenContratos - (conOficina ? operativos : 0) - finiquitos;
@@ -687,7 +687,10 @@ function IndicadoresParalelos({
           )}
           {(filas.length > 0 || personal > 0) && (
             <p className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/60">
-              {categoriasOficina.map((c) => <span key={c.id}>{c.titulo}: <strong className="text-white/90">{formatearMonto(totalOficina(filas.filter((f) => f.categoria === c.id)))}</strong></span>)}
+              {[...new Set(filas.map((f) => f.categoria))].map((id) => {
+                const delGrupo = filas.filter((f) => f.categoria === id);
+                return <span key={id}>{delGrupo[0].categoriaTitulo}: <strong className="text-white/90">{formatearMonto(totalOficina(delGrupo))}</strong></span>;
+              })}
               {personal > 0 && <span>Personal: <strong className="text-white/90">{formatearMonto(personal)}</strong></span>}
             </p>
           )}

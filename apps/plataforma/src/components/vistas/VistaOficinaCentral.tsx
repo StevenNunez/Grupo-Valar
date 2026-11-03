@@ -11,13 +11,16 @@ import { useConsulta } from "@/lib/consulta";
 import { usePuede } from "@/lib/sesion";
 import { formatearFecha, formatearMonto, formatearPesos, mesLargo } from "@/lib/formato";
 import {
-  cargarEgresosOficina,
-  categoriasOficina,
+  CENTRO_GENERAL,
+  cargarOficina,
+  categoriasSinIngresoAPagnol,
   totalOficina,
   type CategoriaOficina,
+  type CentroCosto,
   type DatosEgresoOficina,
   type EgresoOficina,
 } from "@/lib/oficina-central";
+import { AdministrarOficina } from "../AdministrarOficina";
 import {
   Ancho, CampoDinero, CampoFecha, CampoSeleccion, CampoTexto,
   Campos, Confirmacion, Dialogo, Pie, ResumenIva, ivaDe, useBorrado, useFormulario,
@@ -27,7 +30,7 @@ import { Buscador, coincide } from "../ui/Buscador";
 import { Tabla, Total, type Columna } from "../ui/Tabla";
 import { CampoFiltro, Contenido, Desplegable, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
 
-type FiltroCategoria = "todos" | CategoriaOficina;
+type Catalogo = { categorias: CategoriaOficina[]; centros: CentroCosto[] };
 type Estatus = "todos" | "porPagar" | "pagados" | "sinDocumento";
 
 const estatusGasto: { id: Estatus; titulo: string }[] = [
@@ -37,18 +40,15 @@ const estatusGasto: { id: Estatus; titulo: string }[] = [
   { id: "sinDocumento", titulo: "Sin documento" },
 ];
 
-const nombreCategoria = Object.fromEntries(
-  categoriasOficina.map((categoria) => [categoria.id, categoria.titulo]),
-) as Record<CategoriaOficina, string>;
-
 function fechaHoy() {
   const fecha = new Date();
   return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}-${String(fecha.getDate()).padStart(2, "0")}`;
 }
 
-function borradorNuevo(categoria: CategoriaOficina): DatosEgresoOficina {
+function borradorNuevo(categoria: string, centro: string): DatosEgresoOficina {
   return {
     categoria,
+    centro_costo: centro,
     fecha: fechaHoy(),
     proveedor: "",
     descripcion: "",
@@ -61,12 +61,14 @@ function borradorNuevo(categoria: CategoriaOficina): DatosEgresoOficina {
 }
 
 export function VistaOficinaCentral() {
-  const { estado, recargar } = useConsulta(cargarEgresosOficina);
-  const [categoria, setCategoria] = useFiltro<FiltroCategoria>("oficina-central:categoria", "todos");
+  const { estado, recargar } = useConsulta(cargarOficina);
+  const [categoria, setCategoria] = useFiltro<string>("oficina-central:categoria", "todos");
+  const [centro, setCentro] = useFiltro<string>("oficina-central:centro", "todos");
+  const [administrando, setAdministrando] = useState(false);
   const [mes, setMes] = useFiltro("oficina-central:mes", "todos");
   const [estatus, setEstatus] = useFiltro<Estatus>("oficina-central:estatus", "todos");
   const [texto, setTexto] = useState("");
-  const [formulario, setFormulario] = useState<{ registro: EgresoOficina | null; categoria: CategoriaOficina } | null>(null);
+  const [formulario, setFormulario] = useState<{ registro: EgresoOficina | null; categoria: string; centro: string } | null>(null);
   const [historial, setHistorial] = useState<EgresoOficina | null>(null);
   const puedeCargar = usePuede("gestion.editar");
 
@@ -74,18 +76,24 @@ export function VistaOficinaCentral() {
     <>
       <Encabezado
         titulo="Oficina Central"
-        descripcion="Egresos generales de la empresa, separados de los contratos. Registra compras, arriendos, insumos y adquisición de activos. Los montos del resumen son netos de IVA."
+        descripcion="Egresos generales de la empresa, separados de los contratos. Cada egreso lleva una categoría (qué tipo de gasto es) y un centro de costo (para quién o para qué se gastó). Los montos del resumen son netos de IVA."
         acciones={
           puedeCargar && (
-            <button type="button" onClick={() => setFormulario({ registro: null, categoria: categoria === "todos" ? "compras" : categoria })}
-              className="rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-white hover:bg-cyan-deep">
-              Nuevo egreso
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => setAdministrando(true)}
+                className="rounded-full border border-mist-deep px-5 py-2.5 text-sm font-semibold text-ink-soft hover:border-ink hover:text-ink">
+                Categorías y centros
+              </button>
+              <button type="button" onClick={() => setFormulario({ registro: null, categoria: categoria === "todos" ? "compras" : categoria, centro: centro === "todos" ? CENTRO_GENERAL : centro })}
+                className="rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-white hover:bg-cyan-deep">
+                Nuevo egreso
+              </button>
+            </div>
           )
         }
       />
       <Contenido consulta={estado}>
-        {(filas) => {
+        {({ egresos: filas, categorias, centros }) => {
           const meses = [...new Set(filas.map((fila) => fila.fecha.slice(0, 7)))].sort().reverse();
           const delMes = mes === "todos" ? filas : filas.filter((fila) => fila.fecha.startsWith(mes));
           // Período y estatus recortan todo; la categoría, además, la lista y las tarjetas de arriba.
@@ -94,27 +102,38 @@ export function VistaOficinaCentral() {
               : estatus === "pagados" ? fila.estado === "pagado"
               : estatus === "sinDocumento" ? !fila.documento
               : true);
-          const delTexto = (categoria === "todos" ? delEstatus : delEstatus.filter((fila) => fila.categoria === categoria));
+          const delCentro = centro === "todos" ? delEstatus : delEstatus.filter((fila) => fila.centro_costo === centro);
+          const delTexto = (categoria === "todos" ? delCentro : delCentro.filter((fila) => fila.categoria === categoria));
+          // Se muestran las categorías y centros encendidos, más los apagados que aún tengan movimientos.
+          const conMovimientos = new Set(filas.map((fila) => fila.categoria));
+          const categoriasVisibles = categorias.filter((c) => c.activa || conMovimientos.has(c.id));
+          const centrosConMovimientos = new Set(filas.map((fila) => fila.centro_costo));
+          const centrosVisibles = centros.filter((c) => c.activo || centrosConMovimientos.has(c.id));
           const visibles = delTexto.filter((fila) =>
             coincide(texto, [fila.proveedor, fila.descripcion, fila.documento, fila.observaciones]),
           );
-          const porCategoria = Object.fromEntries(
-            categoriasOficina.map(({ id }) => [id, totalOficina(delEstatus.filter((fila) => fila.categoria === id))]),
-          ) as Record<CategoriaOficina, number>;
+          // Cada grupo de tarjetas respeta los demás filtros pero no el suyo propio, para ver a dónde cambiar.
+          const porCategoria: Record<string, number> = Object.fromEntries(
+            categoriasVisibles.map(({ id }) => [id, totalOficina(delCentro.filter((fila) => fila.categoria === id))]),
+          );
+          const delEstatusYCategoria = categoria === "todos" ? delEstatus : delEstatus.filter((fila) => fila.categoria === categoria);
+          const porCentro: Record<string, number> = Object.fromEntries(
+            centrosVisibles.map(({ id }) => [id, totalOficina(delEstatusYCategoria.filter((fila) => fila.centro_costo === id))]),
+          );
           const porPagar = visibles.filter((fila) => fila.estado === "pendiente");
           const sinDocumento = visibles.filter((fila) => !fila.documento);
-          const activos = visibles.filter((fila) => fila.categoria === "activos");
+          const activos = visibles.filter((fila) => fila.esActivo);
           return (
             <>
               <Resumen datos={[
                 { etiqueta: "Egresos netos", valor: formatearMonto(totalOficina(visibles)), nota: `${visibles.length} ${visibles.length === 1 ? "movimiento" : "movimientos"} · incluye compra de activos` },
-                { etiqueta: "Gastos operativos", valor: formatearMonto(totalOficina(visibles.filter((fila) => fila.categoria !== "activos"))), nota: "Compras, arriendos, insumos y reembolsos" },
+                { etiqueta: "Gastos operativos", valor: formatearMonto(totalOficina(visibles.filter((fila) => !fila.esActivo))), nota: "Todo menos la compra de activos" },
                 { etiqueta: "Compra de activos", valor: formatearMonto(totalOficina(activos)), nota: `${activos.length} ${activos.length === 1 ? "activo" : "activos"} · inversión identificada aparte` },
                 { etiqueta: "Pendiente de pago", valor: formatearMonto(totalOficina(porPagar)), nota: `${porPagar.length} por pagar${sinDocumento.length > 0 ? ` · ${sinDocumento.length} sin documento` : ""} · neto`,
                   acento: porPagar.length > 0 ? "aviso" : undefined },
               ]} />
               <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {categoriasOficina.map(({ id, titulo }) => (
+                {categoriasVisibles.map(({ id, titulo }) => (
                   <button key={id} type="button" onClick={() => setCategoria(categoria === id ? "todos" : id)}
                     aria-pressed={categoria === id}
                     className={`rounded-2xl border p-5 text-left transition-colors ${categoria === id ? "border-cyan bg-cyan/5" : "border-mist-deep bg-white hover:border-cyan"}`}>
@@ -124,6 +143,22 @@ export function VistaOficinaCentral() {
                   </button>
                 ))}
               </div>
+              {centrosVisibles.length > 1 && (
+                <section aria-label="Por centro de costo" className="mb-6">
+                  <h2 className="mb-2 text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-ink-soft">Por centro de costo</h2>
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    {centrosVisibles.map(({ id, nombre }) => (
+                      <button key={id} type="button" onClick={() => setCentro(centro === id ? "todos" : id)}
+                        aria-pressed={centro === id}
+                        className={`rounded-2xl border p-4 text-left transition-colors ${centro === id ? "border-[#4a3aa7] bg-[#f3f0fc]" : "border-mist-deep bg-white hover:border-[#4a3aa7]"}`}>
+                        <span className="block text-sm font-semibold text-ink">{nombre}</span>
+                        <span className="mt-1.5 block font-display text-lg font-semibold text-ink">{formatearMonto(porCentro[id])}</span>
+                        <span className="mt-1.5 block text-xs text-[#4a3aa7]">{centro === id ? "Ver todos" : "Ver este centro"}</span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              )}
               <Panel titulo="Movimientos de Oficina Central" nota={`${visibles.length} de ${filas.length} movimientos · las tarjetas siguen los filtros · cada movimiento es de la empresa y no afecta el margen de un contrato`}
                 filtrosAbajo
                 filtros={<>
@@ -134,7 +169,10 @@ export function VistaOficinaCentral() {
                     ] }]} />
                   </CampoFiltro>
                   <CampoFiltro etiqueta="Categoría">
-                    <Filtro etiqueta="Categoría" opciones={[{ id: "todos", titulo: "Todos" }, ...categoriasOficina]} valor={categoria} alCambiar={setCategoria} />
+                    <Filtro etiqueta="Categoría" opciones={[{ id: "todos", titulo: "Todos" }, ...categoriasVisibles.map((c) => ({ id: c.id, titulo: c.titulo }))]} valor={categoria} alCambiar={setCategoria} />
+                  </CampoFiltro>
+                  <CampoFiltro etiqueta="Centro de costo">
+                    <Filtro etiqueta="Centro de costo" opciones={[{ id: "todos", titulo: "Todos" }, ...centrosVisibles.map((c) => ({ id: c.id, titulo: c.nombre }))]} valor={centro} alCambiar={setCentro} />
                   </CampoFiltro>
                   <CampoFiltro etiqueta="Estatus">
                     <Filtro etiqueta="Estatus" opciones={estatusGasto} valor={estatus} alCambiar={setEstatus} />
@@ -142,18 +180,20 @@ export function VistaOficinaCentral() {
                 </>}>
                 <Buscador valor={texto} alCambiar={setTexto} etiqueta="Buscar egresos" placeholder="Buscar por proveedor, descripción o documento…" />
                 <Tabla filas={visibles} claveDe={(fila) => fila.id} vacio={texto.trim() ? "Ningún egreso coincide con la búsqueda." : "Aún no hay egresos de oficina central para este filtro."}
-                  columnas={columnas(puedeCargar ? (fila) => setFormulario({ registro: fila, categoria: fila.categoria }) : null, setHistorial)}
-                  pie={<><Total colSpan={4}>Total neto</Total><Total derecha>{formatearPesos(totalOficina(visibles))}</Total><Total colSpan={2} /></>} />
+                  columnas={columnas(puedeCargar ? (fila) => setFormulario({ registro: fila, categoria: fila.categoria, centro: fila.centro_costo }) : null, setHistorial)}
+                  pie={<><Total colSpan={5}>Total neto</Total><Total derecha>{formatearPesos(totalOficina(visibles))}</Total><Total colSpan={2} /></>} />
               </Panel>
             </>
           );
         }}
       </Contenido>
       {formulario && (
-        <FormularioOficina key={formulario.registro?.id ?? formulario.categoria}
-          registro={formulario.registro} categoriaInicial={formulario.categoria}
+        <FormularioOficina key={formulario.registro?.id ?? `${formulario.categoria}:${formulario.centro}`}
+          registro={formulario.registro} categoriaInicial={formulario.categoria} centroInicial={formulario.centro}
+          catalogo={estado.estado === "listo" ? estado.datos : { categorias: [], centros: [] }}
           alCerrar={() => setFormulario(null)} alGuardado={recargar} />
       )}
+      {administrando && <AdministrarOficina alCerrar={() => setAdministrando(false)} alCambiar={recargar} />}
       {historial && <DialogoHistorial tabla="egresos_oficina_central" registroId={historial.id}
         titulo={historial.descripcion} abierto alCerrar={() => setHistorial(null)} />}
     </>
@@ -163,7 +203,8 @@ export function VistaOficinaCentral() {
 function columnas(editar: ((fila: EgresoOficina) => void) | null, verHistorial: (fila: EgresoOficina) => void): Columna<EgresoOficina>[] {
   return [
     { clave: "fecha", titulo: "Fecha", encabezado: true, celda: (f) => formatearFecha(f.fecha) },
-    { clave: "categoria", titulo: "Categoría", celda: (f) => nombreCategoria[f.categoria] },
+    { clave: "categoria", titulo: "Categoría", celda: (f) => f.categoriaTitulo },
+    { clave: "centro", titulo: "Centro de costo", celda: (f) => f.centro_costo === CENTRO_GENERAL ? <span className="text-ink-soft">{f.centroNombre}</span> : <span className="font-semibold text-[#4a3aa7]">{f.centroNombre}</span> },
     { clave: "detalle", titulo: "Detalle", celda: (f) => <><span className="block font-semibold text-ink">{f.descripcion}</span><span className="text-xs text-ink-soft">{f.proveedor}{f.documento ? ` · ${f.documento}` : ""}</span></> },
     { clave: "estado", titulo: "Pago", celda: (f) => <span className={f.estado === "pagado" ? "text-[#0e7a4f]" : "text-[#8a5a09]"}>{f.estado === "pagado" ? "Pagado" : "Pendiente"}</span> },
     { clave: "neto", titulo: "Neto", derecha: true, celda: (f) => formatearPesos(f.neto) },
@@ -172,17 +213,22 @@ function columnas(editar: ((fila: EgresoOficina) => void) | null, verHistorial: 
   ];
 }
 
-function FormularioOficina({ registro, categoriaInicial, alCerrar, alGuardado }: {
+function FormularioOficina({ registro, categoriaInicial, centroInicial, catalogo, alCerrar, alGuardado }: {
   registro: EgresoOficina | null;
-  categoriaInicial: CategoriaOficina;
+  categoriaInicial: string;
+  centroInicial: string;
+  catalogo: Catalogo;
   alCerrar: () => void;
   alGuardado: () => void;
 }) {
   const inicial: DatosEgresoOficina = registro ? {
-    categoria: registro.categoria, fecha: registro.fecha, proveedor: registro.proveedor,
+    categoria: registro.categoria, centro_costo: registro.centro_costo, fecha: registro.fecha, proveedor: registro.proveedor,
     descripcion: registro.descripcion, documento: registro.documento, neto: registro.neto,
     iva: registro.iva, estado: registro.estado, observaciones: registro.observaciones,
-  } : borradorNuevo(categoriaInicial);
+  } : borradorNuevo(categoriaInicial, centroInicial);
+  // Solo se ofrece lo encendido; si el egreso ya tenía una categoría o centro apagado, ese sigue disponible.
+  const opcionesCategoria = catalogo.categorias.filter((c) => c.activa || c.id === inicial.categoria).map((c) => ({ id: c.id, titulo: c.titulo }));
+  const opcionesCentro = catalogo.centros.filter((c) => c.activo || c.id === inicial.centro_costo).map((c) => ({ id: c.id, titulo: c.nombre }));
   const formulario = useFormulario(inicial);
   // El IVA es el 19% del neto. Un egreso guardado con neto y sin IVA se abre como exento.
   const [exento, setExento] = useState(registro !== null && registro.neto > 0 && registro.iva === 0);
@@ -221,7 +267,8 @@ function FormularioOficina({ registro, categoriaInicial, alCerrar, alGuardado }:
       descripcion="Basta con el monto neto: el IVA (19%) y el total se calculan solos.">
       <form onSubmit={guardar}>
         <Campos>
-          <CampoSeleccion etiqueta="Categoría" opciones={[...categoriasOficina]} requerido {...formulario.campo("categoria")} />
+          <CampoSeleccion etiqueta="Categoría" ayuda="Qué tipo de gasto es." opciones={opcionesCategoria} requerido {...formulario.campo("categoria")} />
+          <CampoSeleccion etiqueta="Centro de costo" ayuda="Para quién o para qué se gastó." opciones={opcionesCentro} requerido {...formulario.campo("centro_costo")} />
           <CampoFecha etiqueta="Fecha del egreso" requerido {...formulario.campo("fecha")} />
           <CampoTexto etiqueta={formulario.datos.categoria === "reembolsos" ? "Quién rindió (a quién se le devuelve)" : "Proveedor o beneficiario"} requerido {...formulario.campo("proveedor")} />
           <CampoTexto etiqueta="Nº de documento" valor={formulario.datos.documento ?? ""} alCambiar={(v) => formulario.cambiar("documento", v)} ayuda="Factura, boleta o comprobante, si existe." />
@@ -231,7 +278,7 @@ function FormularioOficina({ registro, categoriaInicial, alCerrar, alGuardado }:
           <ResumenIva neto={formulario.datos.neto} afecto={!exento} alCambiarAfecto={(v) => setExento(!v)} />
           <Ancho><CampoTexto etiqueta="Observaciones" valor={formulario.datos.observaciones ?? ""} alCambiar={(v) => formulario.cambiar("observaciones", v)} /></Ancho>
         </Campos>
-        {registro && formulario.datos.categoria !== "arriendos" && (
+        {registro && !categoriasSinIngresoAPagnol.includes(formulario.datos.categoria) && (
           <div className="px-6 pb-6">
             <IngresoAPagnol
               compraId={registro.id}
