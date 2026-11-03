@@ -48,3 +48,25 @@ export function parametrosDeBusqueda(pedido: Request) {
 }
 
 export const SIN_ACCESO = { ok: false as const, error: "Tu sesión no permite usar Pagnol desde Abastecimiento." };
+
+/**
+ * La conexión a Supabase CON EL TOKEN DE LA PERSONA, si tiene ese permiso
+ * (p. ej. `oficina_central.ver` para los activos de Control de Gestión); null si
+ * no. Igual que `sesionDeAbastecimiento`, pero para quien no pasa por Abastecimiento.
+ */
+export async function sesionConPermiso(pedido: Request, clave: string): Promise<SupabaseClient | null> {
+  const token = pedido.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!token || !url || !anon) return null;
+
+  const supabase = createClient(url, anon, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data: usuario, error } = await supabase.auth.getUser(token);
+  if (error || !usuario.user) return null;
+
+  const { data: puede } = await supabase.rpc("tiene_permiso", { clave });
+  return puede === true ? supabase : null;
+}

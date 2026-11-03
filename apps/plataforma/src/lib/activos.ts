@@ -1,18 +1,23 @@
 "use client";
 
-import { catalogoDePagnol } from "./pagnol/navegador";
 import { supabase } from "./supabase";
+import { traerTodo } from "./paginar";
 
 /**
- * Los activos de la empresa (0096).
+ * Los activos de la empresa (0096, 0109).
  *
- * Pagnol dice QUÉ activos existen (código, nombre, estado, y a veces valor y
- * fecha) y es la fuente de verdad: no se duplica. Valar agrega lo que Pagnol no
- * sabe y la gestión necesita —para qué contrato se compró, dónde está hoy, de
- * quién es y cuánto costó— en `activos_valar`, una fila por activo.
+ * Pagnol dice QUÉ activos existen y es la fuente de verdad. Valar guarda una fila
+ * por cada uno en `activos_valar` con una copia mínima de cómo se ve allá (código,
+ * nombre, estado, valor y fecha de compra) y lo que Pagnol no sabe y la gestión
+ * necesita: para qué contrato se compró, dónde está hoy, de quién es y cuánto costó.
  *
- * Un activo de Pagnol sin fila acá está «por identificar»: es lo que el usuario
- * va resolviendo. El valor y la fecha que Valar no haya puesto se toman de Pagnol.
+ * La pantalla lee SOLO la vista `activos_vista` (de a 50, con búsqueda y totales en
+ * la base): no le pregunta a Pagnol al abrir. La copia se corrige sola con los
+ * avisos de Pagnol, o a pedido con «Actualizar desde Pagnol».
+ *
+ * Un activo recién llegado de Pagnol está «por identificar» hasta que alguien
+ * confirma contrato de origen, ubicación y propiedad. El valor y la fecha que Valar
+ * no haya puesto se toman de Pagnol.
  *
  * Lo comprado como «activo» que Pagnol no conoce (0100) también tiene su ficha:
  * una por línea de compra, que parte en Oficina Central y con el neto de la línea.
@@ -44,7 +49,7 @@ export type ActivoFila = {
   nombre: string;
   estado: string;
   externalRef: string | null;
-  /** Ya tiene una fila en Valar. Sin ella, falta identificarlo. */
+  /** Alguien ya confirmó su contrato de origen, ubicación y propiedad. */
   identificado: boolean;
   propiedad: Propiedad;
   /** Contrato para el que se compró (no cambia). */
@@ -62,109 +67,173 @@ export type ActivoFila = {
   observaciones: string;
 };
 
-type FilaValar = {
-  pagnol_activo_id: string | null;
+/** Una fila de `activos_vista`. */
+type FilaVista = {
+  clave: string;
+  pagnol_id: string | null;
   linea_id: string | null;
+  codigo: string;
+  nombre: string;
+  estado: string;
+  external_ref: string | null;
+  identificado: boolean;
   propiedad: Propiedad;
-  contrato_origen_id: string | null;
-  ubicacion: Ubicacion;
-  contrato_ubicacion_id: string | null;
+  origen: string | null;
+  origen_de_la_orden: boolean;
+  ubicacion: Ubicacion | null;
+  contrato_ubicacion: string | null;
   valor: number | string | null;
-  fecha_compra: string | null;
-  observaciones: string | null;
+  valor_de: "valar" | "pagnol" | "compra" | null;
+  fecha: string | null;
+  observaciones: string;
 };
 
-const REF_OC = /^valar:oc:([^:]+):item:/;
+const aFila = (r: FilaVista): ActivoFila => ({
+  clave: r.clave,
+  pagnolId: r.pagnol_id,
+  lineaId: r.linea_id,
+  codigo: r.codigo,
+  nombre: r.nombre,
+  estado: r.estado,
+  externalRef: r.external_ref,
+  identificado: r.identificado,
+  propiedad: r.propiedad,
+  origen: r.origen,
+  origenDeLaOrden: r.origen_de_la_orden,
+  ubicacion: r.ubicacion,
+  contratoUbicacion: r.contrato_ubicacion,
+  valor: r.valor == null ? null : Number(r.valor),
+  valorDe: r.valor_de,
+  fecha: r.fecha,
+  observaciones: r.observaciones ?? "",
+});
 
-/** Los arriendos de Pagnol no suman patrimonio: se sugiere «arrendado» hasta que alguien lo confirme. */
-const pareceArriendo = (nombre: string) => /^\s*arriendo\b/i.test(nombre);
+export const SIN_IDENTIFICAR = "sin_identificar";
 
-export async function cargarActivos(): Promise<ActivoFila[]> {
-  const [pagnol, valar] = await Promise.all([
-    catalogoDePagnol.activos(),
-    supabase
-      .from("activos_valar")
-      .select("pagnol_activo_id, linea_id, propiedad, contrato_origen_id, ubicacion, contrato_ubicacion_id, valor, fecha_compra, observaciones"),
-  ]);
-  if (!pagnol.ok) throw new Error(pagnol.error);
-  if (valar.error) {
-    throw new Error(/activos_valar/.test(valar.error.message) && /exist|schema cache/i.test(valar.error.message)
-      ? "Falta aplicar la migración 0096 en la base."
-      : valar.error.message);
+export type FiltrosActivos = {
+  texto: string;
+  propiedad: "todos" | Propiedad;
+  /** `todos`, `oficina_central`, `sin_identificar` o el id de un contrato. */
+  donde: string;
+  /** `todos`, `sin_identificar` (sin contrato de origen) o el id de un contrato. */
+  origen: string;
+};
+
+/** Saca lo que rompería la sintaxis de `.or()` de PostgREST. */
+const limpiarBusqueda = (t: string) => t.replace(/[,()*%\\"]/g, " ").replace(/\s+/g, " ").trim();
+
+function consulta(f: FiltrosActivos) {
+  let q = supabase.from("activos_vista").select("*");
+  if (f.propiedad !== "todos") q = q.eq("propiedad", f.propiedad);
+  if (f.donde !== "todos") q = q.eq("lugar", f.donde);
+  if (f.origen !== "todos") q = f.origen === SIN_IDENTIFICAR ? q.is("origen", null) : q.eq("origen", f.origen);
+  const texto = limpiarBusqueda(f.texto);
+  if (texto) {
+    q = q.or(["codigo", "nombre", "observaciones", "origen", "contrato_ubicacion"].map((c) => `${c}.ilike.*${texto}*`).join(","));
   }
-  const filasValar = valar.data as FilaValar[];
-  const propias = new Map(filasValar.filter((f) => f.pagnol_activo_id).map((f) => [f.pagnol_activo_id as string, f]));
-  const deLineas = new Map(filasValar.filter((f) => f.linea_id).map((f) => [f.linea_id as string, f]));
+  // Lo más reciente primero; el desempate por clave mantiene estable el orden entre páginas.
+  return q.order("fecha", { ascending: false, nullsFirst: false }).order("clave");
+}
 
-  // Lo que llegó con una OC de Valar ya sabe para qué contrato se compró.
-  const ordenes = [...new Set(pagnol.datos.map((a) => REF_OC.exec(a.external_ref ?? "")?.[1]).filter((x): x is string => !!x))];
-  const contratoDeLaOrden = new Map<string, string>();
-  if (ordenes.length) {
-    const { data } = await supabase.from("ordenes_compra_proveedor").select("id, contrato_id").in("id", ordenes);
-    for (const o of data ?? []) contratoDeLaOrden.set(o.id as string, o.contrato_id as string);
-  }
+/** Una tanda de activos, con los filtros resueltos en la base. */
+export async function cargarPaginaActivos(f: FiltrosActivos, desde: number, cuantos: number): Promise<ActivoFila[]> {
+  const { data, error } = await consulta(f).range(desde, desde + cuantos - 1);
+  if (error) throw new Error(mensajeDeVista(error.message));
+  return (data as FilaVista[]).map(aFila);
+}
 
-  // Las líneas «activo» que ya llegaron a Pagnol (su ref lleva el id de la línea) no se repiten.
-  const refs = pagnol.datos.map((a) => a.external_ref ?? "");
-  const { data: lineas, error: errorLineas } = await supabase
-    .from("costos_unificados")
-    .select("id, contrato_id, fecha, tercero, detalle, neto")
-    .eq("es_activo", true);
-  if (errorLineas) throw new Error(errorLineas.message);
-  const deCompras = (lineas ?? [])
-    .filter((l) => !refs.some((r) => r.includes(`:item:${l.id}`)))
-    .map((l) => {
-      const v = deLineas.get(l.id as string);
-      const neto = Number(l.neto);
-      const valorValar = v?.valor == null ? null : Number(v.valor);
-      return {
-        clave: `linea:${l.id}`,
-        pagnolId: null,
-        lineaId: l.id as string,
-        codigo: `Compra a ${l.tercero ?? "proveedor"}`,
-        nombre: (l.detalle as string) || "Activo comprado",
-        estado: "operativo",
-        externalRef: null,
-        identificado: !!v,
-        propiedad: v?.propiedad ?? "propio",
-        origen: v?.contrato_origen_id ?? (l.contrato_id as string | null),
-        origenDeLaOrden: !v?.contrato_origen_id,
-        // Un activo gastado en un contrato ya es de la empresa: parte en Oficina Central (0099).
-        ubicacion: v?.ubicacion ?? "oficina_central",
-        contratoUbicacion: v?.contrato_ubicacion_id ?? null,
-        valor: valorValar ?? neto,
-        valorDe: valorValar != null ? "valar" : "compra",
-        fecha: v?.fecha_compra ?? (l.fecha as string | null),
-        observaciones: v?.observaciones ?? "",
-      } satisfies ActivoFila;
+/** TODOS los que cumplen los filtros: para elegirlos de golpe e identificarlos juntos. */
+export async function cargarTodosLosActivos(f: FiltrosActivos): Promise<ActivoFila[]> {
+  const filas = await traerTodo<FilaVista>((d, h) => consulta(f).range(d, h));
+  return filas.map(aFila);
+}
+
+function mensajeDeVista(mensaje: string): string {
+  return /activos_vista|resumen_activos/.test(mensaje) && /exist|schema cache/i.test(mensaje)
+    ? "Falta aplicar la migración 0109 en la base."
+    : mensaje;
+}
+
+export type ResumenActivos = {
+  total: number;
+  propios: number;
+  arrendados: number;
+  delCliente: number;
+  patrimonio: number;
+  conValor: number;
+  sinValor: number;
+  costoArriendos: number;
+  porIdentificar: number;
+  /** La última vez que se puso al día con Pagnol (de un aviso o de un «Actualizar»). */
+  ultimaSync: string | null;
+  completaSync: string | null;
+  lugares: { id: string; cantidad: number; valor: number }[];
+  origenes: { id: string; cantidad: number; valor: number; enOficina: number; enSuContrato: number; enOtro: number; sinUbicar: number }[];
+};
+
+type ResumenCrudo = {
+  total: number;
+  propios: number;
+  arrendados: number;
+  del_cliente: number;
+  patrimonio: number | string;
+  con_valor: number;
+  sin_valor: number;
+  costo_arriendos: number | string;
+  por_identificar: number;
+  ultima_sync: string | null;
+  completa_sync: string | null;
+  lugares: { id: string; cantidad: number; valor: number | string }[];
+  origenes: { id: string; cantidad: number; valor: number | string; en_oficina: number; en_su_contrato: number; en_otro: number; sin_ubicar: number }[];
+};
+
+/** Las cifras de arriba: calculadas en la base sobre todos los activos, sin traerlos. */
+export async function cargarResumenActivos(): Promise<ResumenActivos> {
+  const { data, error } = await supabase.rpc("resumen_activos");
+  if (error) throw new Error(mensajeDeVista(error.message));
+  const r = data as ResumenCrudo;
+  return {
+    total: r.total,
+    propios: r.propios,
+    arrendados: r.arrendados,
+    delCliente: r.del_cliente,
+    patrimonio: Number(r.patrimonio),
+    conValor: r.con_valor,
+    sinValor: r.sin_valor,
+    costoArriendos: Number(r.costo_arriendos),
+    porIdentificar: r.por_identificar,
+    ultimaSync: r.ultima_sync,
+    completaSync: r.completa_sync,
+    lugares: r.lugares.map((l) => ({ id: l.id, cantidad: l.cantidad, valor: Number(l.valor) })),
+    origenes: r.origenes.map((o) => ({
+      id: o.id,
+      cantidad: o.cantidad,
+      valor: Number(o.valor),
+      enOficina: o.en_oficina,
+      enSuContrato: o.en_su_contrato,
+      enOtro: o.en_otro,
+      sinUbicar: o.sin_ubicar,
+    })),
+  };
+}
+
+export type ResultadoSincronia = { ok: true; revisados: number; cambiados: number; modo: string } | { ok: false; error: string };
+
+/** «Actualizar desde Pagnol»: un activo, lo que cambió desde la última vez, o todo. */
+export async function actualizarDesdePagnol(modo: "uno" | "cambios" | "todo", id?: string): Promise<ResultadoSincronia> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return { ok: false, error: "La sesión expiró. Vuelve a ingresar." };
+  try {
+    const r = await fetch("/api/pagnol/activos/", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ modo, id }),
     });
-
-  const deP = pagnol.datos.map((a) => {
-    const v = propias.get(a.id);
-    const deLaOrden = contratoDeLaOrden.get(REF_OC.exec(a.external_ref ?? "")?.[1] ?? "") ?? null;
-    const valorValar = v?.valor == null ? null : Number(v.valor);
-    const valorPagnol = a.valor_compra == null ? null : Number(a.valor_compra);
-    return {
-      clave: a.id,
-      pagnolId: a.id,
-      lineaId: null,
-      codigo: a.codigo,
-      nombre: a.nombre,
-      estado: a.estado,
-      externalRef: a.external_ref,
-      identificado: !!v,
-      propiedad: v?.propiedad ?? (pareceArriendo(a.nombre) ? "arrendado" : "propio"),
-      origen: v?.contrato_origen_id ?? deLaOrden,
-      origenDeLaOrden: !v?.contrato_origen_id && !!deLaOrden,
-      ubicacion: v?.ubicacion ?? null,
-      contratoUbicacion: v?.contrato_ubicacion_id ?? null,
-      valor: valorValar ?? valorPagnol,
-      valorDe: valorValar != null ? "valar" : valorPagnol != null ? "pagnol" : null,
-      fecha: v?.fecha_compra ?? a.fecha_compra ?? null,
-      observaciones: v?.observaciones ?? "",
-    } satisfies ActivoFila;
-  });
-  return [...deP, ...deCompras];
+    return (await r.json()) as ResultadoSincronia;
+  } catch {
+    return { ok: false, error: "No se pudo conectar con la plataforma para actualizar desde Pagnol." };
+  }
 }
 
 /** Lo que se puede cambiar: en una fila o en varias a la vez. Lo que no viene, queda como estaba. */
@@ -195,10 +264,11 @@ export async function guardarActivos(filas: ActivoFila[], c: CambiosDeActivo) {
       contrato_origen_id: c.origen !== undefined ? c.origen : f.origen,
       ubicacion,
       contrato_ubicacion_id: contratoUbicacion,
-      // El valor de Pagnol no se copia: mientras Valar no ponga el suyo, manda el de Pagnol.
+      // El valor de Pagnol no se copia como propio: mientras Valar no ponga el suyo, manda el de Pagnol.
       valor: c.valor !== undefined ? c.valor : f.valorDe === "valar" ? f.valor : null,
       fecha_compra: c.fecha !== undefined ? c.fecha : f.fecha,
       observaciones: (c.observaciones !== undefined ? c.observaciones : f.observaciones).trim() || null,
+      identificado: true,
     };
   });
   // Cada tipo de ficha tiene su propia llave de conflicto.

@@ -1,6 +1,7 @@
 import { revalidateTag } from "next/cache";
 import { Webhook } from "standardwebhooks";
 import type { TagPagnol } from "@/lib/pagnol/client";
+import { aplicarActivos } from "@/lib/pagnol/activos-sincronia";
 import { registrarCompraRecibida, registrarCorreccion } from "@/lib/pagnol/recepciones-entrantes";
 import { procesarYAnotar } from "@/lib/pagnol/reposicion";
 import { procesarSolicitudYAnotar, type AvisoSolicitud } from "@/lib/pagnol/solicitudes-entrantes";
@@ -40,6 +41,9 @@ type EventoPagnol = {
 
 /** `compra.recibida` y `compra.recepcion_corregida`: la recepción vive en Pagnol (Fase 5). */
 const esDeCompra = (tipo: string) => tipo === "compra.recibida" || tipo === "compra.recepcion_corregida";
+
+/** `activo.creado|actualizado|dado_de_baja`: la lista de activos de Valar se corrige con el activo que llega (0109). */
+const esDeActivo = (tipo: string) => tipo.startsWith("activo.");
 
 /** `solicitud_compra.creada|aprobada|rechazada`: las solicitudes de Pagnol (Fase 5 · C). */
 const esDeSolicitud = (tipo: string) => tipo.startsWith("solicitud_compra.");
@@ -102,7 +106,7 @@ export async function POST(pedido: Request) {
       // Ya había llegado. Una recepción que no se pudo aplicar (aviso con
       // `procesado_en` vacío) se reintenta; todo lo demás se confirma sin repetir.
       const { data: previo } = await sb.from("pagnol_webhooks_recibidos").select("procesado_en").eq("webhook_id", id).maybeSingle();
-      if (!esDeCompra(evento.type) || previo?.procesado_en) return Response.json({ ok: true, duplicado: true });
+      if ((!esDeCompra(evento.type) && !esDeActivo(evento.type)) || previo?.procesado_en) return Response.json({ ok: true, duplicado: true });
     } else if (error) {
       return Response.json({ error: "No se pudo anotar el aviso." }, { status: 500 });
     }
@@ -130,6 +134,22 @@ export async function POST(pedido: Request) {
       .from("pagnol_webhooks_recibidos")
       .update({ procesado_en: new Date().toISOString(), error: r.ok ? null : r.error })
       .eq("webhook_id", id);
+  } else if (sb && esDeActivo(evento.type)) {
+    // El aviso trae el activo completo (el mismo formato que la API): se corrige la
+    // copia en la lista de Valar. Si falla por algo pasajero se responde 500 y Pagnol
+    // reintenta; sin empresa enlazada no hay dónde aplicarlo y se confirma.
+    if (!empresa) {
+      await sb.from("pagnol_webhooks_recibidos").update({ error: "La organización de Pagnol no está enlazada a ninguna empresa.", procesado_en: new Date().toISOString() }).eq("webhook_id", id);
+      return Response.json({ ok: true, ignorado: true });
+    }
+    try {
+      await aplicarActivos(sb, empresa, [evento.data]);
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
+      await sb.from("pagnol_webhooks_recibidos").update({ error }).eq("webhook_id", id);
+      return Response.json({ error }, { status: 500 });
+    }
+    await sb.from("pagnol_webhooks_recibidos").update({ procesado_en: new Date().toISOString(), error: null }).eq("webhook_id", id);
   } else if (sb && esDeSolicitud(evento.type)) {
     // Fase 5 · C: una solicitud de compra aprobada en Pagnol → borrador de SOLPED.
     // Sin contrato asociado, queda en la bandeja con el motivo y se responde 2xx:

@@ -1,25 +1,31 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Chip } from "../ui/Chip";
-import { Buscador, coincide } from "../ui/Buscador";
+import { Buscador } from "../ui/Buscador";
 import { Campos, CampoDinero, CampoFecha, CampoSeleccion, CampoTexto, Dialogo, Pie, useFormulario, Ancho } from "../ui/Formulario";
 import { Tabla, Total, type Columna } from "../ui/Tabla";
 import { CampoFiltro, Contenido, Desplegable, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
 import {
-  cargarActivos, estadosActivo, guardarActivos, propiedades, sumaAlPatrimonio,
-  type ActivoFila, type CambiosDeActivo, type Propiedad, type Ubicacion,
+  actualizarDesdePagnol, cargarPaginaActivos, cargarResumenActivos, cargarTodosLosActivos, estadosActivo, guardarActivos,
+  propiedades, SIN_IDENTIFICAR, sumaAlPatrimonio,
+  type ActivoFila, type CambiosDeActivo, type FiltrosActivos, type Propiedad, type Ubicacion,
 } from "@/lib/activos";
 import { cargarContratosBreve, type ContratoBreve } from "@/lib/contratos";
 import { useConsulta } from "@/lib/consulta";
 import { formatearFecha, formatearMonto, formatearPesos } from "@/lib/formato";
+import { useListaServidor, useRetardado } from "@/lib/lista-servidor";
 import { usePuede } from "@/lib/sesion";
 import { useFiltro } from "@/lib/vista-guardada";
 
 /**
  * Los activos de la empresa: qué hay, para qué contrato se compró cada uno,
- * dónde está hoy y cuánto vale (0096). Pagnol dice qué activos existen; acá se
+ * dónde está hoy y cuánto vale (0096, 0109). Pagnol dice qué activos existen; acá se
  * identifican uno a uno o por tandas. Los montos son netos de IVA.
+ *
+ * La lista es de Valar: abre al instante y trae de a 50, con búsqueda y totales en la
+ * base. Pagnol no se consulta al abrir; sus cambios llegan por aviso, o a pedido con
+ * «Actualizar desde Pagnol».
  *
  * Caso típico: un activo comprado para Salar de Atacama que hoy está en Oficina
  * Central. Origen y ubicación son datos distintos, y el resumen los cruza.
@@ -27,82 +33,135 @@ import { useFiltro } from "@/lib/vista-guardada";
 
 type FiltroPropiedad = "todos" | Propiedad;
 const OFICINA = "oficina_central";
-const SIN_IDENTIFICAR = "sin_identificar";
 
 const etiquetaContrato = (c: ContratoBreve) => c.nombreCorto || `${c.id} · ${c.nombre}`;
 
+/** «hace 5 minutos», «hace 2 horas», «hace 3 días». */
+function haceCuanto(iso: string | null): string {
+  if (!iso) return "nunca";
+  const minutos = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (minutos < 1) return "hace un momento";
+  if (minutos < 60) return `hace ${minutos} min`;
+  const horas = Math.round(minutos / 60);
+  if (horas < 24) return `hace ${horas} ${horas === 1 ? "hora" : "horas"}`;
+  const dias = Math.round(horas / 24);
+  return `hace ${dias} ${dias === 1 ? "día" : "días"}`;
+}
+
 export function VistaActivos() {
-  const activos = useConsulta(cargarActivos);
+  const resumen = useConsulta(cargarResumenActivos);
   const contratos = useConsulta(cargarContratosBreve);
   const [propiedad, setPropiedad] = useFiltro<FiltroPropiedad>("activos:propiedad", "todos");
   const [donde, setDonde] = useFiltro<string>("activos:donde", "todos");
   const [origen, setOrigen] = useFiltro<string>("activos:origen", "todos");
   const [texto, setTexto] = useState("");
-  const [elegidos, setElegidos] = useState<Set<string>>(new Set());
+  const textoBuscado = useRetardado(texto);
+  const [elegidos, setElegidos] = useState<Map<string, ActivoFila>>(new Map());
   const [edicion, setEdicion] = useState<ActivoFila | null>(null);
   const [masivo, setMasivo] = useState(false);
+  const [eligiendoTodos, setEligiendoTodos] = useState(false);
+  const [sincronizando, setSincronizando] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<{ tono: "ok" | "error"; texto: string } | null>(null);
   const puedeEditar = usePuede("gestion.editar");
 
-  const lista = useMemo(() => (contratos.estado.estado === "listo" ? contratos.estado.datos : []), [contratos.estado]);
-  const nombreContrato = useMemo(() => new Map(lista.map((c) => [c.id, etiquetaContrato(c)])), [lista]);
-  const alGuardar = () => { setElegidos(new Set()); activos.recargar(); };
+  const filtros = useMemo<FiltrosActivos>(() => ({ texto: textoBuscado, propiedad, donde, origen }), [textoBuscado, propiedad, donde, origen]);
+  const lista = useListaServidor<ActivoFila, FiltrosActivos>({ traer: cargarPaginaActivos, filtros });
+
+  const listaContratos = useMemo(() => (contratos.estado.estado === "listo" ? contratos.estado.datos : []), [contratos.estado]);
+  const nombreContrato = useMemo(() => new Map(listaContratos.map((c) => [c.id, etiquetaContrato(c)])), [listaContratos]);
+  const nombre = (id: string | null) => (id ? nombreContrato.get(id) ?? id : "—");
+
+  const recargarTodo = () => {
+    resumen.recargar();
+    lista.recargar();
+  };
+  const alGuardar = () => { setElegidos(new Map()); recargarTodo(); };
+
+  /** Pone la lista al día con Pagnol: lo que cambió, todo, o un solo activo. */
+  async function actualizar(modo: "uno" | "cambios" | "todo", id?: string) {
+    setSincronizando(id ?? modo);
+    setAviso(null);
+    const r = await actualizarDesdePagnol(modo, id);
+    setSincronizando(null);
+    if (!r.ok) {
+      setAviso({ tono: "error", texto: r.error });
+      return;
+    }
+    setAviso({
+      tono: "ok",
+      texto: r.cambiados === 0
+        ? `Todo al día: se revisaron ${r.revisados} ${r.revisados === 1 ? "activo" : "activos"} y no cambió nada.`
+        : `Listo: se actualizaron ${r.cambiados} de ${r.revisados} ${r.revisados === 1 ? "activo revisado" : "activos revisados"}.`,
+    });
+    recargarTodo();
+  }
+
+  /* La primera vez, la lista de Valar está vacía: se trae todo de Pagnol sola, una vez. */
+  const primeraVez = useRef(false);
+  const sinSincronizar = resumen.estado.estado === "listo" && resumen.estado.datos.completaSync === null;
+  useEffect(() => {
+    if (!sinSincronizar || primeraVez.current) return;
+    primeraVez.current = true;
+    void actualizar("todo");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sinSincronizar]);
+
+  const alternar = (f: ActivoFila) => setElegidos((m) => { const n = new Map(m); if (n.has(f.clave)) n.delete(f.clave); else n.set(f.clave, f); return n; });
+  const cargadosElegidos = lista.filas.length > 0 && lista.filas.every((f) => elegidos.has(f.clave));
+
+  async function elegirTodosLosQueCoinciden() {
+    setEligiendoTodos(true);
+    try {
+      const todos = await cargarTodosLosActivos(filtros);
+      setElegidos(new Map(todos.map((f) => [f.clave, f])));
+    } catch (e) {
+      setAviso({ tono: "error", texto: e instanceof Error ? e.message : "No se pudieron elegir los activos." });
+    } finally {
+      setEligiendoTodos(false);
+    }
+  }
+
+  const ultima = resumen.estado.estado === "listo" ? resumen.estado.datos.ultimaSync : null;
 
   return (
     <>
       <Encabezado
         titulo="Activos"
-        descripcion="Lo que la empresa tiene: para qué contrato se compró cada activo, dónde está hoy y cuánto vale. Pagnol dice qué activos existen; acá se identifican. Los montos son netos de IVA."
+        descripcion="Lo que la empresa tiene: para qué contrato se compró cada activo, dónde está hoy y cuánto vale. Pagnol dice qué activos existen; acá se identifican y se valorizan. Los montos son netos de IVA."
+        acciones={
+          <div className="flex flex-col items-end gap-1">
+            <button
+              type="button"
+              disabled={sincronizando !== null}
+              onClick={() => void actualizar("cambios")}
+              className="rounded-full border border-mist-deep px-4 py-2 text-sm font-semibold text-ink transition-colors hover:border-ink disabled:opacity-60"
+            >
+              {sincronizando === "cambios" || sincronizando === "todo" ? "Actualizando…" : "Actualizar desde Pagnol"}
+            </button>
+            <span className="text-xs text-ink-soft">Última vez: {haceCuanto(ultima)}</span>
+          </div>
+        }
       />
-      <Contenido consulta={activos.estado}>
-        {(filas) => {
-          const nombre = (id: string | null) => (id ? nombreContrato.get(id) ?? id : "—");
-          const dondeDe = (f: ActivoFila) => (f.ubicacion === null ? SIN_IDENTIFICAR : f.ubicacion === "oficina_central" ? OFICINA : f.contratoUbicacion ?? SIN_IDENTIFICAR);
-
-          const propios = filas.filter(sumaAlPatrimonio);
-          const conValor = propios.filter((f) => f.valor !== null && f.valor > 0);
-          const porIdentificar = filas.filter((f) => !f.identificado);
-          const sinValor = propios.filter((f) => !f.valor);
-          const arrendados = filas.filter((f) => f.propiedad === "arrendado");
-          const costoArriendos = arrendados.reduce((t, f) => t + (f.valor ?? 0), 0);
-          const patrimonio = conValor.reduce((t, f) => t + (f.valor ?? 0), 0);
-
-          // Dónde están: lo que se ve en las tarjetas.
-          const lugares = [...new Set(filas.map(dondeDe))].sort((a, b) => (a === OFICINA ? -1 : b === OFICINA ? 1 : a === SIN_IDENTIFICAR ? 1 : b === SIN_IDENTIFICAR ? -1 : nombre(a).localeCompare(nombre(b))));
-          const resumenLugar = (id: string) => {
-            const f = filas.filter((x) => dondeDe(x) === id);
-            const p = f.filter(sumaAlPatrimonio);
-            return { cantidad: f.length, valor: p.reduce((t, x) => t + (x.valor ?? 0), 0) };
-          };
+      {aviso && (
+        <p role={aviso.tono === "error" ? "alert" : "status"}
+          className={`mb-4 rounded-xl px-4 py-3 text-sm font-medium ${aviso.tono === "error" ? "bg-[#fdeeec] text-[#a52f24]" : "bg-[#e6f4ec] text-[#1d6b45]"}`}>
+          {aviso.texto}
+        </p>
+      )}
+      <Contenido consulta={resumen.estado}>
+        {(r) => {
           const tituloLugar = (id: string) => (id === OFICINA ? "Oficina Central" : id === SIN_IDENTIFICAR ? "Por identificar" : nombre(id));
+          const lugares = [...r.lugares.map((l) => l.id)].sort((a, b) => (a === OFICINA ? -1 : b === OFICINA ? 1 : a === SIN_IDENTIFICAR ? 1 : b === SIN_IDENTIFICAR ? -1 : nombre(a).localeCompare(nombre(b))));
+          const resumenLugar = (id: string) => r.lugares.find((l) => l.id === id) ?? { id, cantidad: 0, valor: 0 };
+          const origenes = r.origenes.map((o) => o.id).sort((a, b) => nombre(a).localeCompare(nombre(b)));
+          const filaOrigen = (id: string) => r.origenes.find((o) => o.id === id)!;
 
-          // Para qué contrato se compraron y dónde están hoy.
-          const origenes = [...new Set(filas.map((f) => f.origen).filter((x): x is string => !!x))].sort((a, b) => nombre(a).localeCompare(nombre(b)));
-          const filaOrigen = (id: string) => {
-            const f = filas.filter((x) => x.origen === id);
-            const p = f.filter(sumaAlPatrimonio);
-            return {
-              cantidad: f.length,
-              valor: p.reduce((t, x) => t + (x.valor ?? 0), 0),
-              enOficina: f.filter((x) => x.ubicacion === "oficina_central").length,
-              enSuContrato: f.filter((x) => x.ubicacion === "contrato" && x.contratoUbicacion === id).length,
-              enOtro: f.filter((x) => x.ubicacion === "contrato" && x.contratoUbicacion !== id).length,
-              sinUbicar: f.filter((x) => x.ubicacion === null).length,
-            };
-          };
-
-          const visibles = filas.filter((f) =>
-            (propiedad === "todos" || f.propiedad === propiedad)
-            && (donde === "todos" || dondeDe(f) === donde)
-            && (origen === "todos" || (origen === SIN_IDENTIFICAR ? !f.origen : f.origen === origen))
-            && coincide(texto, [f.codigo, f.nombre, f.observaciones, nombre(f.origen), nombre(f.contratoUbicacion)]));
-          const seleccion = visibles.filter((f) => elegidos.has(f.clave));
-          const todosElegidos = visibles.length > 0 && seleccion.length === visibles.length;
-          const alternar = (id: string) => setElegidos((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+          const dondeDe = (f: ActivoFila) => (f.ubicacion === null ? SIN_IDENTIFICAR : f.ubicacion === "oficina_central" ? OFICINA : f.contratoUbicacion ?? SIN_IDENTIFICAR);
 
           const columnas: Columna<ActivoFila>[] = [
             ...(puedeEditar ? [{
               clave: "sel", titulo: "", ancho: "w-10",
-              celda: (f: ActivoFila) => <input type="checkbox" aria-label={`Elegir ${f.codigo}`} checked={elegidos.has(f.clave)} onChange={() => alternar(f.clave)} className="h-4 w-4 accent-cyan" />,
+              celda: (f: ActivoFila) => <input type="checkbox" aria-label={`Elegir ${f.codigo}`} checked={elegidos.has(f.clave)} onChange={() => alternar(f)} className="h-4 w-4 accent-cyan" />,
             }] : []),
             { clave: "codigo", titulo: "Activo", encabezado: true, celda: (f) => <div><span className={`text-xs text-ink-soft ${f.pagnolId ? "font-mono" : ""}`}>{f.codigo}</span><span className="block text-ink">{f.nombre}</span></div> },
             { clave: "propiedad", titulo: "Propiedad", celda: (f) => <Chip tono={f.propiedad === "propio" ? "bueno" : "neutro"}>{propiedades.find((p) => p.id === f.propiedad)?.titulo}</Chip> },
@@ -111,32 +170,41 @@ export function VistaActivos() {
             { clave: "valor", titulo: "Valor neto", derecha: true, celda: (f) => f.valor ? <span>{formatearPesos(f.valor)}{f.valorDe !== "valar" && <span className="block text-xs text-ink-soft">{f.valorDe === "pagnol" ? "de Pagnol" : "de la compra"}</span>}</span> : <span className="text-ink-soft">Sin valor</span> },
             { clave: "fecha", titulo: "Compra", celda: (f) => f.fecha ? formatearFecha(f.fecha) : <span className="text-ink-soft">—</span> },
             { clave: "estado", titulo: "Estado", celda: (f) => estadosActivo[f.estado] ?? f.estado },
-            ...(puedeEditar ? [{
+            {
               clave: "acciones", titulo: "Acciones",
-              celda: (f: ActivoFila) => <button type="button" onClick={() => setEdicion(f)} className="font-semibold text-cyan-deep hover:underline">{f.identificado ? "Editar" : "Identificar"}</button>,
-            }] : []),
+              celda: (f: ActivoFila) => (
+                <span className="inline-flex flex-wrap gap-x-3 gap-y-1">
+                  {puedeEditar && <button type="button" onClick={() => setEdicion(f)} className="font-semibold text-cyan-deep hover:underline">{f.identificado ? "Editar" : "Identificar"}</button>}
+                  {f.pagnolId && (
+                    <button type="button" disabled={sincronizando !== null} onClick={() => void actualizar("uno", f.pagnolId as string)} className="font-semibold text-ink-soft hover:text-ink hover:underline disabled:opacity-50">
+                      {sincronizando === f.pagnolId ? "Actualizando…" : "Actualizar"}
+                    </button>
+                  )}
+                </span>
+              ),
+            },
           ];
 
           return (
             <>
               <Resumen datos={[
-                { etiqueta: "Valor de los activos propios", valor: formatearMonto(patrimonio), nota: `${conValor.length} de ${propios.length} propios con valor · neto` },
-                { etiqueta: "Activos", valor: String(filas.length), nota: `${propios.length} propios · ${filas.filter((f) => f.propiedad === "arrendado").length} arrendados · ${filas.filter((f) => f.propiedad === "del_cliente").length} del cliente` },
-                { etiqueta: "Arriendos", valor: formatearMonto(costoArriendos), nota: `${arrendados.length} ${arrendados.length === 1 ? "activo arrendado" : "activos arrendados"} · costo neto, no suma al valor` },
-                { etiqueta: "Por identificar", valor: String(porIdentificar.length), nota: porIdentificar.length ? "Sin contrato de origen ni ubicación confirmados" : "Todos identificados", acento: porIdentificar.length ? "aviso" : "bueno" },
-                { etiqueta: "Propios sin valor", valor: String(sinValor.length), nota: sinValor.length ? "No suman al valor total hasta cargarles el costo" : "Todos con valor", acento: sinValor.length ? "aviso" : "bueno" },
+                { etiqueta: "Valor de los activos propios", valor: formatearMonto(r.patrimonio), nota: `${r.conValor} de ${r.propios} propios con valor · neto` },
+                { etiqueta: "Activos", valor: String(r.total), nota: `${r.propios} propios · ${r.arrendados} arrendados · ${r.delCliente} del cliente` },
+                { etiqueta: "Arriendos", valor: formatearMonto(r.costoArriendos), nota: `${r.arrendados} ${r.arrendados === 1 ? "activo arrendado" : "activos arrendados"} · costo neto, no suma al valor` },
+                { etiqueta: "Por identificar", valor: String(r.porIdentificar), nota: r.porIdentificar ? "Sin contrato de origen ni ubicación confirmados" : "Todos identificados", acento: r.porIdentificar ? "aviso" : "bueno" },
+                { etiqueta: "Propios sin valor", valor: String(r.sinValor), nota: r.sinValor ? "No suman al valor total hasta cargarles el costo" : "Todos con valor", acento: r.sinValor ? "aviso" : "bueno" },
               ]} />
 
               <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {lugares.map((id) => {
-                  const r = resumenLugar(id);
+                  const l = resumenLugar(id);
                   const activo = donde === id;
                   return (
                     <button key={id} type="button" onClick={() => setDonde(activo ? "todos" : id)} aria-pressed={activo}
                       className={`rounded-2xl border p-5 text-left transition-colors ${activo ? "border-cyan bg-cyan/5" : "border-mist-deep bg-white hover:border-cyan"}`}>
                       <span className="block text-sm font-semibold text-ink">{tituloLugar(id)}</span>
-                      <span className="mt-2 block font-display text-xl font-semibold text-ink">{formatearMonto(r.valor)}</span>
-                      <span className="mt-2 block text-xs text-ink-soft">{r.cantidad} {r.cantidad === 1 ? "activo" : "activos"} · {activo ? "ver todos" : "ver solo estos"}</span>
+                      <span className="mt-2 block font-display text-xl font-semibold text-ink">{formatearMonto(l.valor)}</span>
+                      <span className="mt-2 block text-xs text-ink-soft">{l.cantidad} {l.cantidad === 1 ? "activo" : "activos"} · {activo ? "ver todos" : "ver solo estos"}</span>
                     </button>
                   );
                 })}
@@ -160,7 +228,7 @@ export function VistaActivos() {
                 </section>
               )}
 
-              <Panel titulo="Activos" nota={`${visibles.length} de ${filas.length} activos · propios, arrendados y del cliente`} filtrosAbajo
+              <Panel titulo="Activos" nota={`${lista.filas.length}${lista.hayMas ? "+" : ""} mostrados · ${r.total} en total · propios, arrendados y del cliente`} filtrosAbajo
                 filtros={<>
                   <CampoFiltro etiqueta="Propiedad">
                     <Filtro etiqueta="Propiedad" opciones={[{ id: "todos" as FiltroPropiedad, titulo: "Todos" }, ...propiedades]} valor={propiedad} alCambiar={setPropiedad} />
@@ -176,29 +244,54 @@ export function VistaActivos() {
                 {puedeEditar && (
                   <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
                     <label className="inline-flex items-center gap-2 text-ink-soft">
-                      <input type="checkbox" checked={todosElegidos} onChange={() => setElegidos(todosElegidos ? new Set() : new Set(visibles.map((f) => f.clave)))} className="h-4 w-4 accent-cyan" />
-                      Elegir los {visibles.length} que se ven
+                      <input type="checkbox" checked={cargadosElegidos}
+                        onChange={() => setElegidos((m) => { const n = new Map(m); for (const f of lista.filas) { if (cargadosElegidos) n.delete(f.clave); else n.set(f.clave, f); } return n; })}
+                        className="h-4 w-4 accent-cyan" />
+                      Elegir los {lista.filas.length} que se ven
                     </label>
-                    {seleccion.length > 0 && (
-                      <button type="button" onClick={() => setMasivo(true)} className="rounded-full bg-cyan px-4 py-1.5 text-xs font-semibold text-white hover:bg-cyan-deep">
-                        Identificar {seleccion.length} {seleccion.length === 1 ? "activo" : "activos"}…
+                    {lista.hayMas && (
+                      <button type="button" disabled={eligiendoTodos} onClick={() => void elegirTodosLosQueCoinciden()} className="font-semibold text-cyan-deep hover:underline disabled:opacity-50">
+                        {eligiendoTodos ? "Eligiendo…" : "Elegir todos los que coinciden con el filtro"}
                       </button>
+                    )}
+                    {elegidos.size > 0 && (
+                      <>
+                        <button type="button" onClick={() => setMasivo(true)} className="rounded-full bg-cyan px-4 py-1.5 text-xs font-semibold text-white hover:bg-cyan-deep">
+                          Identificar {elegidos.size} {elegidos.size === 1 ? "activo" : "activos"}…
+                        </button>
+                        <button type="button" onClick={() => setElegidos(new Map())} className="text-xs font-semibold text-ink-soft hover:text-ink hover:underline">Quitar la selección</button>
+                      </>
                     )}
                   </div>
                 )}
-                <Tabla filas={visibles} claveDe={(f) => f.clave} columnas={columnas}
-                  vacio={texto.trim() ? "Ningún activo coincide con la búsqueda." : "No hay activos para este filtro."}
-                  pie={<><Total colSpan={puedeEditar ? 5 : 4}>Valor neto de los propios que se ven</Total><Total derecha>{formatearPesos(visibles.filter(sumaAlPatrimonio).reduce((t, f) => t + (f.valor ?? 0), 0))}</Total><Total colSpan={puedeEditar ? 3 : 2} /></>} />
+                {lista.error ? (
+                  <p role="alert" className="px-6 py-10 text-center text-sm text-[#a52f24] lg:px-8">
+                    No se pudo cargar la lista: {lista.error}{" "}
+                    <button type="button" onClick={lista.recargar} className="font-semibold underline">Reintentar</button>
+                  </p>
+                ) : lista.cargando && lista.filas.length === 0 ? (
+                  <p className="px-6 py-14 text-center text-sm text-ink-soft lg:px-8">{sinSincronizar ? "Trayendo los activos desde Pagnol por primera vez…" : "Cargando activos…"}</p>
+                ) : (
+                  <Tabla filas={lista.filas} claveDe={(f) => f.clave} columnas={columnas}
+                    vacio={texto.trim() ? "Ningún activo coincide con la búsqueda." : "No hay activos para este filtro."}
+                    pie={<><Total colSpan={puedeEditar ? 5 : 4}>Valor neto de los propios que se ven</Total><Total derecha>{formatearPesos(lista.filas.filter(sumaAlPatrimonio).reduce((t, f) => t + (f.valor ?? 0), 0))}</Total><Total colSpan={3} /></>} />
+                )}
+                {lista.hayMas && !lista.error && (
+                  <div className="flex justify-center border-t border-mist px-6 py-4">
+                    <button type="button" onClick={lista.cargarMas} disabled={lista.cargandoMas}
+                      className="rounded-full border border-mist-deep px-5 py-2 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-60">
+                      {lista.cargandoMas ? "Cargando…" : "Cargar más"}
+                    </button>
+                  </div>
+                )}
               </Panel>
             </>
           );
         }}
       </Contenido>
 
-      {edicion && <FormularioActivos key={edicion.clave} filas={[edicion]} contratos={lista} alCerrar={() => setEdicion(null)} alGuardado={alGuardar} />}
-      {masivo && activos.estado.estado === "listo" && (
-        <FormularioActivos key="masivo" filas={activos.estado.datos.filter((f) => elegidos.has(f.clave))} contratos={lista} alCerrar={() => setMasivo(false)} alGuardado={alGuardar} />
-      )}
+      {edicion && <FormularioActivos key={edicion.clave} filas={[edicion]} contratos={listaContratos} alCerrar={() => setEdicion(null)} alGuardado={alGuardar} />}
+      {masivo && <FormularioActivos key="masivo" filas={[...elegidos.values()]} contratos={listaContratos} alCerrar={() => setMasivo(false)} alGuardado={alGuardar} />}
     </>
   );
 }

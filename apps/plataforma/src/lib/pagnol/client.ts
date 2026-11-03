@@ -59,3 +59,20 @@ export function clientePagnolEscritura() {
     fetch: (pedido: Request) => fetch(pedido, { signal: AbortSignal.timeout(ESPERA_MAXIMA_MS), cache: "no-store" }),
   });
 }
+
+/**
+ * Para leer SIN caché: cuando alguien pide «Actualizar desde Pagnol», la respuesta
+ * tiene que ser lo que Pagnol tiene en este momento, no lo que quedó guardado.
+ */
+export function clientePagnolFresco() {
+  const baseUrl = process.env.PAGNOL_API_URL;
+  const llave = process.env.PAGNOL_API_KEY;
+  if (!baseUrl || !llave) {
+    throw new PagnolNoConfigurado("Faltan PAGNOL_API_URL o PAGNOL_API_KEY en las variables del servidor.");
+  }
+  return createClient<paths>({
+    baseUrl,
+    headers: { Authorization: `Bearer ${llave}` },
+    fetch: (pedido: Request) => fetch(pedido, { signal: AbortSignal.timeout(ESPERA_MAXIMA_MS), cache: "no-store" }),
+  });
+}
