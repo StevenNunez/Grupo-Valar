@@ -69,7 +69,7 @@ function leerFila(linea: string, estricta = false): FilaPegada | null {
   else if (numeros.length >= 2) [cantidad, precioUnitario] = numeros.slice(-2);
   else if (numeros.length === 1) precioUnitario = numeros[0];
 
-  return { descripcion, unidad: unidad.toUpperCase(), cantidad, precioUnitario: Math.round(precioUnitario) };
+  return { descripcion, unidad: unidad.toUpperCase(), cantidad, precioUnitario: Math.round(precioUnitario * 10000) / 10000 };
 }
 
 /**

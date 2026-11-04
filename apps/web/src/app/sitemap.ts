@@ -9,6 +9,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "monthly",
       priority: 1,
     },
+    ...["trabaja-con-nosotros", "privacidad", "terminos", "cookies"].map((p) => ({
+      url: `${siteUrl}/${p}/`,
+      lastModified: new Date(),
+      changeFrequency: "yearly" as const,
+      priority: p === "trabaja-con-nosotros" ? 0.6 : 0.2,
+    })),
   ];
 }
 

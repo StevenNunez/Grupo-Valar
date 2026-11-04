@@ -42,6 +42,7 @@ export type Seccion = {
     | "pagos"
     | "articulos"
     | "activos"
+    | "postulaciones"
     | "proveedores";
   /** Adónde lleva el enlace de la sección (su primera subsección, si tiene). */
   href: string;
@@ -124,6 +125,16 @@ export const seccionesGestion: Seccion[] = [
     href: `${RAIZ_GESTION}/activos/`,
     base: `${RAIZ_GESTION}/activos`,
     permiso: "oficina_central.ver",
+  },
+  /* Los currículums que llegan de «Trabaja con nosotros» en el sitio público (0113).
+     Son datos personales: la ve solo quien administra el personal. */
+  {
+    id: "postulaciones",
+    titulo: "Postulaciones",
+    icono: "postulaciones",
+    href: `${RAIZ_GESTION}/postulaciones/`,
+    base: `${RAIZ_GESTION}/postulaciones`,
+    permiso: "personal.editar",
   },
 ];
 

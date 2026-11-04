@@ -389,7 +389,7 @@ const fila = (): FilaLeida => ({
 /** Lo que falte se deduce de lo que haya: son tres datos y basta con dos. */
 function completar(f: FilaLeida) {
   if (f.precioUnitario === null && f.total !== null && f.cantidad) {
-    f.precioUnitario = Math.round(f.total / f.cantidad);
+    f.precioUnitario = Math.round((f.total / f.cantidad) * 10000) / 10000;
   }
   if (f.total === null && f.precioUnitario !== null && f.cantidad) {
     f.total = Math.round(f.precioUnitario * f.cantidad);

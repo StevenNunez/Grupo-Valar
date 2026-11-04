@@ -21,7 +21,7 @@ import {
   type LineaCiclo,
 } from "@/lib/ciclo-oc";
 import { useConsulta } from "@/lib/consulta";
-import { formatearFecha, formatearNumero, formatearPesos } from "@/lib/formato";
+import { formatearFecha, formatearNumero, formatearPesos, formatearPesosUnitario } from "@/lib/formato";
 import type { Orden } from "@/lib/ordenes";
 import { usePuede, useUsuario } from "@/lib/sesion";
 
@@ -244,7 +244,7 @@ function Resumen({ orden, ciclo, alModo, alCorregir, alAdjuntos, puedeRecibir, p
               <tr key={l.id} className="border-b border-mist last:border-0">
                 <td className="py-2 pr-3">
                   <span className="block text-ink">{l.descripcion}</span>
-                  <span className="text-xs text-ink-soft">{formatearPesos(l.precioUnitario)} / {l.unidad}</span>
+                  <span className="text-xs text-ink-soft">{formatearPesosUnitario(l.precioUnitario)} / {l.unidad}</span>
                 </td>
                 <td className="py-2 pr-3 text-right tabular-nums">{formatearNumero(l.pedida)}</td>
                 <td className={`py-2 pr-3 text-right tabular-nums ${l.recibida < l.vigente ? "text-[#8a5a09]" : "text-ink"}`}>{formatearNumero(l.recibida)}</td>

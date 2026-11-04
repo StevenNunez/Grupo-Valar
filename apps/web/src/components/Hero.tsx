@@ -12,7 +12,7 @@ export function Hero() {
     >
       <Image
         src="/proyectos/hero.webp"
-        alt="Faena de movimiento de tierra ejecutada por Valar en el norte de Chile"
+        alt="Faena de movimiento de tierras ejecutada por Valar en el norte de Chile"
         fill
         priority
         sizes="100vw"

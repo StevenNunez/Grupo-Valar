@@ -69,7 +69,7 @@ export const servicios: Servicio[] = [
   },
   {
     id: "movimiento-tierra",
-    titulo: "Movimiento de tierra",
+    titulo: "Movimiento de tierras",
     resumen:
       "Mejoramiento de terrenos, caminos y plataformas para iniciar las obras apropiadamente.",
     detalles: ["Caminos y plataformas", "Excavaciones y rellenos", "Compactación"],
@@ -88,7 +88,7 @@ export type Proyecto = {
   cliente: string;
   descripcion: string;
   imagen: string;
-  area: "Obras civiles" | "Movimiento de tierra" | "Mantenimiento" | "Ingeniería 3D";
+  area: "Obras civiles" | "Movimiento de tierras" | "Mantenimiento" | "Ingeniería 3D";
 };
 
 export const proyectos: Proyecto[] = [
@@ -104,9 +104,9 @@ export const proyectos: Proyecto[] = [
     titulo: "Caminos y plataformas",
     cliente: "SQM · PQLC",
     descripcion:
-      "Movimiento de tierra para la construcción de caminos y plataformas operacionales.",
+      "Movimiento de tierras para la construcción de caminos y plataformas operacionales.",
     imagen: "/proyectos/movimiento-tierra.webp",
-    area: "Movimiento de tierra",
+    area: "Movimiento de tierras",
   },
   {
     titulo: "Losa brigada de emergencia",

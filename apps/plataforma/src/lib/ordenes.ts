@@ -631,7 +631,7 @@ export async function cargarLineasDeOrden(ordenId: string) {
  * facturas, costo) cuadra con su total sin saber que hubo descuento.
  */
 export const precioConDescuento = (lista: number, porcentaje: number) =>
-  porcentaje > 0 ? Math.round(lista * (1 - porcentaje / 100)) : lista;
+  porcentaje > 0 ? Math.round(lista * (1 - porcentaje / 100) * 10000) / 10000 : lista;
 
 export type DescuentoDeOrden = {
   porcentaje: number;

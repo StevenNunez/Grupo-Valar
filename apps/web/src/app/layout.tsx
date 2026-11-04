@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Poppins } from "next/font/google";
 import { siteUrl } from "@/lib/site";
 import { empresa } from "@/lib/content";
+import { Cookies } from "@/components/Cookies";
 import "./globals.css";
 
 const inter = Inter({
@@ -18,7 +19,7 @@ const poppins = Poppins({
 });
 
 const descripcion =
-  "Servicios y Proyectos Valar SpA: obras civiles, movimiento de tierra, mantenimiento industrial, ingeniería 3D y arriendo de torres de iluminación y andamios en Antofagasta. Contratista de SQM, Copec, Coca-Cola Andina y Puerto Mejillones.";
+  "Servicios y Proyectos Valar SpA: obras civiles, movimiento de tierras, mantenimiento industrial, ingeniería 3D y arriendo de torres de iluminación y andamios en Antofagasta. Contratista de SQM, Copec, Coca-Cola Andina y Puerto Mejillones.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -33,7 +34,7 @@ export const metadata: Metadata = {
     "obras civiles Antofagasta",
     "constructora industrial Antofagasta",
     "mantenimiento industrial Antofagasta",
-    "movimiento de tierra Antofagasta",
+    "movimiento de tierras Antofagasta",
     "contratista minero norte de Chile",
     "arriendo torres de iluminación solar",
     "andamios Layher certificados",
@@ -100,6 +101,7 @@ export default function RootLayout({
           }}
         />
         {children}
+        <Cookies />
       </body>
     </html>
   );

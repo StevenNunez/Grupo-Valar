@@ -49,10 +49,11 @@ import {
   type LecturaCotizacion,
 } from "@/lib/lector-cotizacion";
 import { crear } from "@/lib/crud";
-import { formatearFecha, formatearNumero, formatearPesos } from "@/lib/formato";
+import { formatearFecha, formatearNumero, formatearPesos, formatearPesosUnitario } from "@/lib/formato";
 import { cargarDestinatarios, siguienteNumero, type Destinatario } from "@/lib/ordenes";
 import { useEmpresa } from "@/lib/empresa-cliente";
 import { puede, useUsuario } from "@/lib/sesion";
+import { CampoPrecio } from "./ui/CampoPrecio";
 
 /**
  * Las cotizaciones de una solicitud, y la decisión de a quién comprarle.
@@ -1383,18 +1384,11 @@ function FormularioCotizacion({
                       </div>
                     </td>
                     <td className="py-2 pr-3">
-                      <input
-                        inputMode="numeric"
+                      <CampoPrecio
                         disabled={!l.disponible}
-                        value={l.precio === 0 ? "" : l.precio.toLocaleString("es-CL")}
-                        onChange={(e) =>
-                          cambiar(
-                            l.solpedItemId,
-                            "precio",
-                            Number(e.target.value.replace(/\D/g, "")) || 0,
-                          )
-                        }
-                        placeholder="0"
+                        valor={l.precio}
+                        alCambiar={(n) => cambiar(l.solpedItemId, "precio", n)}
+                        ariaLabel={`Precio unitario de ${l.nombre}`}
                         className={`${claseCelda} text-right tabular-nums disabled:opacity-40`}
                       />
                     </td>
@@ -1886,7 +1880,7 @@ function DialogoGenerarOrden({
                       </span>
                     </td>
                     <td className="py-2 pr-3 text-right tabular-nums text-ink-soft">
-                      {formatearPesos(i.precioUnitario)}
+                      {formatearPesosUnitario(i.precioUnitario)}
                     </td>
                     <td className="py-2 text-right tabular-nums text-ink">
                       {formatearPesos(Math.round(cantidadDe(i) * i.precioUnitario))}
@@ -2190,12 +2184,12 @@ function LectorDeCotizacion({
                         <option value={-1}>— sin precio · lo escribo yo —</option>
                         {lectura.filas.map((f, n) => (
                           <option key={n} value={n}>
-                            {f.descripcion.slice(0, 60)} · {f.precioUnitario === null ? "sin precio" : formatearPesos(f.precioUnitario)}
+                            {f.descripcion.slice(0, 60)} · {f.precioUnitario === null ? "sin precio" : formatearPesosUnitario(f.precioUnitario)}
                           </option>
                         ))}
                       </select>
                       <span className="shrink-0 text-right font-semibold tabular-nums text-ink">
-                        {fila?.precioUnitario != null ? formatearPesos(fila.precioUnitario) : "—"}
+                        {fila?.precioUnitario != null ? formatearPesosUnitario(fila.precioUnitario) : "—"}
                       </span>
                     </li>
                   );

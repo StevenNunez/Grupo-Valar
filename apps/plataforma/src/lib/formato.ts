@@ -118,3 +118,32 @@ export function gruposDePeriodo(meses: { id: string; titulo: string }[]) {
     ...(cerrados.length > 0 ? [{ titulo: "Meses cerrados", opciones: cerrados }] : []),
   ];
 }
+
+/**
+ * Lo que alguien escribe en un campo de precio → número. La coma es el decimal
+ * ("663,87"); el punto separa miles ("1.234.567"). Si escribe un punto que solo
+ * puede ser decimal ("663.87": un punto y 1-2 dígitos al final) se entiende
+ * como decimal, porque así lo copian de las cotizaciones en PDF y de Excel.
+ */
+export function numeroDeTexto(texto: string): number {
+  let t = texto.replace(/[^\d.,]/g, "");
+  if (!t.includes(",") && /^\d+\.\d{1,2}$/.test(t)) t = t.replace(".", ",");
+  const i = t.indexOf(",");
+  const entera = (i === -1 ? t : t.slice(0, i)).replace(/\./g, "");
+  const decimal = i === -1 ? "" : t.slice(i + 1).replace(/[.,]/g, "").slice(0, 4);
+  const n = Number(decimal ? `${entera || "0"}.${decimal}` : entera);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Un precio unitario para mostrarlo: sin ceros de sobra, hasta 4 decimales. */
+export const formatearPrecio = (n: number) => n.toLocaleString("es-CL", { maximumFractionDigits: 4 });
+
+const clpUnitario = new Intl.NumberFormat("es-CL", {
+  style: "currency",
+  currency: "CLP",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 4,
+});
+
+/** Un PRECIO UNITARIO en pesos: respeta los decimales ($663,87). Los totales siguen con `formatearPesos`. */
+export const formatearPesosUnitario = (monto: number) => clpUnitario.format(monto);

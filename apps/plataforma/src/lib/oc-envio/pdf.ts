@@ -58,6 +58,7 @@ function colorDelDegradado(t: number) {
 }
 
 const pesos = (n: number) => `$ ${Math.round(n).toLocaleString("es-CL")}`;
+const pesosUnitario = (n: number) => `$ ${n.toLocaleString("es-CL", { maximumFractionDigits: 4 })}`;
 const numero = (n: number) => n.toLocaleString("es-CL", { maximumFractionDigits: 2 });
 const fecha = (iso: string | null) => {
   if (!iso) return "—";
@@ -248,7 +249,7 @@ export async function pdfDeOrden(o: OrdenParaEnviar): Promise<Uint8Array> {
     texto(it.unidad, col.um, y, { tam: 8.5 });
     texto(numero(it.cantidad), col.cant, y, { tam: 8.5, alinear: "der" });
     // Con descuento la línea se imprime a precio de lista; el descuento va aparte, en los totales.
-    texto(pesos(it.precioLista ?? it.precioUnitario), col.pu, y, { tam: 8.5, alinear: "der" });
+    texto(pesosUnitario(it.precioLista ?? it.precioUnitario), col.pu, y, { tam: 8.5, alinear: "der" });
     texto(pesos(it.precioLista == null ? it.neto : Math.round(it.cantidad * it.precioLista)), col.total, y, { tam: 8.5, fuente: negrita, alinear: "der" });
     y -= lineas.length * 11 + 4;
     raya(y + 2, 0.4);

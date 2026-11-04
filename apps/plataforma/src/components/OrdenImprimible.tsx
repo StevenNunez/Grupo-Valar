@@ -3,7 +3,7 @@
 import { LogoMark } from "./Logo";
 import { FirmaTeoLabs } from "./FirmaTeoLabs";
 import { useEmpresa } from "@/lib/empresa-cliente";
-import { formatearFecha, formatearNumero, formatearPesos } from "@/lib/formato";
+import { formatearFecha, formatearNumero, formatearPesos, formatearPesosUnitario } from "@/lib/formato";
 import type { DescuentoDeOrden, FirmasImpresas, Item, Orden } from "@/lib/ordenes";
 
 /**
@@ -106,7 +106,7 @@ export function OrdenImprimible({ orden, items, descuento, firmas }: { orden: Or
               </td>
               <td className="py-2.5">{i.unidad}</td>
               <td className="py-2.5 text-right tabular-nums">{formatearNumero(i.cantidad)}</td>
-              <td className="py-2.5 text-right tabular-nums">{formatearPesos(lista(i) ?? i.precioUnitario)}</td>
+              <td className="py-2.5 text-right tabular-nums">{formatearPesosUnitario(lista(i) ?? i.precioUnitario)}</td>
               <td className="py-2.5 text-right font-semibold tabular-nums">
                 {formatearPesos(totalLinea(i))}
               </td>

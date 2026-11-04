@@ -132,7 +132,7 @@ lo propio de cada contrato se guarda aparte.
 ## El sitio público
 
 Una página que presenta a Valar con la identidad de su brochure: propósito, servicios
-(ingeniería, obras civiles, modelación 3D, mantenimiento industrial, movimiento de tierra,
+(ingeniería, obras civiles, modelación 3D, mantenimiento industrial, movimiento de tierras,
 arriendo de equipos), proyectos realizados, clientes, valores y sostenibilidad. El
 contacto se arma en el navegador y se envía por WhatsApp o por correo.
 

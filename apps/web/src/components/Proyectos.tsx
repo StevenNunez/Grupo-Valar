@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { proyectos, type Proyecto } from "@/lib/content";
 import { Reveal } from "./Reveal";
 
-const areas = ["Todos", "Obras civiles", "Movimiento de tierra", "Mantenimiento", "Ingeniería 3D"] as const;
+const areas = ["Todos", "Obras civiles", "Movimiento de tierras", "Mantenimiento", "Ingeniería 3D"] as const;
 
 export function Proyectos() {
   const [area, setArea] = useState<(typeof areas)[number]>("Todos");

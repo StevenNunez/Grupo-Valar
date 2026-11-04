@@ -30,7 +30,7 @@ import { cancelarOrdenEnPagnol } from "@/lib/pagnol/navegador";
 import { opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
 import { tiposCompra } from "@/lib/egresos";
 import { emisorOC } from "@/lib/empresa";
-import { formatearPesos } from "@/lib/formato";
+import { formatearPesos, formatearPesosUnitario } from "@/lib/formato";
 import {
   cargarLineasDeOrden,
   eliminarOrdenCompleta,
@@ -45,6 +45,7 @@ import {
 } from "@/lib/ordenes";
 import { leerPegado, type FilaPegada } from "@/lib/pegado";
 import { CampoConPagnol, unidadDesdePagnol } from "../ui/CampoConPagnol";
+import { CampoPrecio } from "../ui/CampoPrecio";
 import type { Usuario } from "@/lib/sesion";
 
 /**
@@ -779,7 +780,7 @@ export function FormularioOrden({
                         <li key={i} className="flex justify-between gap-4 border-b border-mist px-3 py-1.5 last:border-0">
                           <span className="truncate text-ink">{fila.descripcion}</span>
                           <span className="shrink-0 tabular-nums text-ink-soft">
-                            {fila.cantidad.toLocaleString("es-CL")} {fila.unidad} × {formatearPesos(fila.precioUnitario)} ={" "}
+                            {fila.cantidad.toLocaleString("es-CL")} {fila.unidad} × {formatearPesosUnitario(fila.precioUnitario)} ={" "}
                             <strong className="text-ink">{formatearPesos(Math.round(fila.cantidad * fila.precioUnitario))}</strong>
                           </span>
                         </li>
@@ -904,14 +905,9 @@ export function FormularioOrden({
                         />
                       </td>
                       <td className="py-2 pr-3">
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          value={l.precio_unitario === 0 ? "" : l.precio_unitario.toLocaleString("es-CL")}
-                          placeholder="0"
-                          onChange={(e) =>
-                            cambiar(l.id, "precio_unitario", Number(e.target.value.replace(/\D/g, "")) || 0)
-                          }
+                        <CampoPrecio
+                          valor={l.precio_unitario}
+                          alCambiar={(n) => cambiar(l.id, "precio_unitario", n)}
                           className={`${claseCelda} text-right tabular-nums`}
                         />
                       </td>

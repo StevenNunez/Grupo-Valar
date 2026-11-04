@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { FirmaTeoLabs } from "@/components/FirmaTeoLabs";
 import { LogoMark } from "@/components/Logo";
 import { DATOS_POR_DEFECTO, type DatosEmpresa } from "@/lib/empresa";
-import { formatearFecha, formatearPesos } from "@/lib/formato";
+import { formatearFecha, formatearPesos, formatearPesosUnitario } from "@/lib/formato";
 import { abrirEnlace } from "@/lib/oc-envio/publico";
 import { ConfirmarOrden } from "./ConfirmarOrden";
 
@@ -100,7 +100,7 @@ export default async function PaginaOrdenProveedor({ params }: Props) {
                   <td className="py-2 pr-3 text-ink">{i.descripcion}</td>
                   <td className="py-2 pr-3 text-ink-soft">{i.unidad}</td>
                   <td className="py-2 pr-3 text-right tabular-nums">{i.cantidad.toLocaleString("es-CL")}</td>
-                  <td className="py-2 pr-3 text-right tabular-nums">{formatearPesos(i.precioLista ?? i.precioUnitario)}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{formatearPesosUnitario(i.precioLista ?? i.precioUnitario)}</td>
                   <td className="py-2 text-right font-semibold tabular-nums">{formatearPesos(i.precioLista == null ? i.neto : Math.round(i.cantidad * i.precioLista))}</td>
                 </tr>
               ))}
