@@ -920,9 +920,12 @@ function FormularioCotizacion({
   /* Al corregir, además de lo que ya cotizó entran los ítems que todavía faltan
      por comprar y que esta cotización no tiene: son los que se le agregan. Parten
      sin precio, y si se dejan así no se guardan. */
-  const nuevosEnCorreccion: Linea[] = corrigiendo
+  /* Lo mismo vale al responder una solicitud ya enviada: si después de pedirla se
+     agregaron ítems a la SOLPED, esos no estaban en lo que se le pidió y sin esto
+     nunca aparecían para ponerles precio. */
+  const nuevosEnCorreccion: Linea[] = solicitado
     ? items
-        .filter((i) => i.cantidadPendiente > 0 && !corrigiendo.items.some((ci) => ci.solpedItemId === i.id))
+        .filter((i) => i.cantidadPendiente > 0 && !solicitado.items.some((ci) => ci.solpedItemId === i.id))
         .map((i) => {
           const p = pedidos.find((x) => x.id === i.id);
           return {
@@ -1177,7 +1180,7 @@ function FormularioCotizacion({
               }
               ayuda={
                 pendiente
-                  ? `Responde a la solicitud ${pendiente.numero ?? pendiente.id}: aparecen solo los ${lineas.length} ítems que se le pidieron, y los precios se cargan sobre ella.`
+                  ? `Responde a la solicitud ${pendiente.numero ?? pendiente.id}: los ${lineas.length - nuevosEnCorreccion.length} ítems que se le pidieron${nuevosEnCorreccion.length > 0 ? `, más ${nuevosEnCorreccion.length} que se agregaron después a la solicitud (al final; los que dejes en cero no se suman)` : ""}. Los precios se cargan sobre ella.`
                   : "Cada proveedor cotiza una vez por solicitud. Si uno que ya respondió puede cotizar lo que falta, elígelo: se abre su cotización con esos ítems."
               }
             />
