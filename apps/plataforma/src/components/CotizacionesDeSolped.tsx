@@ -2639,6 +2639,8 @@ function DialogoEnviar({
      porque un `mailto:` no puede armar la tabla. */
   const cuerpoMailto = [
     mensaje.trim(),
+    usuario.nombre,
+    datos.nombreEnOrdenes,
     "",
     "Ítems a cotizar:",
     items.map((i) => `${String(i.linea).padStart(2, "0")}. ${i.descripcion} — ${i.cantidad} ${i.unidad}`).join("\n"),
@@ -2924,9 +2926,8 @@ function mensajeInicialSolicitud(d: {
     "Agradeceremos cotizar los ítems que se detallan más abajo.",
     d.fechaRequerida ? `Se necesitan en faena el ${formatearFecha(d.fechaRequerida)}.` : null,
     "",
-    "Saludos,",
-    d.nombre,
-    d.empresa,
+    // Nombre, área, teléfono y empresa los pone la firma del perfil, debajo del mensaje.
+    "Saludos cordiales,",
   ]
     .filter((l) => l !== null)
     .join("\n");

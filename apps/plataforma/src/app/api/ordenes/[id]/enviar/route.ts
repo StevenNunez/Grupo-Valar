@@ -1,4 +1,4 @@
-import { cuerpoDelCorreo, enviarCorreoDeOrden, smtpConfigurado } from "@/lib/oc-envio/correo";
+import { cargarFirmaDeCorreo, cuerpoDelCorreo, enviarCorreoDeOrden, smtpConfigurado } from "@/lib/oc-envio/correo";
 import {
   DIAS_DEL_ENLACE,
   cargarOrdenParaEnviar,
@@ -103,6 +103,7 @@ export async function POST(pedido: Request, { params }: Contexto) {
   }
 
   const enlace = `${new URL(pedido.url).origin}/oc/${token}/`;
+  const propios = await cargarFirmaDeCorreo(servicio, remitente.id);
   const { texto, html } = cuerpoDelCorreo(
     mensaje,
     enlace,
@@ -118,6 +119,14 @@ export async function POST(pedido: Request, { params }: Contexto) {
       emisorTelefono: orden.emisorTelefono,
     },
     { razonSocial: orden.empresa.razonSocial, rut: orden.empresa.rut, direccion: direccionCompleta(orden.empresa) },
+    {
+      nombre: orden.emisorNombre || remitente.nombre,
+      area: propios.area,
+      telefono: orden.emisorTelefono || propios.telefono,
+      correo: emisor,
+      empresa: orden.empresa.nombreEnOrdenes,
+      direccion: direccionCompleta(orden.empresa),
+    },
   );
 
   try {

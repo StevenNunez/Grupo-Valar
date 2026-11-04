@@ -972,7 +972,23 @@ export async function cargarItemsDeCotizacion(cotizacionId: string): Promise<Ite
 
   if (error) throw new Error(error.message);
 
-  return (data ?? []).map((f: Record<string, unknown>) => ({
+  /* Sin ORDER BY Postgres devuelve las filas en el orden que le salga (en la
+     práctica, el de la última modificación). El orden que importa es el de la
+     solicitud: el de la línea de cada ítem. El proveedor recibe la lista tal
+     como se escribió. */
+  const filas = data ?? [];
+  const lineas = new Map<string, number>();
+  const ids = [...new Set(filas.map((f: Record<string, unknown>) => f.solped_item_id as string))];
+  if (ids.length > 0) {
+    const { data: pedidos } = await supabase.from("solped_items").select("id, linea").in("id", ids);
+    for (const p of pedidos ?? []) lineas.set(p.id as string, Number(p.linea));
+  }
+  filas.sort(
+    (a: Record<string, unknown>, b: Record<string, unknown>) =>
+      (lineas.get(a.solped_item_id as string) ?? 9999) - (lineas.get(b.solped_item_id as string) ?? 9999),
+  );
+
+  return filas.map((f: Record<string, unknown>) => ({
     id: f.id as string,
     cotizacionId: f.cotizacion_id as string,
     solpedItemId: f.solped_item_id as string,

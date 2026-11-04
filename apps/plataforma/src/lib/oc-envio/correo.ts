@@ -1,6 +1,7 @@
 import "server-only";
 
 import nodemailer from "nodemailer";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
  * El correo de la OC, por el SMTP de Zoho.
@@ -124,6 +125,68 @@ export function firmaTeoLabs() {
   return `Desarrollado por <a href="https://www.teolabs.app" target="_blank" rel="noopener noreferrer" style="text-decoration:none;font-weight:bold">${coloreadas}</a> &reg;`;
 }
 
+/* ── La firma de quien envía ──────────────────────────────────────────────────
+   Nombre, área, teléfono, dirección y sitio, con el logo de Valar a la
+   izquierda, como la firma que cada persona tenía en su correo. Los datos
+   personales salen del perfil (0111); la empresa, de «Datos de la empresa». */
+
+export type FirmaCorreo = {
+  nombre: string;
+  area: string | null;
+  telefono: string | null;
+  correo: string | null;
+  /** "VALAR SpA." */
+  empresa: string;
+  direccion: string;
+};
+
+/** Lo que dice el perfil de `usuarioId`, con el cliente de servicio. Sin la 0111 devuelve vacío. */
+export async function cargarFirmaDeCorreo(
+  servicio: SupabaseClient,
+  usuarioId: string,
+): Promise<{ area: string | null; telefono: string | null }> {
+  try {
+    const { data } = await servicio.from("perfiles").select("firma_area, firma_telefono").eq("id", usuarioId).maybeSingle();
+    return {
+      area: (data?.firma_area as string | null | undefined)?.trim() || null,
+      telefono: (data?.firma_telefono as string | null | undefined)?.trim() || null,
+    };
+  } catch {
+    return { area: null, telefono: null };
+  }
+}
+
+export function firmaEnTexto(f: FirmaCorreo) {
+  return [
+    f.nombre,
+    [f.area, f.empresa].filter(Boolean).join(" · "),
+    f.telefono,
+    f.correo,
+    f.direccion,
+    MARCA.sitio.replace("https://", ""),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function firmaEnHtml(f: FirmaCorreo) {
+  const linea = "margin:0;font-family:Arial,Helvetica,sans-serif";
+  const tel = f.telefono ? f.telefono.replace(/[^\d+]/g, "") : "";
+  return `
+        <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:26px;padding-top:18px;border-top:1px solid #e3e6e8">
+          <tr>
+            <td valign="middle" style="padding-right:18px"><a href="${MARCA.sitio}" target="_blank"><img src="${MARCA.logo}" width="72" height="72" alt="Valar" style="display:block;border:0;border-radius:12px"></a></td>
+            <td valign="middle" style="border-left:2px solid ${MARCA.cian};padding-left:18px">
+              <p style="${linea};font-size:16px;font-weight:bold;color:${MARCA.tinta}">${escapar(f.nombre)}</p>
+              <p style="${linea};margin-top:3px;font-size:12px;color:${MARCA.tinta}">${f.area ? `<em><strong>${escapar(f.area)}</strong></em> ` : ""}${escapar(f.empresa)}</p>
+              ${f.telefono ? `<p style="${linea};margin-top:3px;font-size:14px;font-weight:bold"><a href="tel:${escapar(tel)}" style="color:${MARCA.cianOscuro};text-decoration:none">${escapar(f.telefono)}</a></p>` : ""}
+              <p style="${linea};margin-top:3px;font-size:11px;color:${MARCA.suave}">${escapar(f.direccion)}</p>
+              <p style="${linea};margin-top:3px;font-size:13px"><a href="${MARCA.sitio}" target="_blank" style="color:${MARCA.suave};text-decoration:none">www.GrupoValar.cl</a></p>
+            </td>
+          </tr>
+        </table>`;
+}
+
 export type ResumenCorreo = {
   numero: string;
   proveedor: string;
@@ -151,9 +214,12 @@ export function cuerpoDelCorreo(
   enlace: string,
   o: ResumenCorreo,
   empresa: { razonSocial: string; rut: string; direccion: string },
+  firma?: FirmaCorreo | null,
 ) {
   const texto = [
     mensaje.trim(),
+    "",
+    firma ? firmaEnTexto(firma) : "",
     "",
     `Ver y confirmar la orden ${o.numero}:`,
     enlace,
@@ -224,11 +290,13 @@ export function cuerpoDelCorreo(
         <div style="font-size:12px;color:${MARCA.suave}">Ahí confirmas la fecha de entrega y descargas el PDF, que también va adjunto.</div>
 
         ${
-          contacto.length
-            ? `<div style="margin-top:24px;padding-top:18px;border-top:1px solid #e3e6e8;font-size:13px;color:${MARCA.suave}">
+          firma
+            ? firmaEnHtml(firma)
+            : contacto.length
+              ? `<div style="margin-top:24px;padding-top:18px;border-top:1px solid #e3e6e8;font-size:13px;color:${MARCA.suave}">
           Tu contacto en Valar: <strong style="color:${MARCA.tinta}">${contacto.join("</strong> · <strong style=\"color:" + MARCA.tinta + "\">")}</strong>
         </div>`
-            : ""
+              : ""
         }
       </td></tr>
 

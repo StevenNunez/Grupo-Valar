@@ -266,10 +266,8 @@ function mensajeInicial(o: Orden, firma: string) {
       .join(", ") || null,
     "Les pedimos confirmarla con su fecha de entrega en el enlace de más abajo.",
     "",
-    "Saludos,",
-    o.emisorNombre ?? "",
-    o.emisorTelefono ?? "",
-    firma,
+    // Nombre, área, teléfono y empresa los pone la firma del perfil, debajo del mensaje.
+    "Saludos cordiales,",
   ]
     .filter((l) => l !== null)
     .join("\n")

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { FirmaCorreoPerfil } from "./FirmaCorreoPerfil";
 import { FirmaPerfil } from "./FirmaPerfil";
 import { useUsuario } from "@/lib/sesion";
 import { supabase } from "@/lib/supabase";
@@ -91,6 +92,8 @@ export function FormularioPerfil() {
           {guardandoPerfil ? "Guardando…" : "Guardar datos"}
         </button>
       </form>
+
+      <FirmaCorreoPerfil />
 
       <FirmaPerfil />
 

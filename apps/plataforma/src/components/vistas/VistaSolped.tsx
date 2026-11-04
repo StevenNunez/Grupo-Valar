@@ -516,13 +516,14 @@ const columnas = (
           </button>
         )}
         {((s.estado === "borrador" && permisos.enviar) ||
-          (s.estado === "en-aprobacion" && permisos.aprobar)) && (
+          (s.estado === "en-aprobacion" && permisos.aprobar) ||
+          (s.estado === "rechazada" && permisos.aprobar)) && (
           <button
             type="button"
             onClick={() => alFirmar(s)}
             className="rounded-full border border-mist-deep px-3 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink"
           >
-            {s.estado === "borrador" ? "Enviar a aprobación" : "Autorizar"}
+            {s.estado === "borrador" ? "Enviar a aprobación" : s.estado === "rechazada" ? "Reabrir" : "Autorizar"}
           </button>
         )}
         <AccionesFila
@@ -559,6 +560,7 @@ function DialogoAprobacion({
 }) {
   const usuario = useUsuario();
   const enviando = solped.estado === "borrador";
+  const reabriendo = solped.estado === "rechazada";
   const { estado } = useConsulta<Aprobacion[]>(() => cargarAprobaciones("solped", solped.id));
 
   const [comentario, setComentario] = useState("");
@@ -569,11 +571,23 @@ function DialogoAprobacion({
   // revisar al guardar la firma (`puede_aprobar`).
   const puedeFirmar = puede(usuario, "solped.aprobar");
 
-  async function ejecutar(accion: "aprobado" | "rechazado" | "enviar") {
+  async function ejecutar(accion: "aprobado" | "rechazado" | "enviar" | "reabrir") {
     setError(null);
     setProcesando(true);
     try {
-      if (accion === "enviar") {
+      if (accion === "reabrir") {
+        if (comentario.trim().length < 5) throw new Error("Cuenta por qué se reabre (mínimo 5 caracteres): queda registrado.");
+        // Queda la firma «Devolvió» con el motivo, y la solicitud vuelve a esperar autorización.
+        await firmar({
+          documento: "solped",
+          registroId: solped.id,
+          monto: null,
+          accion: "devuelto",
+          usuario: { id: usuario.id, nombre: usuario.nombre, cargo: usuario.cargo, rol: usuario.rol },
+          comentario,
+        });
+        await actualizar("solped", solped.id, { estado: "en-aprobacion", motivo_cierre: null });
+      } else if (accion === "enviar") {
         await actualizar("solped", solped.id, { estado: "en-aprobacion" });
       } else {
         await firmar({
@@ -599,7 +613,7 @@ function DialogoAprobacion({
 
   return (
     <Dialogo
-      titulo={enviando ? "Enviar a aprobación" : `Autorizar ${solped.numero}`}
+      titulo={enviando ? "Enviar a aprobación" : reabriendo ? `Reabrir ${solped.numero}` : `Autorizar ${solped.numero}`}
       descripcion={`${solped.numero} · ${solped.contrato} · ${solped.items} ítems`}
       abierto
       alCerrar={alCerrar}
@@ -613,11 +627,19 @@ function DialogoAprobacion({
           </p>
         ) : (
           <>
-            <p className="text-sm leading-relaxed text-ink-soft">
-              Lo que se autoriza acá es la <strong className="text-ink">necesidad</strong>: si
-              hace falta comprar esto o no. El monto se autoriza después, cuando haya
-              cotizaciones y se sepa cuánto cuesta.
-            </p>
+            {reabriendo ? (
+              <p className="text-sm leading-relaxed text-ink-soft">
+                Esta solicitud está <strong className="text-ink">rechazada</strong>. Si fue un
+                error, reábrela: vuelve a «Por aprobar» y la autorizas de nuevo. Queda una
+                firma «Devolvió» con tu nombre y el motivo.
+              </p>
+            ) : (
+              <p className="text-sm leading-relaxed text-ink-soft">
+                Lo que se autoriza acá es la <strong className="text-ink">necesidad</strong>: si
+                hace falta comprar esto o no. El monto se autoriza después, cuando haya
+                cotizaciones y se sepa cuánto cuesta.
+              </p>
+            )}
 
             {!puedeFirmar && (
               <p className="mt-4 rounded-xl bg-[#fdf4e6] px-4 py-3 text-sm text-[#8a5a09]">
@@ -702,6 +724,15 @@ function DialogoAprobacion({
             className="rounded-full bg-cyan px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:cursor-wait disabled:opacity-70"
           >
             {procesando ? "Enviando…" : "Enviar a aprobación"}
+          </button>
+        ) : reabriendo ? (
+          <button
+            type="button"
+            onClick={() => void ejecutar("reabrir")}
+            disabled={procesando || !puedeFirmar}
+            className="rounded-full bg-cyan px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:cursor-wait disabled:opacity-70"
+          >
+            {procesando ? "Reabriendo…" : "Reabrir solicitud"}
           </button>
         ) : (
           <>

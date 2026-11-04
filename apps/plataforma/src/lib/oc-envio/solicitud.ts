@@ -1,6 +1,6 @@
 import "server-only";
 
-import { MARCA, escapar, firmaTeoLabs } from "./correo";
+import { MARCA, escapar, firmaEnHtml, firmaEnTexto, firmaTeoLabs, type FirmaCorreo } from "./correo";
 import type { DatosEmpresa } from "@/lib/empresa";
 
 /**
@@ -42,6 +42,7 @@ export function cuerpoDeSolicitud(
   enlace: string,
   r: ResumenSolicitud,
   empresa: { razonSocial: string; rut: string; direccion: string },
+  firma?: FirmaCorreo | null,
 ) {
   const detalleTexto = r.items
     .map((i) => `${String(i.linea).padStart(2, "0")}. ${i.descripcion} — ${cantidad(i.cantidad)} ${i.unidad}`)
@@ -49,6 +50,8 @@ export function cuerpoDeSolicitud(
 
   const texto = [
     mensaje.trim(),
+    "",
+    firma ? firmaEnTexto(firma) : "",
     "",
     r.solped ? `Requerimiento: ${r.solped}` : "",
     "Ítems a cotizar:",
@@ -126,8 +129,9 @@ export function cuerpoDeSolicitud(
         </table>
 
         <div style="margin-top:24px;font-size:14px;line-height:1.6;color:${MARCA.tinta}">${parrafos}</div>
+        ${firma ? firmaEnHtml(firma) : ""}
 
-        <div style="margin-top:8px;font-size:11px;font-weight:bold;letter-spacing:1.4px;text-transform:uppercase;color:${MARCA.suave}">Ítems a cotizar</div>
+        <div style="margin-top:28px;font-size:11px;font-weight:bold;letter-spacing:1.4px;text-transform:uppercase;color:${MARCA.suave}">Ítems a cotizar</div>
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:8px;border-top:2px solid ${MARCA.tinta}">${filas}
         </table>
         ${
@@ -143,7 +147,7 @@ export function cuerpoDeSolicitud(
         </tr></table>
 
         ${
-          contacto.length
+          !firma && contacto.length
             ? `<div style="margin-top:24px;padding-top:18px;border-top:1px solid #e3e6e8;font-size:13px;color:${MARCA.suave}">
           Tu contacto en Valar: <strong style="color:${MARCA.tinta}">${contacto.join("</strong> · <strong style=\"color:" + MARCA.tinta + "\">")}</strong>
         </div>`

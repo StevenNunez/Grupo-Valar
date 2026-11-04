@@ -1,4 +1,4 @@
-import { enviarCorreoDeOrden, smtpConfigurado } from "@/lib/oc-envio/correo";
+import { cargarFirmaDeCorreo, enviarCorreoDeOrden, smtpConfigurado, type FirmaCorreo } from "@/lib/oc-envio/correo";
 import { DIAS_DEL_ENLACE, correoValido, nuevoEnlace, remitenteDe } from "@/lib/oc-envio/datos";
 import { pdfDeSolicitud } from "@/lib/oc-envio/pdf-solicitud";
 import { cuerpoDeSolicitud, type ItemSolicitud, type ResumenSolicitud } from "@/lib/oc-envio/solicitud";
@@ -139,11 +139,22 @@ export async function POST(pedido: Request, { params }: Contexto) {
   }
 
   const enlace = `${new URL(pedido.url).origin}/sc/${token}/`;
-  const { texto, html } = cuerpoDeSolicitud(mensaje, enlace, resumen, {
-    razonSocial: datosEmpresa.razonSocial,
-    rut: datosEmpresa.rut,
+  const propios = await cargarFirmaDeCorreo(servicio, remitente.id);
+  const firma: FirmaCorreo = {
+    nombre: remitente.nombre,
+    area: propios.area,
+    telefono: propios.telefono,
+    correo: emisor,
+    empresa: datosEmpresa.nombreEnOrdenes,
     direccion: direccionCompleta(datosEmpresa),
-  });
+  };
+  const { texto, html } = cuerpoDeSolicitud(
+    mensaje,
+    enlace,
+    resumen,
+    { razonSocial: datosEmpresa.razonSocial, rut: datosEmpresa.rut, direccion: direccionCompleta(datosEmpresa) },
+    firma,
+  );
 
   try {
     await enviarCorreoDeOrden({
