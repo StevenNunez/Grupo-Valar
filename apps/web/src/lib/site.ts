@@ -28,14 +28,10 @@ export const redes = {
 } as const;
 
 /**
- * Base de datos que recibe las postulaciones de «Trabaja con nosotros» (el
- * Supabase de la Plataforma). La clave `anon` es pública por diseño: lo que
- * puede hacer un visitante lo limitan las políticas de la base (0113: solo
- * insertar su postulación y subir un archivo; nunca leer nada). Se leen en el
- * build, desde `apps/web/.env.local`.
+ * Dónde llegan los currículums de «Trabaja con nosotros». Por ahora es solo un
+ * correo: quien postula lo escribe desde su programa de correo, sin formulario.
  */
-export const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-export const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+export const emailPostulaciones = "cleiva@valar.live";
 
-/** Versión del texto de privacidad que aceptó quien postula (queda guardada con la postulación). */
+/** Fecha de la última versión de la política de privacidad. */
 export const versionPrivacidad = "2026-11-04";

@@ -73,7 +73,7 @@ export function Footer() {
             )}
           </div>
 
-          <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-4 lg:gap-14">
+          <div className="grid grid-cols-2 gap-x-8 gap-y-10 sm:gap-x-12 xl:grid-cols-4 xl:gap-x-14">
             <Col titulo="Servicios">
               <a href="/#servicios">Obras civiles</a>
               <a href="/#servicios">Mantenimiento industrial</a>
@@ -88,60 +88,65 @@ export function Footer() {
               <a href={plataformaUrl}>Acceso a Plataforma Valar</a>
             </Col>
 
-            <Col titulo="Trabaja con nosotros">
-              <span className="leading-relaxed text-white/50">
+            <Col titulo="Trabaja con nosotros" className="col-span-2 xl:col-span-1">
+              <p className="max-w-xs leading-relaxed text-white/50">
                 Súmate a un equipo que construye en la minería, la energía y la industria.
-              </span>
-              <a href="/trabaja-con-nosotros/" className="font-semibold !text-white underline decoration-cyan underline-offset-4">
+              </p>
+              <a
+                href="/trabaja-con-nosotros/"
+                className="w-fit rounded-full border border-white/25 px-4 py-2 text-sm font-semibold !text-white transition-colors hover:border-cyan hover:bg-cyan/10"
+              >
                 Envía tu CV →
               </a>
             </Col>
 
-            <Col titulo="Contacto">
-              <a href={`mailto:${empresa.email}`}>{empresa.email}</a>
-              <span className="text-white/50">{empresa.direccion}</span>
+            <Col titulo="Contacto" className="col-span-2 xl:col-span-1">
+              <a href={`mailto:${empresa.email}`} className="break-all">
+                {empresa.email}
+              </a>
+              <span className="max-w-xs leading-relaxed text-white/50">{empresa.direccion}</span>
             </Col>
           </div>
         </div>
 
-        <div className="mt-16 flex flex-col gap-3 border-t border-white/10 pt-8 text-xs text-white/40 sm:flex-row sm:items-center sm:justify-between">
-          <p>
-            © {new Date().getFullYear()} {empresa.razonSocial} · RUT {empresa.rut}
-          </p>
-          <p>
-            Representante legal: {empresa.representante} · Empresa Sicep
-          </p>
-          <span className="flex items-center gap-1">
-            Desarrollado por
-            <a
-              href="https://www.teolabs.app"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="transition-opacity hover:opacity-80"
+        <div className="mt-14 border-t border-white/10 pt-8 text-xs text-white/40">
+          <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+            <nav
+              aria-label="Información legal"
+              className="-my-1.5 flex flex-wrap gap-x-6 text-white/50 [&>a:hover]:text-white [&>a]:py-2 [&>a]:transition-colors [&>button:hover]:text-white [&>button]:py-2 [&>button]:text-left [&>button]:transition-colors"
             >
-              <InteractiveLogo variant="footer-small" className="text-[14px]" />
-            </a>
-            ®
-          </span>
-        </div>
+              <a href="/privacidad/">Política de privacidad</a>
+              <a href="/terminos/">Términos de uso</a>
+              <a href="/cookies/">Política de cookies</a>
+              <EnlaceCookies />
+            </nav>
 
-        <nav
-          aria-label="Información legal"
-          className="mt-5 flex flex-wrap gap-x-6 gap-y-2 text-xs text-white/50 [&>a:hover]:text-white [&>a]:transition-colors [&>button:hover]:text-white [&>button]:transition-colors"
-        >
-          <a href="/privacidad/">Política de privacidad</a>
-          <a href="/terminos/">Términos de uso</a>
-          <a href="/cookies/">Política de cookies</a>
-          <EnlaceCookies />
-        </nav>
+            <span className="flex items-center gap-1">
+              Desarrollado por
+              <a
+                href="https://www.teolabs.app"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="transition-opacity hover:opacity-80"
+              >
+                <InteractiveLogo variant="footer-small" className="text-[14px]" />
+              </a>
+              ®
+            </span>
+          </div>
+
+          <p className="mt-6">
+            © {new Date().getFullYear()} {empresa.razonSocial} · Empresa inscrita en Sicep
+          </p>
+        </div>
       </div>
     </footer>
   );
 }
 
-function Col({ titulo, children }: { titulo: string; children: React.ReactNode }) {
+function Col({ titulo, children, className = "" }: { titulo: string; children: React.ReactNode; className?: string }) {
   return (
-    <div>
+    <div className={className}>
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan">{titulo}</p>
       <div className="mt-5 flex flex-col gap-3 text-sm text-white/70 [&>a:hover]:text-white [&>a]:transition-colors">
         {children}

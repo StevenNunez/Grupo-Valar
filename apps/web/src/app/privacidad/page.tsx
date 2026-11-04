@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { PaginaInterior, Texto } from "@/components/PaginaInterior";
 import { empresa } from "@/lib/content";
-import { versionPrivacidad } from "@/lib/site";
+import { emailPostulaciones, versionPrivacidad } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Política de privacidad",
@@ -32,11 +32,10 @@ export default function Privacidad() {
         <p>Solo tratamos los datos que tú nos entregas, en dos situaciones:</p>
         <ul>
           <li>
-            <strong>Trabaja con nosotros.</strong> Cuando envías tu postulación: nombre, correo, teléfono, ciudad, área de
-            interés, un mensaje opcional y el archivo de tu currículum (que puede incluir otros datos que tú decidas
-            incluir, como tu historial laboral, estudios o fotografía). Los usamos para evaluar tu candidatura y para
-            contactarte por procesos de selección actuales o futuros. Guardamos además la fecha y la versión de esta
-            política que aceptaste.
+            <strong>Trabaja con nosotros.</strong> Cuando nos envías tu currículum por correo a{" "}
+            <a href={`mailto:${emailPostulaciones}`}>{emailPostulaciones}</a>: tu nombre, tu correo y los datos que tú
+            decidas incluir (teléfono, ciudad, historial laboral, estudios, certificaciones o fotografía). Los usamos para
+            evaluar tu candidatura y para contactarte por procesos de selección actuales o futuros.
           </li>
           <li>
             <strong>Contacto comercial.</strong> El formulario de contacto del sitio no envía tus datos a nuestros
@@ -48,8 +47,8 @@ export default function Privacidad() {
 
         <h2>3. Base de tratamiento</h2>
         <p>
-          Tratamos los datos de tu postulación con tu <strong>consentimiento</strong>, que das al marcar la casilla del
-          formulario y puedes retirar en cualquier momento. Los datos de contacto comercial los tratamos para responder
+          Tratamos los datos de tu postulación con tu <strong>consentimiento</strong>, que das al enviarnos tu
+          currículum y puedes retirar en cualquier momento. Los datos de contacto comercial los tratamos para responder
           tu solicitud.
         </p>
 
@@ -57,9 +56,9 @@ export default function Privacidad() {
         <ul>
           <li>El personal de Valar que gestiona la selección de personal y la administración.</li>
           <li>
-            Proveedores tecnológicos que nos prestan servicio de alojamiento y que tratan los datos solo por encargo
-            nuestro: el alojamiento de la base de datos y de los archivos (Supabase) y el alojamiento del sitio
-            (Cloudflare). Esto puede implicar almacenamiento en servidores fuera de Chile.
+            Proveedores tecnológicos que nos prestan servicio y que tratan los datos solo por encargo nuestro: el
+            servicio de correo electrónico donde recibimos tu currículum y el alojamiento del sitio (Cloudflare). Esto
+            puede implicar almacenamiento en servidores fuera de Chile.
           </li>
         </ul>
         <p>No vendemos ni cedemos tus datos a terceros para fines comerciales.</p>
@@ -68,7 +67,7 @@ export default function Privacidad() {
         <p>
           Conservamos tu postulación por un máximo de <strong>24 meses</strong> desde que la enviaste, para considerarte
           en procesos de selección. Después la eliminamos, salvo que nos pidas mantenerla. Puedes pedir que la
-          eliminemos antes en cualquier momento.
+          eliminemos antes en cualquier momento escribiéndonos.
         </p>
 
         <h2>6. Tus derechos</h2>
@@ -81,9 +80,9 @@ export default function Privacidad() {
 
         <h2>7. Seguridad</h2>
         <p>
-          Tu currículum se guarda en un espacio privado, sin acceso público: solo lo ve personal autorizado de Valar con
-          su sesión. La transmisión desde el sitio se hace cifrada (HTTPS). Ningún sistema es infalible, pero aplicamos
-          medidas razonables para proteger tus datos.
+          Tu currículum llega a una casilla de correo de Valar a la que accede solo personal autorizado, y no lo
+          publicamos en ninguna parte. Ningún sistema es infalible, pero aplicamos medidas razonables para proteger tus
+          datos.
         </p>
 
         <h2>8. Cookies</h2>
@@ -94,8 +93,7 @@ export default function Privacidad() {
 
         <h2>9. Cambios en esta política</h2>
         <p>
-          Si la modificamos, publicaremos la nueva versión en esta página con su fecha. Las postulaciones ya enviadas
-          conservan la versión que aceptaste.
+          Si la modificamos, publicaremos la nueva versión en esta página con su fecha.
         </p>
       </Texto>
     </PaginaInterior>

@@ -126,16 +126,11 @@ export const seccionesGestion: Seccion[] = [
     base: `${RAIZ_GESTION}/activos`,
     permiso: "oficina_central.ver",
   },
-  /* Los currículums que llegan de «Trabaja con nosotros» en el sitio público (0113).
-     Son datos personales: la ve solo quien administra el personal. */
-  {
-    id: "postulaciones",
-    titulo: "Postulaciones",
-    icono: "postulaciones",
-    href: `${RAIZ_GESTION}/postulaciones/`,
-    base: `${RAIZ_GESTION}/postulaciones`,
-    permiso: "personal.editar",
-  },
+  /* «Postulaciones» (0113, VistaPostulaciones) está construida pero fuera del menú:
+     hoy los CV llegan por correo (cleiva@valar.live) y la pantalla estaría vacía.
+     Para activarla: volver a agregar aquí la sección { id: "postulaciones",
+     icono: "postulaciones", href/base `${RAIZ_GESTION}/postulaciones`,
+     permiso: "personal.editar" } y poner de nuevo el formulario en el sitio. */
 ];
 
 /* ── Abastecimiento ───────────────────────────────────────────────────────── */

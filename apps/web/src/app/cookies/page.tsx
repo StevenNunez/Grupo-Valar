@@ -9,6 +9,11 @@ export const metadata: Metadata = {
   alternates: { canonical: "/cookies/" },
 };
 
+const almacenamiento = [
+  { nombre: "valar-splash", tipo: "Sesión (técnico)", para: "Recordar que ya viste la animación de entrada para no repetirla.", duracion: "Hasta cerrar la pestaña" },
+  { nombre: "valar-cookies", tipo: "Local (técnico)", para: "Guardar la elección que haces en el panel de preferencias.", duracion: "Hasta que la cambies o borres los datos del sitio" },
+];
+
 export default function PoliticaDeCookies() {
   return (
     <PaginaInterior
@@ -32,8 +37,9 @@ export default function PoliticaDeCookies() {
           Hoy este sitio <strong>no usa cookies de publicidad, de seguimiento ni de estadísticas</strong> y no carga
           herramientas de terceros que lo hagan. Solo usa almacenamiento técnico, necesario para que funcione:
         </p>
-        <div className="overflow-x-auto rounded-xl border border-mist-deep">
-          <table className="w-full min-w-[32rem] border-collapse text-left text-sm">
+        {/* Escritorio: tabla. Teléfono: una tarjeta por cookie, sin scroll lateral. */}
+        <div className="hidden overflow-x-auto rounded-xl border border-mist-deep md:block">
+          <table className="w-full border-collapse text-left text-sm">
             <thead>
               <tr className="bg-mist text-xs uppercase tracking-wider text-ink">
                 <th className="px-4 py-3">Nombre</th>
@@ -43,21 +49,27 @@ export default function PoliticaDeCookies() {
               </tr>
             </thead>
             <tbody className="[&_td]:border-t [&_td]:border-mist [&_td]:px-4 [&_td]:py-3 [&_td]:align-top">
-              <tr>
-                <td className="font-mono text-xs">valar-splash</td>
-                <td>Sesión (técnico)</td>
-                <td>Recordar que ya viste la animación de entrada para no repetirla.</td>
-                <td>Hasta cerrar la pestaña</td>
-              </tr>
-              <tr>
-                <td className="font-mono text-xs">valar-cookies</td>
-                <td>Local (técnico)</td>
-                <td>Guardar la elección que haces en el panel de preferencias.</td>
-                <td>Hasta que la cambies o borres los datos del sitio</td>
-              </tr>
+              {almacenamiento.map((c) => (
+                <tr key={c.nombre}>
+                  <td className="font-mono text-xs">{c.nombre}</td>
+                  <td>{c.tipo}</td>
+                  <td>{c.para}</td>
+                  <td>{c.duracion}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
+        <ul className="grid gap-3 md:hidden">
+          {almacenamiento.map((c) => (
+            <li key={c.nombre} className="ml-0 list-none rounded-xl border border-mist-deep p-4">
+              <p className="font-mono text-xs font-semibold text-ink">{c.nombre}</p>
+              <p className="mt-1 text-xs uppercase tracking-wider text-ink-soft/80">{c.tipo}</p>
+              <p className="mt-2 text-sm">{c.para}</p>
+              <p className="mt-2 text-xs text-ink-soft/80">Duración: {c.duracion}</p>
+            </li>
+          ))}
+        </ul>
         <p>
           Las tipografías del sitio se sirven desde nuestro propio dominio, por lo que no se contacta a Google Fonts
           al visitarlo.

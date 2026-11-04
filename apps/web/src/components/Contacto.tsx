@@ -67,7 +67,7 @@ export function Contacto() {
               </Dato>
               <Dato label="Dirección">{empresa.direccion}</Dato>
               <Dato label="Razón social">
-                {empresa.razonSocial} · RUT {empresa.rut}
+                {empresa.razonSocial}
               </Dato>
             </dl>
           </Reveal>

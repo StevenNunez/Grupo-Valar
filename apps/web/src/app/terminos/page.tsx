@@ -42,7 +42,7 @@ export default function Terminos() {
         <ul>
           <li>intentar acceder sin autorización a sistemas, datos o cuentas de Valar o de terceros;</li>
           <li>enviar archivos con virus o contenido malicioso, ilícito o que no te pertenezca;</li>
-          <li>usar el formulario de postulación con datos de otra persona sin su autorización;</li>
+          <li>enviar una postulación con datos de otra persona sin su autorización;</li>
           <li>sobrecargar el sitio ni extraer su contenido de forma automatizada.</li>
         </ul>
 

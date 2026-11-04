@@ -28,14 +28,14 @@ export function Proyectos() {
             </h2>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="-mx-6 flex gap-2 overflow-x-auto px-6 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0 [&::-webkit-scrollbar]:hidden">
             {areas.map((a) => (
               <button
                 key={a}
                 type="button"
                 onClick={() => setArea(a)}
                 aria-pressed={area === a}
-                className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+                className={`shrink-0 whitespace-nowrap rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
                   area === a
                     ? "border-cyan bg-cyan text-white"
                     : "border-white/20 text-white/65 hover:border-white/50 hover:text-white"
@@ -47,11 +47,13 @@ export function Proyectos() {
           </div>
         </Reveal>
 
-        <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {/* En teléfono, un carrusel con la siguiente tarjeta asomando (11 tarjetas apiladas eran ~2.800 px de scroll); desde sm, la grilla de siempre. */}
+        <div className="mt-10 -mx-6 flex snap-x snap-mandatory gap-4 overflow-x-auto px-6 pb-4 [scrollbar-width:none] sm:mx-0 sm:mt-14 sm:grid sm:snap-none sm:grid-cols-2 sm:gap-5 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-3 [&::-webkit-scrollbar]:hidden">
           {visibles.map((p, i) => (
             <Card key={p.titulo} proyecto={p} delay={(i % 3) * 70} />
           ))}
         </div>
+        <p className="mt-2 text-center text-xs text-white/40 sm:hidden">Desliza para ver más →</p>
       </div>
     </section>
   );
@@ -61,7 +63,7 @@ function Card({ proyecto, delay }: { proyecto: Proyecto; delay: number }) {
   return (
     <Reveal
       delay={delay}
-      className="group relative aspect-[4/3] overflow-hidden rounded-2xl bg-ink-soft"
+      className="group relative aspect-[4/3] w-[82%] shrink-0 snap-center overflow-hidden rounded-2xl bg-ink-soft sm:w-auto"
     >
       <div className="absolute inset-0">
         <Image
