@@ -26,6 +26,7 @@ import { cargarOrden } from "@/lib/ordenes";
 import { usePuede } from "@/lib/sesion";
 import {
   armarNomina,
+  atrasoDeCobro,
   cambiarEstadoPago,
   cargarCuentasPorPagar,
   cargarFlujoDePagos,
@@ -139,6 +140,7 @@ function Tablero({ datos, recargar }: { datos: Datos; recargar: () => void }) {
   const vencido = suma(abiertas.filter((c) => c.estadoDocumento === "vencido"));
   const porVencer = suma(abiertas.filter((c) => c.estadoDocumento === "por_vencer"));
   const bloqueado = suma(abiertas.filter((c) => c.estadoDocumento === "no_facturado"));
+  const sinFacturaVencidas = abiertas.filter((c) => (atrasoDeCobro(c) ?? 0) > 0).length;
   /* Lo agendado para esa fecha y todavía sin pagar: el cuadro de la semana es
      lo que hay que transferir, no un histórico de lo que ya se transfirió. */
   const deLaSemana = datos.cuentas.filter(
@@ -181,8 +183,10 @@ function Tablero({ datos, recargar }: { datos: Datos; recargar: () => void }) {
           {
             etiqueta: "Bloqueado sin factura",
             valor: formatearMonto(bloqueado),
-            nota: "Comprometido, todavía no pagable",
-            acento: bloqueado > 0 ? "aviso" : undefined,
+            nota: sinFacturaVencidas > 0
+              ? `${sinFacturaVencidas} orden${sinFacturaVencidas === 1 ? "" : "es"} con el plazo de cobro vencido: pide la factura`
+              : "Comprometido, todavía no pagable",
+            acento: sinFacturaVencidas > 0 ? "critico" : bloqueado > 0 ? "aviso" : undefined,
           },
           {
             etiqueta: `Programado al ${formatearFecha(semana)}`,
@@ -510,12 +514,27 @@ function columnasLinea({
             </span>
           </>
         ) : (
-          <>
-            <span className="block text-ink-soft">—</span>
-            <span className="mt-0.5 block text-xs text-[#8a5a09]">
-              {c.diasSinFacturar ?? 0} días sin facturar
-            </span>
-          </>
+          (() => {
+            const atraso = atrasoDeCobro(c);
+            if (atraso === null) {
+              return (
+                <>
+                  <span className="block text-ink-soft">—</span>
+                  <span className="mt-0.5 block text-xs text-[#8a5a09]">{c.diasSinFacturar ?? 0} días sin facturar</span>
+                </>
+              );
+            }
+            // Fecha desde la que el proveedor ya puede cobrar: hoy menos el atraso.
+            const desde = sumarDias(new Date().toISOString().slice(0, 10), -atraso);
+            return (
+              <>
+                <span className="block text-ink">{formatearFecha(desde)} <span className="text-xs text-ink-soft">(estimado)</span></span>
+                <span className={`mt-0.5 block text-xs ${atraso > 0 ? "font-semibold text-[#a52f24]" : "text-[#8a5a09]"}`}>
+                  {atraso > 0 ? `Sin factura · ${atraso} días de atraso` : atraso === 0 ? "Sin factura · cobra desde hoy" : `Sin factura · cobra en ${-atraso} días`}
+                </span>
+              </>
+            );
+          })()
         ),
     },
     {
@@ -539,7 +558,9 @@ function columnasLinea({
       titulo: "Estado",
       celda: (c) => (
         <>
-          <Chip tono={tonos[c.estadoDocumento]}>{nombreEstadoDocumento[c.estadoDocumento]}</Chip>
+          <Chip tono={(atrasoDeCobro(c) ?? 0) > 0 ? "critico" : tonos[c.estadoDocumento]}>
+            {(atrasoDeCobro(c) ?? 0) > 0 ? "Factura pendiente" : nombreEstadoDocumento[c.estadoDocumento]}
+          </Chip>
           {c.cuotas > 0 && c.cuotaNumero !== null && (
             <span className="mt-1 block text-xs text-ink-soft">
               Cuota {c.cuotaNumero} de {c.cuotas} · {formatearMonto(c.cuotaMonto ?? 0)}

@@ -169,6 +169,16 @@ export type CuentaPorPagar = {
  * Cuánto hay que transferir de esta línea cuando llega su semana de pago: la
  * próxima cuota si tiene plan, y si no, lo que falta de la factura.
  */
+/**
+ * Una orden emitida sin factura: cuándo el proveedor ya puede cobrar. Es la fecha
+ * de emisión más los días de crédito (los mismos que usa el aviso diario, 0115).
+ * Positivo = días de atraso; negativo = los que faltan. Nulo si no aplica.
+ */
+export function atrasoDeCobro(c: Pick<CuentaPorPagar, "origen" | "documento" | "diasSinFacturar" | "plazoDias">): number | null {
+  if (c.origen !== "orden" || c.documento || c.diasSinFacturar == null) return null;
+  return c.diasSinFacturar - c.plazoDias;
+}
+
 export const montoAPagar = (c: Pick<CuentaPorPagar, "cuotaMonto" | "saldo">) => c.cuotaMonto ?? c.saldo;
 
 type FilaCuenta = {
