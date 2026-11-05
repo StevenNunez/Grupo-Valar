@@ -49,7 +49,7 @@ const sumarDias = (fecha: string, dias: number) => {
 const diasDe = (condicion: string | null) => Number(/\d+/.exec(condicion ?? "")?.[0] ?? 30);
 
 /** Una factura que el SII ya tiene: llena el formulario de «Agregar factura» con sus datos. */
-export type FacturaSugerida = { documento: string; fechaFactura: string | null; neto: number; iva: number };
+export type FacturaSugerida = { documento: string; fechaFactura: string | null; vencimiento: string | null; neto: number; iva: number };
 
 export function CicloOrden({
   orden,
@@ -599,7 +599,7 @@ function FormFactura({ orden, ciclo, factura, sugerida, alVolver, alHecho }: { o
   const f = useFormulario(factura
     ? { documento: factura.documento, fechaFactura: factura.fechaFactura ?? hoy(), vencimiento: factura.vencimiento ?? "", neto: factura.neto, iva: factura.iva }
     : sugerida
-      ? { documento: sugerida.documento, fechaFactura: fechaSugerida, vencimiento: sumarDias(fechaSugerida, plazo), neto: sugerida.neto, iva: sugerida.iva }
+      ? { documento: sugerida.documento, fechaFactura: fechaSugerida, vencimiento: sugerida.vencimiento ?? sumarDias(fechaSugerida, plazo), neto: sugerida.neto, iva: sugerida.iva }
       : { documento: "", fechaFactura: hoy(), vencimiento: sumarDias(hoy(), plazo), neto: sugerido, iva: Math.round(sugerido * 0.19) });
   // Una factura que se corrige conserva su monto hasta que se toque una línea: ahí sigue a las líneas, salvo que se escriba otro.
   // La que viene del SII también: su monto es el que dice el documento.

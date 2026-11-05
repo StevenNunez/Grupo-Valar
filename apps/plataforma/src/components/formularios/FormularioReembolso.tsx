@@ -115,15 +115,28 @@ function cabeceraDe(compra: Compra | null, contratos: ContratoBreve[]): Cabecera
   };
 }
 
+/** Un gasto que ya viene escrito, p. ej. un documento del SII (ver Pagos → Facturas del SII). */
+export type GastoSugerido = {
+  fecha: string;
+  tipo_documento: TipoDocumentoRendicion;
+  documento: string;
+  comercio: string;
+  descripcion: string;
+  pagado: number;
+};
+
 export function FormularioReembolso({
   compra,
   compras,
   contratos,
   categorias,
+  sugeridos,
   alCerrar,
   alGuardado,
 }: {
   compra: Compra | null;
+  /** Gastos ya escritos para una rendición nueva (los documentos del SII elegidos). */
+  sugeridos?: GastoSugerido[];
   /** Las que ya existen: el correlativo del código y los nombres de quienes ya rindieron. */
   compras: Compra[];
   contratos: ContratoBreve[];
@@ -134,7 +147,9 @@ export function FormularioReembolso({
 }) {
   const f = useFormulario<Cabecera>(cabeceraDe(compra, contratos));
   const editando = compra !== null;
-  const [lineas, setLineas] = useState<LineaRendicion[]>(() => (compra ? [] : [lineaVacia()]));
+  const [lineas, setLineas] = useState<LineaRendicion[]>(() =>
+    compra ? [] : sugeridos && sugeridos.length > 0 ? sugeridos.map((g) => lineaVacia(g)) : [lineaVacia()],
+  );
   const [cargandoLineas, setCargandoLineas] = useState(editando);
   const [confirmando, setConfirmando] = useState(false);
   const [errorBorrado, setErrorBorrado] = useState<string | null>(null);
@@ -254,7 +269,9 @@ export function FormularioReembolso({
         descripcion={
           editando
             ? `${compra.id} · cada cambio queda registrado con tu nombre y la hora.`
-            : "Un gasto del contrato que alguien pagó de su bolsillo y se le devuelve. Se anota cada boleta o factura de la rendición; al guardar, adjuntas la foto."
+            : sugeridos && sugeridos.length > 0
+              ? `Armada con ${sugeridos.length} documento${sugeridos.length === 1 ? "" : "s"} del SII: ya traen el N°, el comercio, la fecha y el monto. Falta decir el contrato, quién rindió y la categoría de cada gasto.`
+              : "Un gasto del contrato que alguien pagó de su bolsillo y se le devuelve. Se anota cada boleta o factura de la rendición; al guardar, adjuntas la foto."
         }
         abierto
         alCerrar={alCerrar}

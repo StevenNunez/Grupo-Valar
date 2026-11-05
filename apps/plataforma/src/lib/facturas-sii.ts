@@ -7,8 +7,13 @@ import type { CuentaPorPagar } from "./pagos";
  * Facturas del SII (0116): el detalle del Registro de Compras, descargado del
  * portal del SII como CSV, se sube acá y se cruza con las órdenes abiertas.
  *
- * El archivo se lee por NOMBRE de columna (no por posición): el SII ha cambiado
- * el orden y los títulos varían un poco entre el Registro y el Resumen.
+ * Se leen dos tipos de archivo del SII:
+ *   · el XML de «Documentos recibidos» (DTE_DOWN…xml): el documento completo, con
+ *     sus líneas, la fecha de vencimiento y las referencias (la OC que cita);
+ *   · el CSV del Registro de Compras, leído por NOMBRE de columna (no por
+ *     posición): el SII ha cambiado el orden y los títulos varían un poco.
+ * El SII entrega de a 20 documentos por descarga: se pueden subir varios archivos
+ * juntos y los repetidos se descartan.
  */
 
 export type DocumentoSii = {
@@ -22,18 +27,38 @@ export type DocumentoSii = {
   neto: number;
   iva: number;
   total: number;
-  datos: Record<string, string>;
+  /** Fecha de vencimiento que trae el documento (solo el XML). */
+  vencimiento: string | null;
+  /** Órdenes de compra que cita (referencias y descripciones), en dígitos: «22001154». Con «*» al inicio, solo el final del número. */
+  ocMencionadas: string[];
+  /** Lo que vino en el archivo, para guardarlo tal cual. */
+  datos: Record<string, unknown>;
 };
 
 export type FacturaSii = DocumentoSii & {
   id: string;
   estado: "detectada" | "ignorada";
+  /** La rendición (compras.id) a la que se llevó el documento (0117). */
+  compraId: string | null;
+  /** Lo que se compró, en una línea: «Aramco ProForce Diesel» o «Arriendo de bus y 1 más». */
+  resumen: string;
 };
+
+/** Qué se compró, a partir de las líneas del XML. */
+function resumenDe(datos: Record<string, unknown> | null): string {
+  const lineas = Array.isArray(datos?.detalle) ? (datos.detalle as { descripcion?: string }[]) : [];
+  const nombres = lineas.map((l) => (l.descripcion ?? "").trim()).filter(Boolean);
+  if (nombres.length === 0) return "";
+  return nombres.length === 1 ? nombres[0] : `${nombres[0]} y ${nombres.length - 1} más`;
+}
 
 export const nombreTipoDocumento: Record<number, string> = {
   30: "Factura",
   33: "Factura",
   34: "Factura exenta",
+  39: "Boleta",
+  41: "Boleta exenta",
+  52: "Guía de despacho",
   45: "Factura de compra",
   46: "Factura de compra",
   55: "Nota de débito",
@@ -43,6 +68,8 @@ export const nombreTipoDocumento: Record<number, string> = {
 };
 export const esNotaDeCredito = (t: number) => t === 60 || t === 61;
 export const esNotaDeDebito = (t: number) => t === 55 || t === 56;
+/** La guía de despacho acompaña la mercadería; no se cobra ni se registra como factura. */
+export const esGuia = (t: number) => t === 52;
 
 /* ── Leer el archivo ──────────────────────────────────────────────────────── */
 
@@ -99,7 +126,124 @@ function fechaIso(t: string | undefined): string | null {
 
 export type LecturaSii = { documentos: DocumentoSii[]; ignoradas: number; error?: string };
 
+/* ── El XML de «Documentos recibidos» ─────────────────────────────────────── */
+
+const entidades: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+const sinEntidades = (t: string) => t.replace(/&(amp|lt|gt|quot|apos);/g, (_, e: string) => entidades[e]).replace(/&#(\d+);/g, (_, n: string) => String.fromCharCode(Number(n)));
+
+/** El texto de la primera etiqueta con ese nombre dentro de un trozo de XML. */
+function etiqueta(xml: string, nombre: string): string {
+  const m = new RegExp(`<${nombre}(?:\\s[^>]*)?>([\\s\\S]*?)</${nombre}>`).exec(xml);
+  return m ? sinEntidades(m[1]).trim() : "";
+}
+const bloques = (xml: string, nombre: string) =>
+  [...xml.matchAll(new RegExp(`<${nombre}(?:\\s[^>]*)?>[\\s\\S]*?</${nombre}>`, "g"))].map((m) => m[0]);
+
+/**
+ * Las órdenes de compra que cita un documento: «OC22-001154», «SEGUN OC 22-001011»,
+ * «Orden de compra 22-001011». Devuelve dígitos («22001154»); si solo trae el
+ * correlativo («1011»), va con «*» y se compara por el final del número.
+ */
+export function ordenesCitadas(textos: string[], foliosDeOrden: string[]): string[] {
+  const encontradas = new Set<string>();
+  const patron = /(?:\bo\.?\s?c\.?|orden\s+de\s+compra)\s*(?:n[°ºo]\.?\s*)?[:#-]?\s*(\d{2})\s*[-–_. ]?\s*(\d{3,6})\b/gi;
+  for (const t of textos) {
+    for (const m of t.matchAll(patron)) encontradas.add(m[1] + String(Number(m[2])));
+  }
+  for (const f of foliosDeOrden) {
+    const solo = f.replace(/\D/g, "");
+    if (/^\d{2}\D?\d{3,6}$/.test(f.replace(/^\s*o\.?c\.?\s*/i, "").trim())) continue; // ya lo vio el patrón
+    if (solo.length >= 3 && solo.length <= 6) encontradas.add("*" + String(Number(solo)));
+  }
+  return [...encontradas];
+}
+
+export function leerXmlSii(texto: string): LecturaSii {
+  const dtes = bloques(texto, "DTE");
+  if (dtes.length === 0) return { documentos: [], ignoradas: 0, error: "No encontré documentos en el XML." };
+
+  const documentos: DocumentoSii[] = [];
+  let ignoradas = 0;
+  for (const dte of dtes) {
+    const idDoc = etiqueta(dte, "IdDoc");
+    const emisor = etiqueta(dte, "Emisor");
+    const totales = etiqueta(dte, "Totales");
+    const rut = normalizarRut(etiqueta(emisor, "RUTEmisor"));
+    const folio = etiqueta(idDoc, "Folio").replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+    const tipo = Number(etiqueta(idDoc, "TipoDTE"));
+    if (!rut || !folio || !tipo) { ignoradas++; continue; }
+
+    const detalle = bloques(dte, "Detalle").map((d) => ({
+      descripcion: etiqueta(d, "NmbItem"),
+      detalle: etiqueta(d, "DscItem"),
+      cantidad: etiqueta(d, "QtyItem"),
+      precio: etiqueta(d, "PrcItem"),
+      monto: etiqueta(d, "MontoItem"),
+    }));
+    const referencias = bloques(dte, "Referencia").map((r) => ({
+      tipo: etiqueta(r, "TpoDocRef"),
+      folio: etiqueta(r, "FolioRef"),
+      razon: etiqueta(r, "RazonRef"),
+    }));
+    const neto = entero(etiqueta(totales, "MntNeto"));
+    const exento = entero(etiqueta(totales, "MntExe"));
+    const iva = entero(etiqueta(totales, "IVA"));
+    const total = entero(etiqueta(totales, "MntTotal")) || neto + exento + iva;
+    const ocMencionadas = ordenesCitadas(
+      [...detalle.flatMap((d) => [d.descripcion, d.detalle]), ...referencias.flatMap((r) => [r.folio, r.razon])],
+      referencias.filter((r) => r.tipo === "801").map((r) => r.folio),
+    );
+    const vencimiento = fechaIso(etiqueta(idDoc, "FchVenc"));
+
+    documentos.push({
+      rutEmisor: rut,
+      razonSocial: etiqueta(emisor, "RznSoc"),
+      tipoDocumento: tipo,
+      folio,
+      fechaEmision: fechaIso(etiqueta(idDoc, "FchEmis")),
+      fechaRecepcion: null,
+      exento, neto, iva, total,
+      vencimiento,
+      ocMencionadas,
+      datos: {
+        origen: "xml",
+        formaPago: etiqueta(idDoc, "FmaPago"),
+        vencimiento,
+        oc: ocMencionadas,
+        referencias,
+        detalle,
+        receptor: normalizarRut(etiqueta(etiqueta(dte, "Receptor"), "RUTRecep")),
+      },
+    });
+  }
+  return { documentos: sinRepetidos(documentos), ignoradas };
+}
+
+function sinRepetidos(documentos: DocumentoSii[]): DocumentoSii[] {
+  const vistos = new Set<string>();
+  return documentos.filter((d) => {
+    const k = `${d.rutEmisor}|${d.tipoDocumento}|${d.folio}`;
+    if (vistos.has(k)) return false;
+    vistos.add(k);
+    return true;
+  });
+}
+
+/** Reconoce el tipo de archivo por lo que trae adentro. */
 export function leerArchivoSii(texto: string): LecturaSii {
+  const inicio = texto.trimStart().slice(0, 400).toLowerCase();
+  if (inicio.startsWith("<table") || inicio.startsWith("<html")) {
+    return {
+      documentos: [],
+      ignoradas: 0,
+      error: "Ese es el listado en Excel/texto del SII. Sube el archivo XML: trae lo mismo y además las referencias y el vencimiento.",
+    };
+  }
+  if (inicio.includes("<setdte") || inicio.includes("<dte")) return leerXmlSii(texto);
+  return leerCsvSii(texto);
+}
+
+export function leerCsvSii(texto: string): LecturaSii {
   const lineas = texto.split(/\r?\n/).filter((l) => l.trim() !== "");
   if (lineas.length < 2) return { documentos: [], ignoradas: 0, error: "El archivo está vacío." };
 
@@ -157,18 +301,13 @@ export function leerArchivoSii(texto: string): LecturaSii {
       fechaEmision: iFecha === -1 ? null : fechaIso(c[iFecha]),
       fechaRecepcion: iRecep === -1 ? null : fechaIso(c[iRecep]),
       exento, neto, iva, total,
+      vencimiento: null,
+      ocMencionadas: [],
       datos: Object.fromEntries(titulos.map((t, i) => [t, c[i] ?? ""])),
     });
   }
   // Un mismo documento repetido en el archivo cuenta una vez.
-  const vistos = new Set<string>();
-  const unicos = documentos.filter((d) => {
-    const k = `${d.rutEmisor}|${d.tipoDocumento}|${d.folio}`;
-    if (vistos.has(k)) return false;
-    vistos.add(k);
-    return true;
-  });
-  return { documentos: unicos, ignoradas };
+  return { documentos: sinRepetidos(documentos), ignoradas };
 }
 
 /* ── Guardar y leer ───────────────────────────────────────────────────────── */
@@ -176,7 +315,7 @@ export function leerArchivoSii(texto: string): LecturaSii {
 type Fila = {
   id: string; rut_emisor: string; razon_social: string | null; tipo_documento: number; folio: string;
   fecha_emision: string | null; fecha_recepcion: string | null; exento: number; neto: number; iva: number;
-  total: number; estado: "detectada" | "ignorada"; datos: Record<string, string> | null;
+  total: number; estado: "detectada" | "ignorada"; datos: Record<string, unknown> | null; compra_id: string | null;
 };
 
 const deFila = (f: Fila): FacturaSii => ({
@@ -184,6 +323,10 @@ const deFila = (f: Fila): FacturaSii => ({
   folio: f.folio, fechaEmision: f.fecha_emision, fechaRecepcion: f.fecha_recepcion,
   exento: Number(f.exento), neto: Number(f.neto), iva: Number(f.iva), total: Number(f.total),
   estado: f.estado, datos: f.datos ?? {},
+  compraId: f.compra_id ?? null,
+  resumen: resumenDe(f.datos),
+  vencimiento: typeof f.datos?.vencimiento === "string" ? f.datos.vencimiento : null,
+  ocMencionadas: Array.isArray(f.datos?.oc) ? (f.datos.oc as string[]) : [],
 });
 
 /**
@@ -230,6 +373,36 @@ export async function cargarFacturasSii(limite: number, texto: string): Promise<
   return ((data ?? []) as Fila[]).map(deFila);
 }
 
+/** Los documentos que se llevaron a una rendición (0117). */
+export async function marcarRendidas(ids: string[], compraId: string) {
+  const { error } = await supabase.from("facturas_sii").update({ compra_id: compraId }).in("id", ids);
+  if (error) throw new Error(error.message);
+}
+
+export type LineaDeRendicion = {
+  fecha: string;
+  tipo_documento: "factura" | "otro";
+  documento: string;
+  comercio: string;
+  descripcion: string;
+  pagado: number;
+};
+
+/**
+ * El documento como un gasto de rendición. La factura exenta va como «otro»: no
+ * lleva IVA que recuperar, y el costo es todo lo pagado.
+ */
+export function comoLineaDeRendicion(d: FacturaSii): LineaDeRendicion {
+  return {
+    fecha: d.fechaEmision ?? "",
+    tipo_documento: d.tipoDocumento === 34 || d.iva === 0 ? "otro" : "factura",
+    documento: d.folio,
+    comercio: d.razonSocial,
+    descripcion: d.resumen || d.razonSocial,
+    pagado: d.total,
+  };
+}
+
 export async function marcarIgnorada(id: string, ignorar: boolean) {
   const { error } = await supabase.from("facturas_sii").update({ estado: ignorar ? "ignorada" : "detectada" }).eq("id", id);
   if (error) throw new Error(error.message);
@@ -237,17 +410,27 @@ export async function marcarIgnorada(id: string, ignorar: boolean) {
 
 /* ── El cruce ─────────────────────────────────────────────────────────────── */
 
-export type OrdenCandidata = { ordenId: string; numero: string; contratoId: string; saldoNeto: number; exacta: boolean };
+export type OrdenCandidata = {
+  ordenId: string; numero: string; contratoId: string; saldoNeto: number;
+  /** El monto de la factura es el saldo de la orden. */
+  exacta: boolean;
+  /** La factura cita esta orden. */
+  citada: boolean;
+};
 
 export type Cruce =
-  | { tipo: "nota_credito" | "nota_debito" | "ignorada" | "cargada" }
+  | { tipo: "nota_credito" | "nota_debito" | "guia" | "ignorada" | "cargada" }
+  /** Ya se llevó a una rendición que sigue existiendo. */
+  | { tipo: "rendida"; compraId: string }
   | { tipo: "sin_proveedor" }
-  | { tipo: "sin_orden" }
+  | { tipo: "sin_orden"; citadas: string[] }
   | { tipo: "con_orden"; candidatas: OrdenCandidata[] };
 
 export type ContextoCruce = {
   /** `rut|folio` de lo que ya está cargado en la plataforma. */
   cargadas: Set<string>;
+  /** Los documentos (id) cuya rendición sigue existiendo. */
+  rendidas: Set<string>;
   /** RUT normalizados de los proveedores registrados. */
   ruts: Set<string>;
   /** Saldos sin facturar de las órdenes abiertas, tal como los muestra Pagos. */
@@ -258,25 +441,34 @@ const TOLERANCIA = 2; // pesos de redondeo
 
 export function cruzar(d: FacturaSii, ctx: ContextoCruce): Cruce {
   if (d.estado === "ignorada") return { tipo: "ignorada" };
+  if (d.compraId && ctx.rendidas.has(d.id)) return { tipo: "rendida", compraId: d.compraId };
   if (esNotaDeCredito(d.tipoDocumento)) return { tipo: "nota_credito" };
   if (esNotaDeDebito(d.tipoDocumento)) return { tipo: "nota_debito" };
+  if (esGuia(d.tipoDocumento)) return { tipo: "guia" };
   if (ctx.cargadas.has(`${d.rutEmisor}|${d.folio}`)) return { tipo: "cargada" };
   if (!ctx.ruts.has(d.rutEmisor)) return { tipo: "sin_proveedor" };
 
   const neto = d.neto + d.exento;
   const candidatas = ctx.ordenes
     .filter((o) => o.origen === "orden" && o.ordenId && o.rut && normalizarRut(o.rut) === d.rutEmisor)
-    .map((o) => ({
-      ordenId: o.ordenId!, numero: o.ordenNumero ?? o.ordenId!, contratoId: o.contratoId, saldoNeto: o.neto,
-      exacta: Math.abs(o.neto - neto) <= TOLERANCIA,
-    }))
-    // Las que calzan en monto primero; después, las más antiguas por número.
-    .sort((a, b) => Number(b.exacta) - Number(a.exacta) || a.numero.localeCompare(b.numero));
-  return candidatas.length > 0 ? { tipo: "con_orden", candidatas } : { tipo: "sin_orden" };
+    .map((o) => {
+      const digitos = (o.ordenNumero ?? "").replace(/\D/g, "");
+      return {
+        ordenId: o.ordenId!, numero: o.ordenNumero ?? o.ordenId!, contratoId: o.contratoId, saldoNeto: o.neto,
+        exacta: Math.abs(o.neto - neto) <= TOLERANCIA,
+        citada: digitos.length >= 3 && d.ocMencionadas.some((m) => (m.startsWith("*") ? String(Number(digitos.slice(2))) === m.slice(1) : digitos.slice(0, 2) + String(Number(digitos.slice(2))) === m)),
+      };
+    })
+    // Primero las que la factura cita, luego las que calzan en monto; después, por número.
+    .sort((a, b) => Number(b.citada) - Number(a.citada) || Number(b.exacta) - Number(a.exacta) || a.numero.localeCompare(b.numero));
+  return candidatas.length > 0 ? { tipo: "con_orden", candidatas } : { tipo: "sin_orden", citadas: d.ocMencionadas };
 }
 
 /** Lo que ya está cargado en la plataforma, para reconocerlo por N° de factura y proveedor. */
-export async function cargarContextoSii(folios: string[]): Promise<{ cargadas: Set<string>; ruts: Set<string> }> {
+export async function cargarContextoSii(
+  docs: FacturaSii[],
+): Promise<{ cargadas: Set<string>; rendidas: Set<string>; ruts: Set<string> }> {
+  const folios = docs.map((d) => d.folio);
   const { data: provs } = await supabase.from("proveedores").select("id, rut");
   const rutDe = new Map<string, string>();
   const ruts = new Set<string>();
@@ -307,5 +499,14 @@ export async function cargarContextoSii(folios: string[]): Promise<{ cargadas: S
     const folio = (c.documento ?? "").replace(/\D/g, "").replace(/^0+(?=\d)/, "");
     if (rut && folio) cargadas.add(`${rut}|${folio}`);
   }
-  return { cargadas, ruts };
+
+  // Las rendiciones a las que se llevaron documentos: solo cuentan si siguen existiendo.
+  const compraIds = [...new Set(docs.map((d) => d.compraId).filter((x): x is string => !!x))];
+  const existentes = new Set<string>();
+  for (let i = 0; i < compraIds.length; i += 150) {
+    const { data } = await supabase.from("compras").select("id").in("id", compraIds.slice(i, i + 150));
+    for (const c of (data ?? []) as { id: string }[]) existentes.add(c.id);
+  }
+  const rendidas = new Set(docs.filter((d) => d.compraId && existentes.has(d.compraId)).map((d) => d.id));
+  return { cargadas, rendidas, ruts };
 }
