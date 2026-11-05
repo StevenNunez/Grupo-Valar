@@ -3,6 +3,7 @@ import { FirmaTeoLabs } from "@/components/FirmaTeoLabs";
 import { LogoMark } from "@/components/Logo";
 import { DATOS_POR_DEFECTO, type DatosEmpresa } from "@/lib/empresa";
 import { formatearFecha, formatearPesos, formatearPesosUnitario } from "@/lib/formato";
+import { formatearPrecioUf } from "@/lib/ordenes";
 import { abrirEnlace } from "@/lib/oc-envio/publico";
 import { ConfirmarOrden } from "./ConfirmarOrden";
 
@@ -100,7 +101,7 @@ export default async function PaginaOrdenProveedor({ params }: Props) {
                   <td className="py-2 pr-3 text-ink">{i.descripcion}</td>
                   <td className="py-2 pr-3 text-ink-soft">{i.unidad}</td>
                   <td className="py-2 pr-3 text-right tabular-nums">{i.cantidad.toLocaleString("es-CL")}</td>
-                  <td className="py-2 pr-3 text-right tabular-nums">{formatearPesosUnitario(i.precioLista ?? i.precioUnitario)}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{o.moneda === "UF" && i.precioUf != null ? formatearPrecioUf(i.precioUf) : formatearPesosUnitario(i.precioLista ?? i.precioUnitario)}</td>
                   <td className="py-2 text-right font-semibold tabular-nums">{formatearPesos(i.precioLista == null ? i.neto : Math.round(i.cantidad * i.precioLista))}</td>
                 </tr>
               ))}
@@ -117,6 +118,11 @@ export default async function PaginaOrdenProveedor({ params }: Props) {
             <p className="text-ink-soft">IVA 19% <span className="ml-2 tabular-nums">{formatearPesos(iva)}</span></p>
             <p className="font-display text-lg font-semibold text-ink">Total {formatearPesos(neto + iva)}</p>
           </div>
+          {o.moneda === "UF" && o.valorUf > 0 && (
+            <p className="mt-3 text-right text-xs text-ink-soft">
+              Cotizado en UF · valor UF {formatearPesosUnitario(o.valorUf)}. Los totales están en pesos.
+            </p>
+          )}
           {o.observaciones && (
             <p className="mt-4 whitespace-pre-line rounded-xl bg-mist/40 px-4 py-3 text-sm text-ink">
               <span className="block text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">Observaciones</span>

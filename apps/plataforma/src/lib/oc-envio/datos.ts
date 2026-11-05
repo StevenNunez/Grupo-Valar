@@ -49,11 +49,17 @@ export type OrdenParaEnviar = {
   numeroCotizacion: string | null;
   /** Descuento sobre el subtotal, en % (0102). */
   descuentoPorcentaje: number;
+  /** Orden cotizada en UF (0114): los precios se muestran en UF; los montos siguen en pesos. */
+  moneda: "CLP" | "UF";
+  /** Pesos por UF con que se convirtió. 0 si es en pesos. */
+  valorUf: number;
   items: {
     descripcion: string;
     unidad: string;
     cantidad: number;
     precioUnitario: number;
+    /** Precio unitario en UF (solo órdenes en UF). */
+    precioUf: number | null;
     /** Precio de lista antes del descuento de la orden (0102); nulo si no hay descuento. */
     precioLista: number | null;
     neto: number;
@@ -110,11 +116,14 @@ export async function cargarOrdenParaEnviar(
     fechaComprometida: o.fecha_comprometida,
     numeroCotizacion: (o.numero_cotizacion as string | null | undefined) ?? null,
     descuentoPorcentaje: Number(o.descuento_porcentaje ?? 0),
+    moneda: o.moneda === "UF" ? "UF" : "CLP",
+    valorUf: o.moneda === "UF" ? Number(o.valor_uf ?? 0) : 0,
     items: (items ?? []).map((i) => ({
       descripcion: i.descripcion,
       unidad: i.unidad,
       cantidad: Number(i.cantidad),
       precioUnitario: Number(i.precio_unitario),
+      precioUf: i.precio_uf == null ? null : Number(i.precio_uf),
       precioLista: i.precio_lista == null ? null : Number(i.precio_lista),
       // `neto` puede venir nulo en filas viejas: se recalcula igual que la pantalla.
       neto: i.neto === null ? Math.round(Number(i.cantidad) * Number(i.precio_unitario)) : Number(i.neto),

@@ -681,6 +681,9 @@ export async function cargarOrdenEnUf(ordenId: string): Promise<OrdenEnUf> {
   return { moneda: "UF", valorUf: Number(orden.data.valor_uf ?? 0), preciosUf };
 }
 
+/** Un precio en UF para mostrarlo: "12,5 UF", hasta 4 decimales. */
+export const formatearPrecioUf = (n: number) => `${n.toLocaleString("es-CL", { maximumFractionDigits: 4 })} UF`;
+
 /** Pesos por unidad a partir del precio en UF y la UF del día (hasta 4 decimales, como el precio unitario). */
 export const ufAPrecio = (precioUf: number, valorUf: number) => Math.round(precioUf * valorUf * 10000) / 10000;
 

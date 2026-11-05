@@ -19,6 +19,7 @@ import { formatearFecha, formatearMonto } from "@/lib/formato";
 import {
   cargarEnvios,
   cargarDescuentoDeOrden,
+  cargarOrdenEnUf,
   cargarFirmasDeOrden,
   cargarItemsDeOrden,
   cargarPaginaOrdenes,
@@ -575,12 +576,14 @@ function BotonIcono({
 function VistaImpresion({ orden, alCerrar }: { orden: Orden; alCerrar: () => void }) {
   const { estado } = useConsulta<Item[]>(() => cargarItemsDeOrden(orden.id));
   const descuento = useConsulta(() => cargarDescuentoDeOrden(orden.id));
+  const enUf = useConsulta(() => cargarOrdenEnUf(orden.id));
   const firmas = useConsulta(() => cargarFirmasDeOrden(orden.id));
 
   return (
     <Impresion titulo={`Vista previa · ${orden.numero}`} alCerrar={alCerrar}>
       {estado.estado === "listo" ? (
         <OrdenImprimible orden={orden} items={estado.datos} descuento={descuento.estado.estado === "listo" ? descuento.estado.datos : undefined}
+          enUf={enUf.estado.estado === "listo" ? enUf.estado.datos : undefined}
           firmas={firmas.estado.estado === "listo" ? firmas.estado.datos : null} />
       ) : (
         <p className="mx-auto max-w-[210mm] rounded-2xl bg-white p-10 text-center text-sm text-ink-soft">

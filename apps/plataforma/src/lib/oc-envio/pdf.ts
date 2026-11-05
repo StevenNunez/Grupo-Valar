@@ -249,7 +249,12 @@ export async function pdfDeOrden(o: OrdenParaEnviar): Promise<Uint8Array> {
     texto(it.unidad, col.um, y, { tam: 8.5 });
     texto(numero(it.cantidad), col.cant, y, { tam: 8.5, alinear: "der" });
     // Con descuento la línea se imprime a precio de lista; el descuento va aparte, en los totales.
-    texto(pesosUnitario(it.precioLista ?? it.precioUnitario), col.pu, y, { tam: 8.5, alinear: "der" });
+    texto(
+      o.moneda === "UF" && it.precioUf != null
+        ? `${it.precioUf.toLocaleString("es-CL", { maximumFractionDigits: 4 })} UF`
+        : pesosUnitario(it.precioLista ?? it.precioUnitario),
+      col.pu, y, { tam: 8.5, alinear: "der" },
+    );
     texto(pesos(it.precioLista == null ? it.neto : Math.round(it.cantidad * it.precioLista)), col.total, y, { tam: 8.5, fuente: negrita, alinear: "der" });
     y -= lineas.length * 11 + 4;
     raya(y + 2, 0.4);
@@ -265,9 +270,15 @@ export async function pdfDeOrden(o: OrdenParaEnviar): Promise<Uint8Array> {
   y -= 6;
   const xEtiqueta = derecha - 190;
   texto("Proyecto / Contrato", MARGEN, y, { tam: 8.5, color: SUAVE });
-  partir(o.proyecto ?? o.contratoId, xEtiqueta - MARGEN - 110, normal, 8.5)
-    .slice(0, 3)
-    .forEach((l, i) => texto(l, MARGEN + 100, y - i * 11, { tam: 8.5 }));
+  const proyectoLineas = partir(o.proyecto ?? o.contratoId, xEtiqueta - MARGEN - 110, normal, 8.5).slice(0, 3);
+  proyectoLineas.forEach((l, i) => texto(l, MARGEN + 100, y - i * 11, { tam: 8.5 }));
+  if (o.moneda === "UF" && o.valorUf > 0) {
+    texto("Moneda", MARGEN, y - proyectoLineas.length * 11 - 3, { tam: 8.5, color: SUAVE });
+    texto(
+      `Cotizado en UF · valor UF ${pesosUnitario(o.valorUf)}`,
+      MARGEN + 100, y - proyectoLineas.length * 11 - 3, { tam: 8.5 },
+    );
+  }
   if (descuento > 0) {
     texto("Subtotal", xEtiqueta, y, { tam: 9, color: SUAVE });
     texto(pesos(subtotal), derecha, y, { tam: 9, alinear: "der" });

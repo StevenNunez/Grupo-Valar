@@ -4,7 +4,7 @@ import { LogoMark } from "./Logo";
 import { FirmaTeoLabs } from "./FirmaTeoLabs";
 import { useEmpresa } from "@/lib/empresa-cliente";
 import { formatearFecha, formatearNumero, formatearPesos, formatearPesosUnitario } from "@/lib/formato";
-import type { DescuentoDeOrden, FirmasImpresas, Item, Orden } from "@/lib/ordenes";
+import { formatearPrecioUf, type DescuentoDeOrden, type FirmasImpresas, type Item, type Orden, type OrdenEnUf } from "@/lib/ordenes";
 
 /**
  * La orden de compra lista para imprimir, con el mismo formato que Valar ya
@@ -15,7 +15,7 @@ import type { DescuentoDeOrden, FirmasImpresas, Item, Orden } from "@/lib/ordene
  * hacer PDF y no necesita servidor. Las reglas de `@media print` de
  * `globals.css` esconden el resto de la aplicación y dejan solo esta hoja.
  */
-export function OrdenImprimible({ orden, items, descuento, firmas }: { orden: Orden; items: Item[]; descuento?: DescuentoDeOrden; firmas?: FirmasImpresas | null }) {
+export function OrdenImprimible({ orden, items, descuento, enUf, firmas }: { orden: Orden; items: Item[]; descuento?: DescuentoDeOrden; enUf?: OrdenEnUf; firmas?: FirmasImpresas | null }) {
   const datos = useEmpresa();
   const neto = items.reduce((t, i) => t + i.neto, 0);
   const iva = items.reduce((t, i) => t + i.iva, 0);
@@ -106,7 +106,7 @@ export function OrdenImprimible({ orden, items, descuento, firmas }: { orden: Or
               </td>
               <td className="py-2.5">{i.unidad}</td>
               <td className="py-2.5 text-right tabular-nums">{formatearNumero(i.cantidad)}</td>
-              <td className="py-2.5 text-right tabular-nums">{formatearPesosUnitario(lista(i) ?? i.precioUnitario)}</td>
+              <td className="py-2.5 text-right tabular-nums">{enUf?.moneda === "UF" && enUf.preciosUf.has(i.id) ? formatearPrecioUf(enUf.preciosUf.get(i.id)!) : formatearPesosUnitario(lista(i) ?? i.precioUnitario)}</td>
               <td className="py-2.5 text-right font-semibold tabular-nums">
                 {formatearPesos(totalLinea(i))}
               </td>
@@ -126,6 +126,9 @@ export function OrdenImprimible({ orden, items, descuento, firmas }: { orden: Or
       <div className="mt-6 flex flex-col gap-6 sm:flex-row sm:justify-between">
         <div className="text-sm">
           <Dato etiqueta="Proyecto / Contrato" valor={orden.proyecto ?? orden.contratoId} />
+          {enUf?.moneda === "UF" && enUf.valorUf > 0 && (
+            <Dato etiqueta="Moneda" valor={`Cotizado en UF · valor UF ${formatearPesosUnitario(enUf.valorUf)}`} />
+          )}
           <Dato etiqueta="Estado" valor={orden.estado.toUpperCase()} />
         </div>
 
