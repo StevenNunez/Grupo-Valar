@@ -48,14 +48,19 @@ const sumarDias = (fecha: string, dias: number) => {
 /** "30 días" → 30. Sin número, 30. */
 const diasDe = (condicion: string | null) => Number(/\d+/.exec(condicion ?? "")?.[0] ?? 30);
 
+/** Una factura que el SII ya tiene: llena el formulario de «Agregar factura» con sus datos. */
+export type FacturaSugerida = { documento: string; fechaFactura: string | null; neto: number; iva: number };
+
 export function CicloOrden({
   orden,
   modoInicial = "ver",
+  sugerida,
   alCerrar,
   alCambiar,
 }: {
   orden: Orden;
   modoInicial?: Modo;
+  sugerida?: FacturaSugerida;
   alCerrar: () => void;
   /** Para que la lista de afuera se relea: el estado y los montos cambiaron. */
   alCambiar: () => void;
@@ -129,7 +134,7 @@ export function CicloOrden({
           ciclo={seRecibeEnPagnol ? { ...estado.datos, lineas: estado.datos.lineas.filter((l) => !l.pagnolMaterialId) } : estado.datos}
           alVolver={() => setModo("ver")} alHecho={hecho} />
       ) : modo === "facturar" ? (
-        <FormFactura orden={orden} ciclo={estado.datos} alVolver={() => setModo("ver")} alHecho={hecho} />
+        <FormFactura orden={orden} ciclo={estado.datos} sugerida={sugerida} alVolver={() => setModo("ver")} alHecho={hecho} />
       ) : modo === "corregir" && facturaCorregida ? (
         <FormFactura orden={orden} ciclo={estado.datos} factura={facturaCorregida} alVolver={() => setModo("ver")} alHecho={hecho} />
       ) : modo === "nc" ? (
@@ -577,23 +582,31 @@ function FormRecepcion({ orden, ciclo, alVolver, alHecho }: { orden: Orden; cicl
 
 /* ── Factura ──────────────────────────────────────────────────────────────── */
 
-function FormFactura({ orden, ciclo, factura, alVolver, alHecho }: { orden: Orden; ciclo: Ciclo; factura?: FacturaCiclo; alVolver: () => void; alHecho: () => void }) {
+function FormFactura({ orden, ciclo, factura, sugerida, alVolver, alHecho }: { orden: Orden; ciclo: Ciclo; factura?: FacturaCiclo; sugerida?: FacturaSugerida; alVolver: () => void; alHecho: () => void }) {
   const plazo = diasDe(orden.condicionesPago);
   // Parte sin nada marcado: la factura trae solo algunas líneas, y se marcan las que trae.
   // Si todas partieran marcadas, la primera factura se llevaría la orden entera y no quedaría cómo agregar las demás.
   // Al corregir, parte con lo que la factura ya cubre; y cada línea puede subir hasta lo que cubre + lo que aún no se factura.
   const propias = new Map((factura?.lineas ?? []).map((x) => [x.itemId, x.cantidad]));
   const maximo = (l: LineaCiclo) => facturable(l) + (propias.get(l.id) ?? 0);
-  const [cantidades, setCantidades] = useState(() => inicialDe(ciclo.lineas, (l) => propias.get(l.id) ?? 0));
+  /* Con una factura del SII a la vista: si su neto es justo lo que falta facturar de la orden, parten marcadas
+     todas las líneas; si no (factura parcial), se marcan las que cubre. */
+  const todasLasFacturables = inicialDe(ciclo.lineas, (l) => facturable(l));
+  const sugeridaCalza = !!sugerida && !factura && Math.abs(netoDe(ciclo.lineas, todasLasFacturables) - sugerida.neto) <= 2;
+  const [cantidades, setCantidades] = useState(() => (sugeridaCalza ? todasLasFacturables : inicialDe(ciclo.lineas, (l) => propias.get(l.id) ?? 0)));
   const sugerido = netoDe(ciclo.lineas, cantidades);
+  const fechaSugerida = sugerida?.fechaFactura ?? hoy();
   const f = useFormulario(factura
     ? { documento: factura.documento, fechaFactura: factura.fechaFactura ?? hoy(), vencimiento: factura.vencimiento ?? "", neto: factura.neto, iva: factura.iva }
-    : { documento: "", fechaFactura: hoy(), vencimiento: sumarDias(hoy(), plazo), neto: sugerido, iva: Math.round(sugerido * 0.19) });
+    : sugerida
+      ? { documento: sugerida.documento, fechaFactura: fechaSugerida, vencimiento: sumarDias(fechaSugerida, plazo), neto: sugerida.neto, iva: sugerida.iva }
+      : { documento: "", fechaFactura: hoy(), vencimiento: sumarDias(hoy(), plazo), neto: sugerido, iva: Math.round(sugerido * 0.19) });
   // Una factura que se corrige conserva su monto hasta que se toque una línea: ahí sigue a las líneas, salvo que se escriba otro.
-  const [netoTocado, setNetoTocado] = useState(false);
+  // La que viene del SII también: su monto es el que dice el documento.
+  const [netoTocado, setNetoTocado] = useState(!!sugerida);
   // El IVA no se escribe: el 19% del neto, o nada si la factura es exenta.
   // Una orden sin IVA (exámenes médicos, capacitación) llega facturada exenta.
-  const [exento, setExento] = useState(factura ? factura.neto > 0 && factura.iva === 0 : orden.neto > 0 && orden.total === orden.neto);
+  const [exento, setExento] = useState(factura ? factura.neto > 0 && factura.iva === 0 : sugerida ? sugerida.neto > 0 && sugerida.iva === 0 : orden.neto > 0 && orden.total === orden.neto);
   const netoLineas = netoDe(ciclo.lineas, cantidades);
   const noLlegado = ciclo.lineas.reduce((t, l) => t + Math.max(0, (cantidades[l.id] ?? 0) - l.recibidaSinFacturar) * l.precioUnitario, 0);
 

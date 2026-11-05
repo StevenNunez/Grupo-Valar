@@ -17,6 +17,7 @@ import { Contenido, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
 import { BotonImprimir, Impresion } from "../ui/Impresion";
 import { CuadroDePago } from "../CuadroDePago";
 import { CicloOrden } from "../CicloOrden";
+import { FacturasSii } from "../FacturasSii";
 import { PagosDeFactura } from "../PagosDeFactura";
 import { ParametrosDePago } from "../ParametrosDePago";
 import { useConsulta } from "@/lib/consulta";
@@ -85,12 +86,13 @@ async function cargar(): Promise<Datos> {
   return { cuentas, proveedores, parametros };
 }
 
-type Pestana = "vencimiento" | "proveedor" | "semana";
+type Pestana = "vencimiento" | "proveedor" | "semana" | "sii";
 
 const pestanas: { id: Pestana; titulo: string }[] = [
   { id: "vencimiento", titulo: "Por vencimiento" },
   { id: "proveedor", titulo: "Por proveedor" },
   { id: "semana", titulo: "Cuadro de la semana" },
+  { id: "sii", titulo: "Facturas del SII" },
 ];
 
 export function VistaPagos() {
@@ -126,6 +128,9 @@ export function VistaPagos() {
 function Tablero({ datos, recargar }: { datos: Datos; recargar: () => void }) {
   const [pestana, setPestana] = useFiltro<Pestana>("pagos:pestana", "vencimiento");
   const [facturando, setFacturando] = useState<CuentaPorPagar | null>(null);
+  const emiteOrdenes = usePuede("ordenes.emitir");
+  const cargaGestion = usePuede("gestion.editar");
+  const puedeCargarSii = emiteOrdenes || cargaGestion;
   const [imprimiendo, setImprimiendo] = useState(false);
 
   const fechas = useMemo(
@@ -271,6 +276,15 @@ function Tablero({ datos, recargar }: { datos: Datos; recargar: () => void }) {
         >
           <Semana lineas={deLaSemana} recargar={recargar} semana={semana} />
         </Panel>
+      )}
+
+      {pestana === "sii" && (
+        <FacturasSii
+          cuentas={datos.cuentas}
+          puedeCargar={puedeCargarSii}
+          alCambiarPagos={recargar}
+          selectorDeVista={<Filtro etiqueta="Vista" opciones={pestanas} valor={pestana} alCambiar={setPestana} />}
+        />
       )}
 
       {facturando?.origen === "orden" && facturando.ordenId && (
