@@ -30,11 +30,14 @@ import { cancelarOrdenEnPagnol } from "@/lib/pagnol/navegador";
 import { opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
 import { tiposCompra } from "@/lib/egresos";
 import { emisorOC } from "@/lib/empresa";
-import { formatearPesos, formatearPesosUnitario } from "@/lib/formato";
+import { formatearPesos, formatearPesosUnitario, formatearUf } from "@/lib/formato";
+import { useUfHoy } from "@/lib/uf";
 import {
   cargarLineasDeOrden,
   eliminarOrdenCompleta,
   cargarDescuentoDeOrden,
+  cargarOrdenEnUf,
+  ufAPrecio,
   eliminarOrdenConItems,
   estadosOrden,
   precioConDescuento,
@@ -93,6 +96,8 @@ type Linea = {
   unidad: string;
   cantidad: number;
   precio_unitario: number;
+  /** Precio unitario cotizado en UF (solo si la orden es en UF). */
+  precio_uf: number;
   tipo: "ordinario" | "reembolsable";
   categoria_id: string;
   /** El material en Pagnol, si se eligió de su catálogo. Solo la referencia. */
@@ -108,7 +113,7 @@ type Linea = {
    cierra sin guardar —un clic de más, la pestaña que se cae—, al volver a abrir
    "Nueva orden" se ofrece recuperarla. Se borra al crear la orden. */
 
-type Guardado = { datos: BorradorOrden; lineas: Linea[]; cuando: string };
+type Guardado = { datos: BorradorOrden; lineas: Linea[]; cuando: string; enUf?: boolean; valorUf?: number };
 
 function leerGuardado(clave: string | null): Guardado | null {
   if (!clave) return null;
@@ -131,7 +136,7 @@ function olvidarGuardado(clave: string | null) {
 
 /** Vale la pena guardarla si ya tiene proveedor o algún ítem escrito. */
 const tieneAlgo = (d: BorradorOrden, lineas: Linea[]) =>
-  !!d.proveedor_id || lineas.some((l) => l.descripcion.trim() || l.precio_unitario > 0);
+  !!d.proveedor_id || lineas.some((l) => l.descripcion.trim() || l.precio_unitario > 0 || l.precio_uf > 0);
 
 function borradorDe(
   orden: Orden | null,
@@ -207,6 +212,7 @@ function lineaVacia(n: number): Linea {
     unidad: "UN",
     cantidad: 1,
     precio_unitario: 0,
+    precio_uf: 0,
     tipo: "ordinario",
     categoria_id: "",
     pagnol_material_id: "",
@@ -264,6 +270,18 @@ export function FormularioOrden({
   /** Número de la cotización del proveedor (0104), opcional. Aparte de `f.datos` para que guardar siga andando sin la migración. */
   const [cotizacion, setCotizacion] = useState("");
   const [cotizacionInicial, setCotizacionInicial] = useState("");
+  /* Orden cotizada en UF (0114). Los precios se escriben en UF y se guardan en pesos
+     con la UF de acá, que queda fija en la orden. Aparte de `f.datos` para que
+     guardar siga andando sin la migración. */
+  const [enUf, setEnUf] = useState(false);
+  const [enUfInicial, setEnUfInicial] = useState(false);
+  const [valorUf, setValorUf] = useState(0);
+  const ufHoy = useUfHoy();
+  // Al pasar a UF se propone la de hoy; después se puede corregir (p. ej. la del día de la cotización).
+  function elegirMoneda(uf: boolean) {
+    setEnUf(uf);
+    if (uf && valorUf === 0 && ufHoy) setValorUf(ufHoy.valorHoy);
+  }
 
   const claveGuardado = editando ? null : `oc-borrador:${usuario.id}:nueva`;
   /* La que quedó de antes, mientras no se decida qué hacer con ella. Hasta
@@ -278,7 +296,7 @@ export function FormularioOrden({
         if (tieneAlgo(f.datos, lineas)) {
           localStorage.setItem(
             claveGuardado,
-            JSON.stringify({ datos: f.datos, lineas, cuando: new Date().toISOString() } satisfies Guardado),
+            JSON.stringify({ datos: f.datos, lineas, cuando: new Date().toISOString(), enUf, valorUf } satisfies Guardado),
           );
         }
       } catch {
@@ -286,13 +304,17 @@ export function FormularioOrden({
       }
     }, 400);
     return () => clearTimeout(t);
-  }, [claveGuardado, pendiente, f.datos, lineas]);
+  }, [claveGuardado, pendiente, f.datos, lineas, enUf, valorUf]);
 
   function recuperar() {
     if (!pendiente) return;
     // El número propuesto se recalcula: el que tenía puede ya estar usado.
     f.setDatos((d) => ({ ...pendiente.datos, numero: d.numero }));
     setLineas(pendiente.lineas);
+    if (pendiente.enUf) {
+      setEnUf(true);
+      setValorUf(pendiente.valorUf ?? 0);
+    }
     setPendiente(null);
   }
 
@@ -311,8 +333,11 @@ export function FormularioOrden({
     let vigente = true;
 
     if (orden) {
-      Promise.all([cargarLineasDeOrden(orden.id), cargarDescuentoDeOrden(orden.id)]).then(([items, desc]) => {
+      Promise.all([cargarLineasDeOrden(orden.id), cargarDescuentoDeOrden(orden.id), cargarOrdenEnUf(orden.id)]).then(([items, desc, uf]) => {
         if (!vigente) return;
+        setEnUf(uf.moneda === "UF");
+        setEnUfInicial(uf.moneda === "UF");
+        setValorUf(uf.valorUf);
         setExenta(items.length > 0 && items.every((i) => i.iva === 0));
         setDescuento(desc.porcentaje);
         setDescuentoInicial(desc.porcentaje);
@@ -326,6 +351,7 @@ export function FormularioOrden({
             cantidad: i.cantidad,
             // Se edita el precio de lista; el descuento se aplica al guardar.
             precio_unitario: desc.listas.get(i.id) ?? i.precioUnitario,
+            precio_uf: uf.preciosUf.get(i.id) ?? 0,
             tipo: i.tipo,
             categoria_id: i.categoriaId ?? "",
             pagnol_material_id: i.pagnolMaterialId ?? "",
@@ -407,8 +433,10 @@ export function FormularioOrden({
   ];
 
   // Lo que se paga por línea: la lista menos el descuento. Es lo mismo que se guarda.
-  const netoDe = (l: Linea) => Math.round(l.cantidad * precioConDescuento(l.precio_unitario, descuento));
-  const subtotal = lineas.reduce((t, l) => t + Math.round(l.cantidad * l.precio_unitario), 0);
+  // El precio de lista en pesos: el escrito, o el de UF convertido con la UF de la orden.
+  const listaEnPesos = (l: Linea) => (enUf ? ufAPrecio(l.precio_uf, valorUf) : l.precio_unitario);
+  const netoDe = (l: Linea) => Math.round(l.cantidad * precioConDescuento(listaEnPesos(l), descuento));
+  const subtotal = lineas.reduce((t, l) => t + Math.round(l.cantidad * listaEnPesos(l)), 0);
   const neto = lineas.reduce((t, l) => t + netoDe(l), 0);
   const iva = exenta ? 0 : Math.round(neto * 0.19);
   const reembolsable = lineas.filter((l) => l.tipo === "reembolsable").reduce((t, l) => t + netoDe(l), 0);
@@ -431,7 +459,14 @@ export function FormularioOrden({
   function agregarPegadas(filas: FilaPegada[]) {
     setLineas((ls) => {
       const conAlgo = ls.filter((l) => l.descripcion.trim() || !l.nuevo);
-      return [...conAlgo, ...filas.map((fila, i) => lineaPegada(fila, conAlgo.length + i))];
+      return [
+        ...conAlgo,
+        ...filas.map((fila, i) => {
+          const l = lineaPegada(fila, conAlgo.length + i);
+          // En una orden en UF el precio de la planilla es el precio en UF.
+          return enUf ? { ...l, precio_unitario: 0, precio_uf: fila.precioUnitario } : l;
+        }),
+      ];
     });
     setTextoPegado("");
     setPegando(false);
@@ -456,6 +491,10 @@ export function FormularioOrden({
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const ordenId = editando ? orden.id : codigoInterno;
+    if (enUf && !(valorUf > 0)) {
+      f.setError("Falta el valor de la UF: sin él no se pueden pasar los precios a pesos.");
+      return;
+    }
 
     // Los campos de fecha vacíos van nulos: una cadena vacía no es una fecha.
     // El proyecto vacío también: significa "contrato base", y lo que se imprime
@@ -473,6 +512,8 @@ export function FormularioOrden({
       proveedor_id: f.datos.proveedor_id || null,
       // Sin descuento antes ni ahora no se manda: así guardar sigue andando aunque falte la 0102.
       ...(descuento > 0 || descuentoInicial > 0 ? { descuento_porcentaje: descuento } : {}),
+      // Igual con la UF (0114): solo se manda si es en UF o lo era.
+      ...(enUf || enUfInicial ? { moneda: enUf ? "UF" : "CLP", valor_uf: enUf ? valorUf : null } : {}),
       // Igual: sin número antes ni ahora no se manda (y se puede borrar uno ya puesto).
       ...(cotizacion.trim() || cotizacionInicial ? { numero_cotizacion: cotizacion.trim() || null } : {}),
     };
@@ -515,10 +556,11 @@ export function FormularioOrden({
           unidad: l.unidad || "UN",
           cantidad: l.cantidad || 1,
           // Con descuento, el precio que se paga es el de lista menos el descuento; la lista queda aparte.
-          precio_unitario: precioConDescuento(l.precio_unitario, descuento),
-          ...(descuento > 0 || descuentoInicial > 0 ? { precio_lista: descuento > 0 ? l.precio_unitario : null } : {}),
+          precio_unitario: precioConDescuento(listaEnPesos(l), descuento),
+          ...(descuento > 0 || descuentoInicial > 0 ? { precio_lista: descuento > 0 ? listaEnPesos(l) : null } : {}),
           // El IVA de la línea sigue la regla general, salvo en la orden exenta.
-          iva: exenta ? 0 : Math.round(l.cantidad * precioConDescuento(l.precio_unitario, descuento) * 0.19),
+          iva: exenta ? 0 : Math.round(l.cantidad * precioConDescuento(listaEnPesos(l), descuento) * 0.19),
+          ...(enUf || enUfInicial ? { precio_uf: enUf ? l.precio_uf : null } : {}),
           tipo: l.tipo,
         };
 
@@ -734,7 +776,20 @@ export function FormularioOrden({
               <h3 className="font-display text-base font-semibold text-ink">
                 Ítems de la orden
               </h3>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <div role="group" aria-label="Moneda de la cotización" className="inline-flex overflow-hidden rounded-full border border-mist-deep text-sm font-semibold">
+                  {([["CLP", "Pesos"], ["UF", "UF"]] as const).map(([id, titulo]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      aria-pressed={enUf === (id === "UF")}
+                      onClick={() => elegirMoneda(id === "UF")}
+                      className={`px-4 py-2 transition-colors ${enUf === (id === "UF") ? "bg-cyan text-white" : "text-ink-soft hover:text-ink"}`}
+                    >
+                      {titulo}
+                    </button>
+                  ))}
+                </div>
                 <button
                   type="button"
                   onClick={() => setPegando((p) => !p)}
@@ -755,6 +810,24 @@ export function FormularioOrden({
                 </button>
               </div>
             </div>
+
+            {enUf && (
+              <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-cyan/30 bg-cyan/5 px-4 py-3 text-sm text-ink">
+                <label className="flex items-center gap-2 font-semibold">
+                  Valor de la UF
+                  <CampoPrecio
+                    ariaLabel="Valor de la UF en pesos"
+                    valor={valorUf}
+                    alCambiar={setValorUf}
+                    className="w-32 rounded-lg border border-mist-deep bg-white px-2.5 py-1.5 text-right text-sm tabular-nums text-ink outline-none focus:border-cyan focus:ring-2 focus:ring-cyan/20"
+                  />
+                </label>
+                <span className="text-xs text-ink-soft">
+                  Los precios se escriben en UF y la orden se guarda en pesos con este valor, que queda fijo.
+                  {ufHoy ? <> La UF de hoy es {formatearPesosUnitario(ufHoy.valorHoy)}.</> : null}
+                </span>
+              </div>
+            )}
 
             {pegando && (
               <div className="mb-5 rounded-xl border border-mist-deep bg-mist/30 p-4">
@@ -842,7 +915,7 @@ export function FormularioOrden({
                     <th className="w-40 py-2 pr-3">Categoría</th>
                     <th className="w-20 py-2 pr-3">UM</th>
                     <th className="w-24 py-2 pr-3 text-right">Cant.</th>
-                    <th className="w-32 py-2 pr-3 text-right">P. unitario</th>
+                    <th className="w-32 py-2 pr-3 text-right">{enUf ? "P. unitario (UF)" : "P. unitario"}</th>
                     <th className="w-36 py-2 pr-3">Tipo</th>
                     <th className="w-28 py-2 text-right">Total</th>
                     <th className="w-10 py-2" />
@@ -906,10 +979,15 @@ export function FormularioOrden({
                       </td>
                       <td className="py-2 pr-3">
                         <CampoPrecio
-                          valor={l.precio_unitario}
-                          alCambiar={(n) => cambiar(l.id, "precio_unitario", n)}
+                          valor={enUf ? l.precio_uf : l.precio_unitario}
+                          alCambiar={(n) => cambiar(l.id, enUf ? "precio_uf" : "precio_unitario", n)}
                           className={`${claseCelda} text-right tabular-nums`}
                         />
+                        {enUf && l.precio_uf > 0 && valorUf > 0 && (
+                          <p className="mt-0.5 text-right text-[11px] tabular-nums text-ink-soft">
+                            = {formatearPesosUnitario(listaEnPesos(l))}
+                          </p>
+                        )}
                       </td>
                       <td className="py-2 pr-3">
                         <select
@@ -925,7 +1003,10 @@ export function FormularioOrden({
                         </select>
                       </td>
                       <td className="py-2 text-right font-semibold tabular-nums text-ink">
-                        {formatearPesos(Math.round(l.cantidad * l.precio_unitario))}
+                        {formatearPesos(Math.round(l.cantidad * listaEnPesos(l)))}
+                        {enUf && l.precio_uf > 0 && (
+                          <p className="text-[11px] font-normal text-ink-soft">{formatearUf(l.cantidad * l.precio_uf)} UF</p>
+                        )}
                       </td>
                       <td className="py-2 text-right">
                         <button

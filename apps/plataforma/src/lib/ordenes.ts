@@ -657,6 +657,33 @@ export async function cargarDescuentoDeOrden(ordenId: string): Promise<Descuento
   };
 }
 
+/* ── Orden cotizada en UF (0114) ──────────────────────────────────────────── */
+
+export type OrdenEnUf = {
+  moneda: "CLP" | "UF";
+  /** Pesos por UF con que se convirtió. 0 si la orden es en pesos. */
+  valorUf: number;
+  /** Precio unitario en UF por línea (id del ítem). Vacío si es en pesos. */
+  preciosUf: Map<string, number>;
+};
+
+/** La moneda de una orden y sus precios en UF. Sin la 0114 aplicada, siempre pesos. */
+export async function cargarOrdenEnUf(ordenId: string): Promise<OrdenEnUf> {
+  const [orden, items] = await Promise.all([
+    supabase.from("ordenes_compra_proveedor").select("moneda, valor_uf").eq("id", ordenId).maybeSingle(),
+    supabase.from("items_compra").select("id, precio_uf").eq("orden_id", ordenId),
+  ]);
+  if (orden.error || items.error || orden.data?.moneda !== "UF") {
+    return { moneda: "CLP", valorUf: 0, preciosUf: new Map() };
+  }
+  const preciosUf = new Map<string, number>();
+  for (const i of items.data ?? []) if (i.precio_uf != null) preciosUf.set(i.id as string, Number(i.precio_uf));
+  return { moneda: "UF", valorUf: Number(orden.data.valor_uf ?? 0), preciosUf };
+}
+
+/** Pesos por unidad a partir del precio en UF y la UF del día (hasta 4 decimales, como el precio unitario). */
+export const ufAPrecio = (precioUf: number, valorUf: number) => Math.round(precioUf * valorUf * 10000) / 10000;
+
 /* ── Envío al proveedor (0069) ────────────────────────────────────────────── */
 
 /**
