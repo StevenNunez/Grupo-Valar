@@ -45,7 +45,34 @@ export type LecturaCotizacion = {
   descuento: number | null;
   /** Qué pasó, en una frase, para mostrarlo en pantalla. */
   aviso: string | null;
+  /** El número que el proveedor le puso a su cotización, si lo trae. */
+  numero: string | null;
+  /** Los RUT que aparecen en el documento, sin puntos y con guion («76123456-7»). Sirven para reconocer al proveedor. */
+  ruts: string[];
 };
+
+type LecturaBase = Omit<LecturaCotizacion, "numero" | "ruts">;
+
+/**
+ * «Cotización N° 1234», «COTIZACIÓN: 5678», «Cotiz. Nro 90». Exige la marca
+ * (N°, Nro, #, dos puntos) para no tomar «cotización válida por 30 días».
+ */
+function detectarNumero(texto: string): string | null {
+  const m =
+    /cotizaci[oó]n\s*(?:n[°ºo]\.?|nro\.?|n[úu]mero|#)\s*:?\s*([A-Za-z]{0,4}-?\d[\w-]{0,14})/i.exec(texto) ??
+    /cotizaci[oó]n\s*:\s*([A-Za-z]{0,4}-?\d[\w-]{0,14})/i.exec(texto) ??
+    /\bcotiz\.?\s*(?:n[°ºo]\.?|nro\.?|#)\s*:?\s*([A-Za-z]{0,4}-?\d[\w-]{0,14})/i.exec(texto);
+  return m ? m[1].trim() : null;
+}
+
+/** Todos los RUT del texto, normalizados («76.123.456-7» → «76123456-7»), sin repetir. */
+function detectarRuts(texto: string): string[] {
+  const vistos = new Set<string>();
+  for (const m of texto.matchAll(/\b(\d{1,2}(?:\.?\d{3}){2})\s*-\s*([\dkK])\b/g)) {
+    vistos.add(`${m[1].replace(/\./g, "")}-${m[2].toUpperCase()}`);
+  }
+  return [...vistos];
+}
 
 /* ── Números chilenos ─────────────────────────────────────────────────────── */
 
@@ -197,6 +224,14 @@ export type Renglon = { y: number; trozos: Trozo[] };
  * corre en la app y no una copia parecida.
  */
 export function interpretar(renglones: Renglon[], textoCompleto: string): LecturaCotizacion {
+  return {
+    ...interpretarFilas(renglones, textoCompleto),
+    numero: detectarNumero(textoCompleto),
+    ruts: detectarRuts(textoCompleto),
+  };
+}
+
+function interpretarFilas(renglones: Renglon[], textoCompleto: string): LecturaBase {
   const porTabla = interpretarConTabla(renglones, textoCompleto);
   if (porTabla.filas.length > 0) return porTabla;
 
@@ -220,7 +255,7 @@ export function interpretar(renglones: Renglon[], textoCompleto: string): Lectur
   return filas.length > 0 ? { ...porTabla, filas, aviso: null } : porTabla;
 }
 
-function interpretarConTabla(renglones: Renglon[], textoCompleto: string): LecturaCotizacion {
+function interpretarConTabla(renglones: Renglon[], textoCompleto: string): LecturaBase {
   const cabecera = buscarCabecera(renglones);
 
   if (!cabecera) {

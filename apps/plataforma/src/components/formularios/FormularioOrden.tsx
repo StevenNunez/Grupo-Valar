@@ -49,6 +49,7 @@ import {
 import { leerPegado, type FilaPegada } from "@/lib/pegado";
 import { CampoConPagnol, unidadDesdePagnol } from "../ui/CampoConPagnol";
 import { CampoPrecio } from "../ui/CampoPrecio";
+import { LectorCotizacionOrden, type ResultadoLectura } from "./LectorCotizacionOrden";
 import type { Usuario } from "@/lib/sesion";
 
 /**
@@ -472,6 +473,25 @@ export function FormularioOrden({
     setPegando(false);
   }
 
+  /* Leer el PDF de la cotización del proveedor: las líneas, y de paso el
+     proveedor, la forma de pago, el N.º de cotización y el descuento. */
+  const [leyendoPdf, setLeyendoPdf] = useState(false);
+  function aplicarLectura(r: ResultadoLectura) {
+    const filas: FilaPegada[] = r.filas.map((x) => ({ ...x, unidad: "UN" }));
+    if (r.flete && r.flete > 0) {
+      filas.push({ descripcion: "Flete", unidad: "UN", cantidad: 1, precioUnitario: r.flete });
+    }
+    agregarPegadas(filas);
+    if (r.proveedorId) elegirProveedor(r.proveedorId);
+    if (r.condicion) {
+      const condicion = r.condicion;
+      f.setDatos((d) => ({ ...d, condiciones_pago: condicion }));
+    }
+    if (r.numero) setCotizacion(r.numero);
+    if (r.descuentoPorcentaje) setDescuento(r.descuentoPorcentaje);
+    setLeyendoPdf(false);
+  }
+
   /** Pegar varias celdas directo en una descripción también sirve. */
   function alPegarEnCelda(e: React.ClipboardEvent<HTMLInputElement>) {
     const texto = e.clipboardData.getData("text");
@@ -792,6 +812,14 @@ export function FormularioOrden({
                 </div>
                 <button
                   type="button"
+                  onClick={() => setLeyendoPdf((p) => !p)}
+                  aria-expanded={leyendoPdf}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep"
+                >
+                  Leer cotización (PDF)
+                </button>
+                <button
+                  type="button"
                   onClick={() => setPegando((p) => !p)}
                   aria-expanded={pegando}
                   className="inline-flex items-center gap-1.5 rounded-full border border-cyan px-4 py-2 text-sm font-semibold text-cyan-deep transition-colors hover:bg-cyan/5"
@@ -827,6 +855,16 @@ export function FormularioOrden({
                   {ufHoy ? <> La UF de hoy es {formatearPesosUnitario(ufHoy.valorHoy)}.</> : null}
                 </span>
               </div>
+            )}
+
+            {leyendoPdf && (
+              <LectorCotizacionOrden
+                proveedores={proveedores}
+                proveedorActual={f.datos.proveedor_id}
+                enUf={enUf}
+                alAplicar={aplicarLectura}
+                alCerrar={() => setLeyendoPdf(false)}
+              />
             )}
 
             {pegando && (
