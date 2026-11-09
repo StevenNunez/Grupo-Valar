@@ -30,7 +30,7 @@ import {
   type Solped,
 } from "@/lib/abastecimiento";
 import { useListaServidor, useRetardado } from "@/lib/lista-servidor";
-import { cargarContratosBreve, type ContratoBreve } from "@/lib/contratos";
+import { cargarContratosBreve, opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
 import { actualizar } from "@/lib/crud";
 import { cargarDashboard, type FilaCategoria } from "@/lib/dashboard";
 import { formatearFecha, formatearNumero } from "@/lib/formato";
@@ -128,6 +128,7 @@ export function VistaSolped() {
 
   const [filtro, setFiltro] = useFiltro<Filtrado>("solped:estado", "todas");
   const [mes, setMes] = useFiltro("solped:mes", "");
+  const [contrato, setContrato] = useFiltro("solped:contrato", "");
   const [texto, setTexto] = useState("");
   const [orden, setOrden] = useState<OrdenDeListaSolped>("fecha-desc");
   const buscado = useRetardado(texto);
@@ -138,11 +139,12 @@ export function VistaSolped() {
       estados: filtro === "por-aprobar" ? ["en-aprobacion"] : filtro === "cerradas" ? CERRADAS : null,
       excluir: filtro === "abiertas" || filtro === "incompletas" ? CERRADAS : null,
       conCompra: filtro === "incompletas",
+      contrato,
       mes,
       texto: buscado,
       orden,
     }),
-    [filtro, mes, buscado, orden],
+    [filtro, contrato, mes, buscado, orden],
   );
 
   const pendientes = estado.estado === "listo" ? estado.datos.pendientes : null;
@@ -178,6 +180,9 @@ export function VistaSolped() {
               lista={lista}
               filtro={filtro}
               alFiltrar={setFiltro}
+              contratos={datos.contratos}
+              contrato={contrato}
+              alElegirContrato={setContrato}
               mes={mes}
               alElegirMes={setMes}
               texto={texto}
@@ -259,6 +264,9 @@ function Contenidos({
   filtro,
   alFiltrar,
   mes,
+  contratos,
+  contrato,
+  alElegirContrato,
   alElegirMes,
   texto,
   alBuscar,
@@ -273,6 +281,9 @@ function Contenidos({
   lista: ReturnType<typeof useListaServidor<Solped, FiltrosSolped>>;
   filtro: Filtrado;
   alFiltrar: (f: Filtrado) => void;
+  contratos: ContratoBreve[];
+  contrato: string;
+  alElegirContrato: (c: string) => void;
   mes: string;
   alElegirMes: (m: string) => void;
   texto: string;
@@ -347,6 +358,19 @@ function Contenidos({
             aria-label="Buscar solicitudes"
             className="min-w-[16rem] flex-1 rounded-full border border-mist-deep bg-white px-4 py-2 text-sm text-ink outline-none transition-colors placeholder:text-ink-soft/60 focus:border-cyan focus:ring-2 focus:ring-cyan/20"
           />
+          <select
+            value={contrato}
+            onChange={(e) => alElegirContrato(e.target.value)}
+            aria-label="Contrato"
+            className="max-w-[16rem] rounded-full border border-mist-deep bg-white px-4 py-2 text-sm font-semibold text-ink-soft"
+          >
+            <option value="">Todos los contratos</option>
+            {opcionesDeContrato(contratos).map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.titulo}
+              </option>
+            ))}
+          </select>
           <select
             value={mes}
             onChange={(e) => alElegirMes(e.target.value)}

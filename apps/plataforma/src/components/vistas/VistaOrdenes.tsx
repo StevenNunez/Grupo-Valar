@@ -14,7 +14,7 @@ import { Tabla, Total, type Columna } from "../ui/Tabla";
 import { Contenido, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
 import { cargarProveedores, type Proveedor } from "@/lib/abastecimiento";
 import { useConsulta } from "@/lib/consulta";
-import { cargarContratosBreve, type ContratoBreve } from "@/lib/contratos";
+import { cargarContratosBreve, opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
 import { formatearFecha, formatearMonto } from "@/lib/formato";
 import {
   cargarEnvios,
@@ -81,11 +81,12 @@ async function cargar(): Promise<Datos> {
   };
 }
 
-type Filtrado = "todas" | "abiertas" | "borrador" | "cerradas";
+type Filtrado = "todas" | "abiertas" | "recibidas" | "borrador" | "cerradas";
 
 const opciones: { id: Filtrado; titulo: string }[] = [
   { id: "todas", titulo: "Todas" },
   { id: "abiertas", titulo: "Abiertas" },
+  { id: "recibidas", titulo: "Recibidas" },
   { id: "borrador", titulo: "Borradores" },
   { id: "cerradas", titulo: "Cerradas" },
 ];
@@ -126,6 +127,7 @@ export function VistaOrdenes() {
   const [filtro, setFiltro] = useFiltro<Filtrado>("ordenes:estado", "todas");
   const [pago, setPago] = useFiltro<FiltradoPago>("ordenes:pago", "todas");
   const [mes, setMes] = useFiltro("ordenes:mes", "");
+  const [contrato, setContrato] = useFiltro("ordenes:contrato", "");
   const [texto, setTexto] = useState("");
   const [orden, setOrden] = useState<OrdenDeLista>("fecha-desc");
   const buscado = useRetardado(texto);
@@ -139,13 +141,16 @@ export function VistaOrdenes() {
           : filtro === "cerradas"
             ? ["cerrada", "anulada"]
             : filtro === "abiertas"
-              ? ["emitida", "parcial", "recibida"]
-              : null,
+              ? ["emitida", "parcial"]
+              : filtro === "recibidas"
+                ? ["recibida"]
+                : null,
+      contrato,
       mes,
       texto: buscado,
       orden,
     }),
-    [filtro, mes, buscado, orden],
+    [filtro, contrato, mes, buscado, orden],
   );
 
   // El pago sale de las facturas, no de la orden: se afina sobre lo cargado, y la
@@ -187,6 +192,9 @@ export function VistaOrdenes() {
               alFiltrar={setFiltro}
               pago={pago}
               alFiltrarPago={setPago}
+              contratos={datos.contratos}
+              contrato={contrato}
+              alElegirContrato={setContrato}
               mes={mes}
               alElegirMes={setMes}
               texto={texto}
@@ -270,6 +278,9 @@ function Contenidos({
   alFiltrar,
   pago,
   alFiltrarPago,
+  contratos,
+  contrato,
+  alElegirContrato,
   mes,
   alElegirMes,
   texto,
@@ -288,6 +299,9 @@ function Contenidos({
   alFiltrar: (f: Filtrado) => void;
   pago: FiltradoPago;
   alFiltrarPago: (p: FiltradoPago) => void;
+  contratos: ContratoBreve[];
+  contrato: string;
+  alElegirContrato: (c: string) => void;
   mes: string;
   alElegirMes: (m: string) => void;
   texto: string;
@@ -354,6 +368,19 @@ function Contenidos({
             aria-label="Buscar órdenes"
             className="min-w-[16rem] flex-1 rounded-full border border-mist-deep bg-white px-4 py-2 text-sm text-ink outline-none transition-colors placeholder:text-ink-soft/60 focus:border-cyan focus:ring-2 focus:ring-cyan/20"
           />
+          <select
+            value={contrato}
+            onChange={(e) => alElegirContrato(e.target.value)}
+            aria-label="Contrato"
+            className="max-w-[16rem] rounded-full border border-mist-deep bg-white px-4 py-2 text-sm font-semibold text-ink-soft"
+          >
+            <option value="">Todos los contratos</option>
+            {opcionesDeContrato(contratos).map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.titulo}
+              </option>
+            ))}
+          </select>
           <select
             value={mes}
             onChange={(e) => alElegirMes(e.target.value)}

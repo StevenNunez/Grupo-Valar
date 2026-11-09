@@ -298,6 +298,8 @@ export type FiltrosOrdenes = {
   estados: EstadoOrden[] | null;
   /** "AAAA-MM", o vacío. */
   mes: string;
+  /** Id del contrato, o vacío para todos. */
+  contrato: string;
   texto: string;
   orden: OrdenDeLista;
 };
@@ -315,6 +317,7 @@ export async function cargarPaginaOrdenes(f: FiltrosOrdenes, desde: number, cuan
   let q = supabase.from("ordenes_proveedor_resumen").select("*");
 
   if (f.estados) q = q.in("estado", f.estados);
+  if (f.contrato) q = q.eq("contrato_id", f.contrato);
   if (f.mes) q = q.gte("fecha_emision", `${f.mes}-01`).lt("fecha_emision", mesSiguiente(f.mes));
 
   const texto = limpiarBusqueda(f.texto);

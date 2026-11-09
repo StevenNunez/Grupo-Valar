@@ -373,6 +373,8 @@ export type FiltrosSolped = {
   excluir: EstadoSolped[] | null;
   /** «Faltan ítems por comprar»: al menos algo ya comprado. */
   conCompra: boolean;
+  /** Id del contrato, o vacío para todos. */
+  contrato: string;
   mes: string;
   texto: string;
   orden: OrdenDeListaSolped;
@@ -386,6 +388,7 @@ export async function cargarPaginaSolped(f: FiltrosSolped, desde: number, cuanto
   if (f.estados) q = q.in("estado", f.estados);
   if (f.excluir) q = q.not("estado", "in", `(${f.excluir.join(",")})`);
   if (f.conCompra) q = q.gt("cantidad_comprada", 0);
+  if (f.contrato) q = q.eq("contrato_id", f.contrato);
   if (f.mes) {
     const [a, m] = f.mes.split("-").map(Number);
     const siguiente = m === 12 ? `${a + 1}-01-01` : `${a}-${String(m + 1).padStart(2, "0")}-01`;
