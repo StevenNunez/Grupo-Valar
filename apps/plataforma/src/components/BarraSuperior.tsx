@@ -1,5 +1,7 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -42,7 +44,7 @@ export function BarraSuperior({ izquierda }: { izquierda?: React.ReactNode }) {
           href="/perfil/"
           aria-label="Mi perfil"
           title="Mi perfil"
-          className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-cyan text-sm font-semibold text-white transition-colors hover:bg-cyan-deep"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-cyan-deep text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo"
         >
           {usuario.iniciales}
         </Link>
@@ -91,7 +93,7 @@ function SelectorEmpresa({ actual }: { actual: string | null }) {
     const { error: fallo } = await supabase.rpc("cambiar_empresa", { destino });
     if (fallo) {
       setCambiando(false);
-      setError(fallo.message);
+      setError(mensajeParaPersona(fallo, "BarraSuperior"));
       return;
     }
     // Recarga completa a propósito (ver arriba): una navegación de Next dejaría
@@ -116,7 +118,7 @@ function SelectorEmpresa({ actual }: { actual: string | null }) {
           </option>
         ))}
       </select>
-      {error && <span role="alert" className="text-[#a52f24]">{error}</span>}
+      {error && <span role="alert" className="text-peligro">{error}</span>}
     </label>
   );
 }

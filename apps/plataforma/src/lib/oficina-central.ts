@@ -1,6 +1,7 @@
 "use client";
 
 import { detalleDeOtrosHaberes, type Haberes } from "./haberes";
+import { todasLasFilas } from "./paginar";
 import { supabase } from "./supabase";
 
 /**
@@ -72,11 +73,20 @@ type Catalogo = Awaited<ReturnType<typeof cargarCatalogoOficina>>;
 
 export async function cargarEgresosOficina(catalogoDado?: Catalogo): Promise<EgresoOficina[]> {
   const [egresos, catalogo] = await Promise.all([
-    supabase
-      .from("egresos_oficina_central")
-      .select("id, categoria, centro_costo, fecha, proveedor, descripcion, documento, neto, iva, total, estado, observaciones")
-      .order("fecha", { ascending: false })
-      .order("creado_en", { ascending: false }),
+    // Por tandas: Oficina Central suma decenas de egresos al mes y pasa las 1000 filas.
+    todasLasFilas<{
+      id: string; categoria: string; centro_costo: string; fecha: string; proveedor: string | null;
+      descripcion: string | null; documento: string | null; neto: number; iva: number; total: number;
+      estado: string | null; observaciones: string | null;
+    }>((d, h) =>
+      supabase
+        .from("egresos_oficina_central")
+        .select("id, categoria, centro_costo, fecha, proveedor, descripcion, documento, neto, iva, total, estado, observaciones")
+        .order("fecha", { ascending: false })
+        .order("creado_en", { ascending: false })
+        .order("id")
+        .range(d, h),
+    ),
     catalogoDado ?? cargarCatalogoOficina(),
   ]);
   if (egresos.error) throw new Error(egresos.error.message);

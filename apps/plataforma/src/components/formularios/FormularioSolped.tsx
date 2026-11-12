@@ -399,7 +399,7 @@ export function FormularioSolped({
               <div>
                 <h3 className="font-display text-base font-semibold text-ink">Lo que se pide</h3>
                 {sinCategoria > 0 && (
-                  <p className="mt-1 text-xs text-[#8a5a09]">
+                  <p className="mt-1 text-xs text-alerta">
                     {sinCategoria} {sinCategoria === 1 ? "ítem" : "ítems"} sin categoría: ese
                     gasto no va a aparecer en el análisis de rentabilidad.
                   </p>
@@ -418,7 +418,7 @@ export function FormularioSolped({
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[46rem] border-collapse text-sm">
+              <table className="lineas-movil w-full md:min-w-[46rem] border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-mist text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
                     <th className="w-8 py-2 pr-3">N°</th>
@@ -433,8 +433,8 @@ export function FormularioSolped({
                 <tbody>
                   {lineas.map((l, i) => (
                     <tr key={l.id} className="border-b border-mist last:border-0">
-                      <td className="py-2 pr-3 tabular-nums text-ink-soft">{i + 1}</td>
-                      <td className="py-2 pr-3">
+                      <td data-label="N°" className="py-2 pr-3 tabular-nums text-ink-soft">{i + 1}</td>
+                      <td data-label="Descripción" data-ancho className="py-2 pr-3">
                         {/* Autocompleta con el catálogo. Al elegir uno queda
                             enlazado, y con eso la solicitud de cotización sale
                             con el nombre técnico que el proveedor entiende. */}
@@ -469,7 +469,7 @@ export function FormularioSolped({
                           </span>
                         )}
                       </td>
-                      <td className="py-2 pr-3">
+                      <td data-label="Categoría" className="py-2 pr-3">
                         <select
                           value={l.categoria_id}
                           onChange={(e) => cambiar(l.id, "categoria_id", e.target.value)}
@@ -482,14 +482,14 @@ export function FormularioSolped({
                           ))}
                         </select>
                       </td>
-                      <td className="py-2 pr-3">
+                      <td data-label="UM" className="py-2 pr-3">
                         <input
                           value={l.unidad}
                           onChange={(e) => cambiar(l.id, "unidad", e.target.value)}
                           className={claseCelda}
                         />
                       </td>
-                      <td className="py-2 pr-3">
+                      <td data-label="Cantidad" className="py-2 pr-3">
                         <input
                           type="number"
                           min="0"
@@ -499,7 +499,7 @@ export function FormularioSolped({
                           className={`${claseCelda} text-right tabular-nums`}
                         />
                       </td>
-                      <td className="py-2 pr-3">
+                      <td data-label="Observación" className="py-2 pr-3">
                         <input
                           value={l.observacion}
                           onChange={(e) => cambiar(l.id, "observacion", e.target.value)}
@@ -507,12 +507,12 @@ export function FormularioSolped({
                           className={claseCelda}
                         />
                       </td>
-                      <td className="py-2 text-right">
+                      <td data-acciones className="py-2 text-right">
                         <button
                           type="button"
                           onClick={() => quitar(l)}
                           aria-label={`Quitar ítem ${i + 1}`}
-                          className="rounded-lg p-1.5 text-ink-soft transition-colors hover:bg-mist hover:text-[#a52f24]"
+                          className="rounded-lg p-1.5 text-ink-soft transition-colors hover:bg-mist hover:text-peligro"
                         >
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                             <path d="M5 7h14M10 7V5h4v2M6.5 7l.8 12h9.4l.8-12" strokeLinecap="round" strokeLinejoin="round" />

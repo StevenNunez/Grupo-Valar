@@ -1,4 +1,5 @@
 import { cargarFirmaDeCorreo, enviarCorreoDeOrden, smtpConfigurado, type FirmaCorreo } from "@/lib/oc-envio/correo";
+import { anotarError } from "@/lib/errores-servidor";
 import { DIAS_DEL_ENLACE, correoValido, nuevoEnlace, remitenteDe } from "@/lib/oc-envio/datos";
 import { pdfDeSolicitud } from "@/lib/oc-envio/pdf-solicitud";
 import { cuerpoDeSolicitud, type ItemSolicitud, type ResumenSolicitud } from "@/lib/oc-envio/solicitud";
@@ -169,6 +170,7 @@ export async function POST(pedido: Request, { params }: Contexto) {
     });
   } catch (e) {
     await servicio.from("cotizaciones_envios").delete().eq("id", envio.id);
+    await anotarError({ origen: "servidor", donde: "api/cotizaciones/enviar (correo)", error: e, detalle: { cotizacion: id } });
     return falla(`El correo no salió: ${e instanceof Error ? e.message : String(e)}`, 502);
   }
 

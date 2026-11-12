@@ -118,7 +118,7 @@ function BotonAgregar({ onClick, children }: { onClick: () => void; children: Re
 function Quitar({ onClick, etiqueta }: { onClick: () => void; etiqueta: string }) {
   return (
     <button type="button" aria-label={etiqueta} onClick={onClick}
-      className="rounded-lg p-1.5 text-ink-soft hover:bg-[#fdeeec] hover:text-[#a52f24]">
+      className="rounded-lg p-1.5 text-ink-soft hover:bg-peligro-suave hover:text-peligro">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden="true">
         <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
       </svg>
@@ -284,7 +284,7 @@ export function CondicionesContrato({
           </table>
           <BotonAgregar onClick={() => poner({ hitos: [...s.hitos, { nombre: "", porcentaje: 0, fecha: "" }] })}>Agregar hito</BotonAgregar>
           {s.hitos.length > 0 && (
-            <p className={`mt-2 text-xs ${total > 100 ? "font-semibold text-[#a52f24]" : "text-ink-soft"}`}>
+            <p className={`mt-2 text-xs ${total > 100 ? "font-semibold text-peligro" : "text-ink-soft"}`}>
               Los hitos suman {formatearNumero(total)}%{total > 100 ? ": se pasan del 100%." : total < 100 ? `; faltan ${formatearNumero(100 - total)}%.` : "."}
             </p>
           )}

@@ -385,7 +385,7 @@ const columnas = (
     celda: (f) => {
       if (!estaVencida(f) || !f.vencimiento) return <span className="text-ink-soft">—</span>;
       const dias = diasDesde(f.vencimiento);
-      return <span className="font-semibold text-[#a52f24]">{dias} d</span>;
+      return <span className="font-semibold text-peligro">{dias} d</span>;
     },
   },
   {

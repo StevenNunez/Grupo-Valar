@@ -1,5 +1,7 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import { useEffect, useRef, useState } from "react";
 import { PadDeFirma, type PadDeFirmaRef } from "./PadDeFirma";
 import { avisar } from "@/lib/avisos";
@@ -45,7 +47,7 @@ export function FirmaPerfil() {
     const { error: falla } = await supabase.from("firmas").upsert({ usuario_id: usuario.id, imagen: png, actualizada_en: new Date().toISOString() }, { onConflict: "usuario_id" });
     setTrabajando(false);
     if (falla) {
-      return setError(/firmas/.test(falla.message) && /exist|schema cache/i.test(falla.message) ? "Falta aplicar la migración 0095 en la base." : falla.message);
+      return setError(/firmas/.test(falla.message) && /exist|schema cache/i.test(falla.message) ? "Falta aplicar la migración 0095 en la base." : mensajeParaPersona(falla, "FirmaPerfil"));
     }
     setGuardada(png);
     setCambiando(false);
@@ -57,7 +59,7 @@ export function FirmaPerfil() {
     setError(null);
     const { error: falla } = await supabase.from("firmas").delete().eq("usuario_id", usuario.id);
     setTrabajando(false);
-    if (falla) return setError(falla.message);
+    if (falla) return setError(mensajeParaPersona(falla, "FirmaPerfil"));
     setGuardada(null);
     avisar("Firma eliminada");
   }
@@ -79,7 +81,7 @@ export function FirmaPerfil() {
             <PadDeFirma ref={pad} alCambiar={setHayTrazo} />
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <button type="button" onClick={guardar} disabled={trabajando || !hayTrazo}
-                className="rounded-full bg-cyan px-7 py-3 font-semibold text-white hover:bg-cyan-deep disabled:cursor-not-allowed disabled:opacity-60">
+                className="rounded-full bg-cyan-deep px-7 py-3 font-semibold text-white hover:bg-cyan-hondo disabled:cursor-not-allowed disabled:opacity-60">
                 {trabajando ? "Guardando…" : "Guardar firma"}
               </button>
               <button type="button" onClick={() => pad.current?.limpiar()} disabled={!hayTrazo}
@@ -106,13 +108,13 @@ export function FirmaPerfil() {
                 Cambiar mi firma
               </button>
               <button type="button" onClick={quitar} disabled={trabajando}
-                className="text-sm font-semibold text-[#a52f24] hover:underline disabled:opacity-50">
+                className="text-sm font-semibold text-peligro hover:underline disabled:opacity-50">
                 Eliminar
               </button>
             </div>
           </>
         )}
-        {error && <p role="alert" className="mt-4 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm text-[#a52f24]">{error}</p>}
+        {error && <p role="alert" className="mt-4 rounded-xl bg-peligro-suave px-4 py-3 text-sm text-peligro">{error}</p>}
       </div>
     </section>
   );

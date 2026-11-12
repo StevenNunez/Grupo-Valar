@@ -3,7 +3,9 @@
 import { createContext, useContext, useEffect, useId, useRef, useState } from "react";
 import { avisar } from "@/lib/avisos";
 import { eliminar } from "@/lib/crud";
+import { ErrorDeCampo, mensajeParaPersona } from "@/lib/errores";
 import { formatearPesos } from "@/lib/formato";
+import { Boton } from "./Boton";
 
 /**
  * Piezas de formulario del módulo.
@@ -13,6 +15,9 @@ import { formatearPesos } from "@/lib/formato";
  */
 
 /* ── Diálogo ──────────────────────────────────────────────────────────────── */
+
+const ENFOCABLES =
+  'a[href], button, input:not([type="hidden"]), select, textarea, summary, [tabindex]:not([tabindex="-1"])';
 
 /** Cerrar el diálogo pasando por la advertencia de cambios sin guardar. */
 const CierreDelDialogo = createContext<(() => void) | null>(null);
@@ -65,12 +70,36 @@ export function Dialogo({
   useEffect(() => {
     if (!abierto) return;
 
+    // Al cerrar, el foco vuelve a donde estaba (el botón que abrió el diálogo).
+    const previo = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
     const alTeclear = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      // Con un diálogo encima (una confirmación), Escape es de ese.
+      // Con un diálogo encima (una confirmación), el teclado es de ese.
       const dialogos = document.querySelectorAll('[role="dialog"]');
       if (dialogos[dialogos.length - 1] !== caja.current) return;
-      intentarCerrar.current();
+
+      if (e.key === "Escape") {
+        intentarCerrar.current();
+        return;
+      }
+      /* Tab da la vuelta dentro del diálogo: sin esto, el foco se iba a la
+         pantalla de atrás, que está tapada, y quien usa teclado se perdía. */
+      if (e.key === "Tab" && caja.current) {
+        const enfocables = [...caja.current.querySelectorAll<HTMLElement>(ENFOCABLES)].filter(
+          (el) => !el.hasAttribute("disabled") && el.offsetParent !== null,
+        );
+        if (enfocables.length === 0) return;
+        const primero = enfocables[0];
+        const ultimo = enfocables[enfocables.length - 1];
+        const dentro = caja.current.contains(document.activeElement);
+        if (e.shiftKey && (document.activeElement === primero || !dentro)) {
+          e.preventDefault();
+          ultimo.focus();
+        } else if (!e.shiftKey && (document.activeElement === ultimo || !dentro)) {
+          e.preventDefault();
+          primero.focus();
+        }
+      }
     };
     document.addEventListener("keydown", alTeclear);
     document.body.style.overflow = "hidden";
@@ -81,6 +110,7 @@ export function Dialogo({
     return () => {
       document.removeEventListener("keydown", alTeclear);
       document.body.style.overflow = "";
+      if (previo?.isConnected) previo.focus();
     };
   }, [abierto]);
 
@@ -132,9 +162,9 @@ export function Dialogo({
           <div
             role="alertdialog"
             aria-label="Descartar cambios"
-            className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-[#f1d9a8] bg-[#fdf4e6] px-6 py-3"
+            className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-alerta-borde bg-alerta-suave px-6 py-3"
           >
-            <p className="text-sm font-medium text-[#8a5a09]">
+            <p className="text-sm font-medium text-alerta">
               Tienes cambios sin guardar. ¿Cerrar y perderlos?
             </p>
             <div className="flex gap-2">
@@ -152,7 +182,7 @@ export function Dialogo({
                   setConfirmando(false);
                   alCerrar();
                 }}
-                className="rounded-full border border-[#a52f24]/40 px-4 py-1.5 text-xs font-semibold text-[#a52f24] hover:bg-[#fdeeec]"
+                className="rounded-full border border-peligro/40 px-4 py-1.5 text-xs font-semibold text-peligro hover:bg-peligro-suave"
               >
                 Descartar
               </button>
@@ -169,18 +199,21 @@ export function Dialogo({
 /* ── Campos ───────────────────────────────────────────────────────────────── */
 
 const claseCampo =
-  "w-full rounded-xl border border-mist-deep bg-white px-4 py-3 text-ink outline-none transition-colors placeholder:text-ink-soft/45 focus:border-cyan focus:ring-2 focus:ring-cyan/20 disabled:bg-mist/50 disabled:text-ink-soft";
+  "w-full rounded-xl border border-mist-deep bg-white px-4 py-3 text-ink outline-none transition-colors placeholder:text-ink-soft/45 focus:border-cyan focus:ring-2 focus:ring-cyan/20 disabled:bg-mist/50 disabled:text-ink-soft aria-invalid:border-peligro aria-invalid:ring-2 aria-invalid:ring-peligro/15";
 
 function Envoltura({
   id,
   etiqueta,
   ayuda,
+  error,
   requerido,
   children,
 }: {
   id: string;
   etiqueta: string;
   ayuda?: string;
+  /** Lo que está mal en este campo; lo pone `useFormulario` al fallar el guardado. */
+  error?: string;
   requerido?: boolean;
   children: React.ReactNode;
 }) {
@@ -194,9 +227,23 @@ function Envoltura({
         {requerido && <span className="ml-1 text-cyan-deep">*</span>}
       </label>
       <div className="mt-2">{children}</div>
-      {ayuda && <p className="mt-1.5 text-xs text-ink-soft">{ayuda}</p>}
+      {error && (
+        <p id={`${id}-error`} className="mt-1.5 text-xs font-medium text-peligro">
+          {error}
+        </p>
+      )}
+      {ayuda && <p id={`${id}-ayuda`} className="mt-1.5 text-xs text-ink-soft">{ayuda}</p>}
     </div>
   );
+}
+
+/** Lo que un lector de pantalla necesita del campo: si está mal y dónde leer por qué. */
+function aria(id: string, ayuda?: string, error?: string) {
+  const describe = [error ? `${id}-error` : null, ayuda ? `${id}-ayuda` : null].filter(Boolean).join(" ");
+  return {
+    "aria-invalid": error ? true : undefined,
+    "aria-describedby": describe || undefined,
+  } as const;
 }
 
 export function CampoTexto({
@@ -204,6 +251,7 @@ export function CampoTexto({
   valor,
   alCambiar,
   ayuda,
+  error,
   requerido,
   deshabilitado,
   marcador,
@@ -213,6 +261,8 @@ export function CampoTexto({
   valor: string;
   alCambiar: (v: string) => void;
   ayuda?: string;
+  /** Lo que está mal en este campo; lo pone `useFormulario` al fallar el guardado. */
+  error?: string;
   requerido?: boolean;
   deshabilitado?: boolean;
   marcador?: string;
@@ -221,7 +271,7 @@ export function CampoTexto({
 }) {
   const id = useId();
   return (
-    <Envoltura id={id} etiqueta={etiqueta} ayuda={ayuda} requerido={requerido}>
+    <Envoltura id={id} etiqueta={etiqueta} ayuda={ayuda} error={error} requerido={requerido}>
       {sugerencias && sugerencias.length > 0 && (
         <datalist id={`${id}-sugerencias`}>
           {sugerencias.map((s) => <option key={s} value={s} />)}
@@ -236,6 +286,7 @@ export function CampoTexto({
         disabled={deshabilitado}
         placeholder={marcador}
         onChange={(e) => alCambiar(e.target.value)}
+        {...aria(id, ayuda, error)}
         className={claseCampo}
       />
     </Envoltura>
@@ -252,17 +303,20 @@ export function CampoDinero({
   valor,
   alCambiar,
   ayuda,
+  error,
   requerido,
 }: {
   etiqueta: string;
   valor: number;
   alCambiar: (v: number) => void;
   ayuda?: string;
+  /** Lo que está mal en este campo; lo pone `useFormulario` al fallar el guardado. */
+  error?: string;
   requerido?: boolean;
 }) {
   const id = useId();
   return (
-    <Envoltura id={id} etiqueta={etiqueta} ayuda={ayuda} requerido={requerido}>
+    <Envoltura id={id} etiqueta={etiqueta} ayuda={ayuda} error={error} requerido={requerido}>
       <div className="relative">
         <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-ink-soft">
           $
@@ -278,6 +332,7 @@ export function CampoDinero({
             const limpio = e.target.value.replace(/\D/g, "");
             alCambiar(limpio === "" ? 0 : Number(limpio));
           }}
+          {...aria(id, ayuda, error)}
           className={`${claseCampo} pl-8 tabular-nums`}
         />
       </div>
@@ -290,6 +345,7 @@ export function CampoNumero({
   valor,
   alCambiar,
   ayuda,
+  error,
   requerido,
   min,
   max,
@@ -299,6 +355,8 @@ export function CampoNumero({
   valor: number;
   alCambiar: (v: number) => void;
   ayuda?: string;
+  /** Lo que está mal en este campo; lo pone `useFormulario` al fallar el guardado. */
+  error?: string;
   requerido?: boolean;
   min?: number;
   max?: number;
@@ -309,7 +367,7 @@ export function CampoNumero({
   const [borrador, setBorrador] = useState("");
   const [tocado, setTocado] = useState(false);
   return (
-    <Envoltura id={id} etiqueta={etiqueta} ayuda={ayuda} requerido={requerido}>
+    <Envoltura id={id} etiqueta={etiqueta} ayuda={ayuda} error={error} requerido={requerido}>
       <div className="relative">
         <input
           id={id}
@@ -330,6 +388,7 @@ export function CampoNumero({
             setTocado(texto !== "");
             alCambiar(texto === "" ? 0 : Number(texto));
           }}
+          {...aria(id, ayuda, error)}
           className={`${claseCampo} tabular-nums ${sufijo ? "pr-12" : ""}`}
         />
         {sufijo && (
@@ -347,23 +406,27 @@ export function CampoFecha({
   valor,
   alCambiar,
   ayuda,
+  error,
   requerido,
 }: {
   etiqueta: string;
   valor: string;
   alCambiar: (v: string) => void;
   ayuda?: string;
+  /** Lo que está mal en este campo; lo pone `useFormulario` al fallar el guardado. */
+  error?: string;
   requerido?: boolean;
 }) {
   const id = useId();
   return (
-    <Envoltura id={id} etiqueta={etiqueta} ayuda={ayuda} requerido={requerido}>
+    <Envoltura id={id} etiqueta={etiqueta} ayuda={ayuda} error={error} requerido={requerido}>
       <input
         id={id}
         type="date"
         value={valor ?? ""}
         required={requerido}
         onChange={(e) => alCambiar(e.target.value)}
+        {...aria(id, ayuda, error)}
         className={claseCampo}
       />
     </Envoltura>
@@ -382,6 +445,7 @@ export function CampoMes({
   valor,
   alCambiar,
   ayuda,
+  error,
   requerido,
 }: {
   etiqueta: string;
@@ -389,17 +453,20 @@ export function CampoMes({
   valor: string;
   alCambiar: (v: string) => void;
   ayuda?: string;
+  /** Lo que está mal en este campo; lo pone `useFormulario` al fallar el guardado. */
+  error?: string;
   requerido?: boolean;
 }) {
   const id = useId();
   return (
-    <Envoltura id={id} etiqueta={etiqueta} ayuda={ayuda} requerido={requerido}>
+    <Envoltura id={id} etiqueta={etiqueta} ayuda={ayuda} error={error} requerido={requerido}>
       <input
         id={id}
         type="month"
         value={(valor ?? "").slice(0, 7)}
         required={requerido}
         onChange={(e) => alCambiar(e.target.value ? `${e.target.value}-01` : "")}
+        {...aria(id, ayuda, error)}
         className={claseCampo}
       />
     </Envoltura>
@@ -412,6 +479,7 @@ export function CampoSeleccion<T extends string>({
   opciones,
   alCambiar,
   ayuda,
+  error,
   requerido,
 }: {
   etiqueta: string;
@@ -419,16 +487,19 @@ export function CampoSeleccion<T extends string>({
   opciones: { id: T; titulo: string }[];
   alCambiar: (v: T) => void;
   ayuda?: string;
+  /** Lo que está mal en este campo; lo pone `useFormulario` al fallar el guardado. */
+  error?: string;
   requerido?: boolean;
 }) {
   const id = useId();
   return (
-    <Envoltura id={id} etiqueta={etiqueta} ayuda={ayuda} requerido={requerido}>
+    <Envoltura id={id} etiqueta={etiqueta} ayuda={ayuda} error={error} requerido={requerido}>
       <select
         id={id}
         value={valor}
         required={requerido}
         onChange={(e) => alCambiar(e.target.value as T)}
+        {...aria(id, ayuda, error)}
         className={claseCampo}
       >
         {opciones.map((o) => (
@@ -528,7 +599,7 @@ export function Pie({
       {error && (
         <p
           role="alert"
-          className="mb-4 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm font-medium text-[#a52f24]"
+          className="mb-4 rounded-xl bg-peligro-suave px-4 py-3 text-sm font-medium text-peligro"
         >
           {error}
         </p>
@@ -540,26 +611,17 @@ export function Pie({
             type="button"
             onClick={alEliminar}
             disabled={guardando}
-            className="mr-auto rounded-full px-4 py-2.5 text-sm font-semibold text-[#a52f24] transition-colors hover:bg-[#fdeeec] disabled:opacity-50"
+            className="mr-auto min-h-11 rounded-full px-4 py-2.5 text-sm font-semibold text-peligro transition-colors hover:bg-peligro-suave disabled:opacity-50"
           >
             Eliminar
           </button>
         )}
-        <button
-          type="button"
-          onClick={intentarCerrar ?? alCancelar}
-          disabled={guardando}
-          className="rounded-full border border-mist-deep px-5 py-2.5 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-50"
-        >
+        <Boton variante="secundario" onClick={intentarCerrar ?? alCancelar} disabled={guardando}>
           Cancelar
-        </button>
-        <button
-          type="submit"
-          disabled={guardando}
-          className="rounded-full bg-cyan px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:cursor-wait disabled:opacity-70"
-        >
-          {guardando ? "Guardando…" : textoGuardar}
-        </button>
+        </Boton>
+        <Boton type="submit" cargando={guardando} trabajando="Guardando…" className="px-6">
+          {textoGuardar}
+        </Boton>
       </div>
     </div>
   );
@@ -598,30 +660,20 @@ export function Confirmacion({
         {error && (
           <p
             role="alert"
-            className="mt-4 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm font-medium text-[#a52f24]"
+            className="mt-4 rounded-xl bg-peligro-suave px-4 py-3 text-sm font-medium text-peligro"
           >
             {error}
           </p>
         )}
       </div>
 
-      <div className="flex justify-end gap-3 border-t border-mist px-6 py-5">
-        <button
-          type="button"
-          onClick={alCancelar}
-          disabled={procesando}
-          className="rounded-full border border-mist-deep px-5 py-2.5 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink disabled:opacity-50"
-        >
+      <div className="flex flex-wrap justify-end gap-3 border-t border-mist px-6 py-5">
+        <Boton variante="secundario" onClick={alCancelar} disabled={procesando}>
           Cancelar
-        </button>
-        <button
-          type="button"
-          onClick={alConfirmar}
-          disabled={procesando || deshabilitado}
-          className="rounded-full bg-[#a52f24] px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#8a2820] disabled:cursor-wait disabled:opacity-70"
-        >
-          {procesando ? "Eliminando…" : "Sí, eliminar"}
-        </button>
+        </Boton>
+        <Boton variante="peligro" onClick={alConfirmar} cargando={procesando} disabled={deshabilitado} trabajando="Eliminando…" className="px-6">
+          Sí, eliminar
+        </Boton>
       </div>
     </Dialogo>
   );
@@ -629,32 +681,83 @@ export function Confirmacion({
 
 /* ── Estado de un formulario ──────────────────────────────────────────────── */
 
+/**
+ * A qué campo apunta un error, si se puede saber:
+ *  · un `ErrorDeCampo` que lanzó el propio formulario, o
+ *  · un error de Postgres que nombra la columna (`null value in column "fecha"`),
+ *    cuando el formulario tiene un campo con ese nombre.
+ */
+function campoDelError(e: unknown, claves: string[]): { clave: string; mensaje: string } | null {
+  if (e instanceof ErrorDeCampo) return claves.includes(e.campo) ? { clave: e.campo, mensaje: e.message } : null;
+  const texto = e instanceof Error ? e.message : String(e);
+  const columna = /column "(\w+)"/i.exec(texto)?.[1];
+  if (!columna) return null;
+  const camel = columna.replace(/_(\w)/g, (_m, l: string) => l.toUpperCase());
+  const clave = claves.find((c) => c === columna || c === camel);
+  if (!clave) return null;
+  const mensaje = /null value|not-null/i.test(texto)
+    ? "Este dato es obligatorio."
+    : /invalid input syntax|out of range/i.test(texto)
+      ? "No tiene el formato correcto."
+      : "Este valor no es válido.";
+  return { clave, mensaje };
+}
+
+/* ── Estado de un formulario (sigue) ──────────────────────────────────────── */
+
 /** Guarda el borrador, el error y el "guardando" de cualquier formulario. */
 export function useFormulario<T extends object>(inicial: T) {
   const [datos, setDatos] = useState<T>(inicial);
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
+  /* El campo que falló, para marcarlo y explicar al lado: en un formulario largo,
+     un error solo al pie no decía cuál de veinte campos había que corregir. */
+  const [errorCampo, setErrorCampo] = useState<{ clave: string; mensaje: string } | null>(null);
 
   /* Cambiar un campo sin pasar por su control: sirve cuando escribir uno llena
      otro —el neto que calcula el IVA, el proveedor que copia su razón social—. */
-  const cambiar = <K extends keyof T>(clave: K, valor: T[K]) =>
+  const cambiar = <K extends keyof T>(clave: K, valor: T[K]) => {
+    setErrorCampo((e) => (e?.clave === clave ? null : e));
     setDatos((d) => ({ ...d, [clave]: valor }));
+  };
 
   const campo = <K extends keyof T>(clave: K) => ({
     valor: datos[clave],
     alCambiar: (v: T[K]) => cambiar(clave, v),
+    error: errorCampo?.clave === clave ? errorCampo.mensaje : undefined,
   });
 
+  // Con un campo marcado, el foco va a él (y la pantalla se desplaza hasta verlo).
+  useEffect(() => {
+    if (!errorCampo) return;
+    const marco = requestAnimationFrame(() => {
+      const malo = document.querySelector<HTMLElement>('[role="dialog"] [aria-invalid="true"], [aria-invalid="true"]');
+      malo?.focus();
+      malo?.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+    return () => cancelAnimationFrame(marco);
+  }, [errorCampo]);
+
+  /* Enter dos veces seguidas, o un doble clic, alcanzan a llamar dos veces antes
+     de que `guardando` deshabilite el botón: el ref frena la segunda. */
+  const enCurso = useRef(false);
+
   async function enviar(accion: () => Promise<void>, alTerminar: () => void) {
+    if (enCurso.current) return;
+    enCurso.current = true;
     setError(null);
+    setErrorCampo(null);
     setGuardando(true);
     try {
       await accion();
       avisar("Cambios guardados");
       alTerminar();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const enCampo = campoDelError(e, Object.keys(datos));
+      if (enCampo) setErrorCampo(enCampo);
+      setError(enCampo ? "Revisa el campo marcado en rojo." : mensajeParaPersona(e, "guardar formulario"));
     } finally {
+      enCurso.current = false;
       setGuardando(false);
     }
   }
@@ -666,6 +769,8 @@ export function useFormulario<T extends object>(inicial: T) {
     campo,
     error,
     setError,
+    /** Marca un campo a mano (validaciones propias del formulario). */
+    marcarCampo: (clave: keyof T & string, mensaje: string) => setErrorCampo({ clave, mensaje }),
     guardando,
     enviar,
     reiniciar: () => setDatos(inicial),
@@ -684,16 +789,21 @@ export function useBorrado(
   const [error, setError] = useState<string | null>(null);
   const [borrando, setBorrando] = useState(false);
 
+  const enCurso = useRef(false);
+
   async function confirmar() {
-    if (!id) return;
+    if (!id || enCurso.current) return;
+    enCurso.current = true;
     setError(null);
     setBorrando(true);
     try {
       await borrar(id);
+      setConfirmando(false);
       alHecho();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(mensajeParaPersona(e, `borrar en ${tabla}`));
     } finally {
+      enCurso.current = false;
       setBorrando(false);
     }
   }

@@ -128,7 +128,7 @@ export function LineasDeGasto({
                 {pegadas.length} líneas · neto {formatearPesos(pegadas.reduce((t, x) => t + Math.round(x.cantidad * x.precioUnitario), 0))}
               </span>
               <button type="button" onClick={() => agregar(pegadas)}
-                className="rounded-full bg-cyan px-4 py-2 text-xs font-semibold text-white hover:bg-cyan-deep">
+                className="rounded-full bg-cyan-deep px-4 py-2 text-xs font-semibold text-white hover:bg-cyan-hondo">
                 Agregar {pegadas.length} líneas
               </button>
             </div>
@@ -163,7 +163,7 @@ export function LineasDeGasto({
       )}
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[52rem] border-collapse text-sm">
+        <table className="lineas-movil w-full md:min-w-[52rem] border-collapse text-sm">
           <thead>
             <tr className="border-b border-mist text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
               <th className="py-2 pr-3">Descripción</th>
@@ -179,39 +179,39 @@ export function LineasDeGasto({
           <tbody>
             {lineas.map((l) => (
               <tr key={l.clave} className="border-b border-mist last:border-0">
-                <td className="py-2 pr-3">
+                <td data-label="Descripción" data-ancho className="py-2 pr-3">
                   <input aria-label="Descripción" value={l.descripcion} onPaste={alPegarEnCelda}
                     onChange={(e) => cambiar(l.clave, "descripcion", e.target.value)} className={claseCelda} />
                 </td>
-                <td className="py-2 pr-3">
+                <td data-label="Categoría" className="py-2 pr-3">
                   <select aria-label="Categoría" value={l.categoria_id} onChange={(e) => cambiar(l.clave, "categoria_id", e.target.value)} className={claseCelda}>
                     <option value="">— Sin categoría —</option>
                     {categorias.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                   </select>
                 </td>
-                <td className="py-2 pr-3">
+                <td data-label="UM" className="py-2 pr-3">
                   <input aria-label="Unidad" value={l.unidad} onChange={(e) => cambiar(l.clave, "unidad", e.target.value)} className={claseCelda} />
                 </td>
-                <td className="py-2 pr-3">
+                <td data-label="Cant." className="py-2 pr-3">
                   <input aria-label="Cantidad" type="number" min="0" step="any" value={l.cantidad}
                     onChange={(e) => cambiar(l.clave, "cantidad", Number(e.target.value) || 0)}
                     className={`${claseCelda} text-right tabular-nums`} />
                 </td>
-                <td className="py-2 pr-3">
+                <td data-label="P. unitario" className="py-2 pr-3">
                   <input aria-label="Precio unitario" type="text" inputMode="numeric" placeholder="0"
                     value={l.precio_unitario === 0 ? "" : l.precio_unitario.toLocaleString("es-CL")}
                     onChange={(e) => cambiar(l.clave, "precio_unitario", Number(e.target.value.replace(/\D/g, "")) || 0)}
                     className={`${claseCelda} text-right tabular-nums`} />
                 </td>
-                <td className="py-2 pr-3">
+                <td data-label="Tipo" className="py-2 pr-3">
                   <select aria-label="Tipo" value={l.tipo} onChange={(e) => cambiar(l.clave, "tipo", e.target.value)} className={claseCelda}>
                     {tiposCompra.map((t) => <option key={t.id} value={t.id}>{t.titulo}</option>)}
                   </select>
                 </td>
-                <td className="py-2 text-right font-semibold tabular-nums text-ink">{formatearPesos(netoLinea(l))}</td>
-                <td className="py-2 text-right">
+                <td data-label="Neto" className="py-2 text-right font-semibold tabular-nums text-ink">{formatearPesos(netoLinea(l))}</td>
+                <td data-acciones className="py-2 text-right">
                   <button type="button" aria-label="Quitar línea" onClick={() => alCambiar(lineas.filter((x) => x.clave !== l.clave))}
-                    className="rounded-lg p-1.5 text-ink-soft hover:bg-[#fdeeec] hover:text-[#a52f24]">
+                    className="rounded-lg p-1.5 text-ink-soft hover:bg-peligro-suave hover:text-peligro">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden="true">
                       <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
                     </svg>

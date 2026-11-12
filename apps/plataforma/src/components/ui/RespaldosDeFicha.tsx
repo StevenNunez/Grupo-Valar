@@ -1,5 +1,7 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import { useEffect, useState } from "react";
 import { cargarAdjuntos, enlaceDeAdjunto, EVENTO_RESPALDOS, formatearPeso, type Adjunto } from "@/lib/adjuntos";
 
@@ -22,7 +24,7 @@ export function RespaldosDeFicha({ tabla, registroId }: { tabla: string; registr
           setError(null);
         })
         .catch((e) => {
-          if (vigente) setError(e instanceof Error ? e.message : String(e));
+          if (vigente) setError(mensajeParaPersona(e, "RespaldosDeFicha"));
         });
     };
     cargar();
@@ -44,7 +46,7 @@ export function RespaldosDeFicha({ tabla, registroId }: { tabla: string; registr
       else window.location.assign(url);
     } catch (e) {
       ventana?.close();
-      setError(e instanceof Error ? e.message : String(e));
+      setError(mensajeParaPersona(e, "RespaldosDeFicha"));
     }
   }
 
@@ -53,7 +55,7 @@ export function RespaldosDeFicha({ tabla, registroId }: { tabla: string; registr
   return (
     <div className="mt-3 border-t border-mist pt-3">
       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft">Documentos adjuntos</p>
-      {error && <p role="alert" className="mt-1.5 text-xs text-[#a52f24]">{error}</p>}
+      {error && <p role="alert" className="mt-1.5 text-xs text-peligro">{error}</p>}
       {adjuntos && adjuntos.length === 0 && (
         <p className="mt-1.5 text-xs text-ink-soft">Todavía no hay documentos adjuntos.</p>
       )}

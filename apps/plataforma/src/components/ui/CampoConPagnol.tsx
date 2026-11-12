@@ -127,7 +127,7 @@ export function CampoConPagnol({
             Catálogo Pagnol{buscando ? " · buscando…" : ""}
           </p>
           {error ? (
-            <p className="px-3 py-2 text-xs text-[#8a5a09]">{error}</p>
+            <p className="px-3 py-2 text-xs text-alerta">{error}</p>
           ) : (
             <ul>
               {resultados.map((m) => (

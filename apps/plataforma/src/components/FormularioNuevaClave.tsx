@@ -1,5 +1,7 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { CLAVE_ENLACE_ACCESO, supabase } from "@/lib/supabase";
@@ -59,7 +61,7 @@ export function FormularioNuevaClave() {
       setRepetida("");
       setEstado("guardado");
     } catch (fallo) {
-      setError(fallo instanceof Error ? fallo.message : "No se pudo guardar la contraseña.");
+      setError(mensajeParaPersona(fallo, "FormularioNuevaClave"));
     } finally {
       setGuardando(false);
     }
@@ -68,7 +70,7 @@ export function FormularioNuevaClave() {
   if (estado === "comprobando") return <p role="status" className="mt-8 text-sm text-ink-soft">Comprobando el enlace…</p>;
   if (estado === "invalido") {
     return (
-      <div className="mt-8 rounded-xl bg-[#fdeeec] p-5 text-sm text-[#a52f24]">
+      <div className="mt-8 rounded-xl bg-peligro-suave p-5 text-sm text-peligro">
         <p>El enlace venció o no es válido.</p>
         <Link href="/recuperar/" className="mt-3 inline-block font-semibold underline">Solicitar otro enlace</Link>
       </div>
@@ -96,8 +98,8 @@ export function FormularioNuevaClave() {
         <label htmlFor="confirmar-clave" className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-soft">Repite la contraseña</label>
         <input id="confirmar-clave" type="password" autoComplete="new-password" required minLength={10} value={repetida} onChange={(e) => setRepetida(e.target.value)} className="mt-2 w-full rounded-xl border border-mist-deep px-4 py-3.5 outline-none focus:border-cyan focus:ring-2 focus:ring-cyan/20" />
       </div>
-      {error && <p role="alert" className="rounded-xl bg-[#fdeeec] px-4 py-3 text-sm text-[#a52f24]">{error}</p>}
-      <button type="submit" disabled={guardando} className="rounded-full bg-cyan px-7 py-4 font-semibold text-white hover:bg-cyan-deep disabled:opacity-70">
+      {error && <p role="alert" className="rounded-xl bg-peligro-suave px-4 py-3 text-sm text-peligro">{error}</p>}
+      <button type="submit" disabled={guardando} className="rounded-full bg-cyan-deep px-7 py-4 font-semibold text-white hover:bg-cyan-hondo disabled:opacity-70">
         {guardando ? "Guardando…" : "Guardar contraseña"}
       </button>
     </form>

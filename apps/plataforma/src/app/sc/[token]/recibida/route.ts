@@ -1,4 +1,5 @@
 import { abrirEnlaceSolicitud, marcarRecibida } from "@/lib/oc-envio/publico-solicitud";
+import { anotarError } from "@/lib/errores-servidor";
 
 /** El proveedor avisa que recibió la solicitud. */
 
@@ -25,6 +26,7 @@ export async function POST(pedido: Request, { params }: Contexto) {
   try {
     await marcarRecibida(r.envio, { nombre, comentario });
   } catch (e) {
+    await anotarError({ origen: "servidor", donde: "sc/recibida (proveedor)", error: e });
     return falla(e instanceof Error ? e.message : String(e), 500);
   }
   return Response.json({ ok: true });

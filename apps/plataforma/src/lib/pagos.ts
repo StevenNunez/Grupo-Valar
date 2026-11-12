@@ -516,7 +516,10 @@ export function armarNomina(lineas: CuentaPorPagar[]): LineaNomina[] {
       beneficiario: primera.proveedor,
       banco: primera.banco ?? "",
       numeroCuenta: primera.numeroCuenta ?? "",
-      monto: grupo.reduce((t, l) => t + l.total, 0),
+      /* Lo que se transfiere esta semana: la cuota que toca o lo que falta de la
+         factura. Antes sumaba el total, y una factura en cuotas (o con un abono)
+         salía en la nómina del banco por el monto completo. */
+      monto: grupo.reduce((t, l) => t + montoAPagar(l), 0),
       // Lo que el proveedor va a leer en su cartola para reconocer el abono.
       descripcion: grupo
         .map((l) => l.documento ?? l.ordenNumero ?? "")

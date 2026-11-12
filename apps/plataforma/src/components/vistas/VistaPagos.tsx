@@ -1,8 +1,11 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import { useFiltro } from "@/lib/vista-guardada";
 import { useMemo, useState } from "react";
 import { Chip, type Tono } from "../ui/Chip";
+import { Boton as BotonBase } from "../ui/Boton";
 import {
   CampoFecha,
   CampoTexto,
@@ -380,7 +383,7 @@ function PorVencimiento({
       await hacer();
       recargar();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(mensajeParaPersona(e, "VistaPagos"));
     } finally {
       setTrabajando(null);
     }
@@ -404,7 +407,7 @@ function PorVencimiento({
       }
     >
       {error && (
-        <p role="alert" className="mx-6 mt-5 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm font-medium text-[#a52f24] lg:mx-8">
+        <p role="alert" className="mx-6 mt-5 rounded-xl bg-peligro-suave px-4 py-3 text-sm font-medium text-peligro lg:mx-8">
           {error}
         </p>
       )}
@@ -534,7 +537,7 @@ function columnasLinea({
               return (
                 <>
                   <span className="block text-ink-soft">—</span>
-                  <span className="mt-0.5 block text-xs text-[#8a5a09]">{c.diasSinFacturar ?? 0} días sin facturar</span>
+                  <span className="mt-0.5 block text-xs text-alerta">{c.diasSinFacturar ?? 0} días sin facturar</span>
                 </>
               );
             }
@@ -543,7 +546,7 @@ function columnasLinea({
             return (
               <>
                 <span className="block text-ink">{formatearFecha(desde)} <span className="text-xs text-ink-soft">(estimado)</span></span>
-                <span className={`mt-0.5 block text-xs ${atraso > 0 ? "font-semibold text-[#a52f24]" : "text-[#8a5a09]"}`}>
+                <span className={`mt-0.5 block text-xs ${atraso > 0 ? "font-semibold text-peligro" : "text-alerta"}`}>
                   {atraso > 0 ? `Sin factura · ${atraso} días de atraso` : atraso === 0 ? "Sin factura · cobra desde hoy" : `Sin factura · cobra en ${-atraso} días`}
                 </span>
               </>
@@ -586,7 +589,7 @@ function columnasLinea({
             </span>
           )}
           {c.estadoCuenta !== "creada" && c.aptoParaPago && (
-            <span className="mt-1 block text-xs text-[#8a5a09]">
+            <span className="mt-1 block text-xs text-alerta">
               {nombreEstadoCuenta[c.estadoCuenta]}
             </span>
           )}
@@ -803,7 +806,7 @@ const columnasProveedor: Columna<ProveedorPorPagar>[] = [
           {nombreEstadoCuenta[p.estadoCuenta]}
         </Chip>
         {p.vencido > 0 && (
-          <span className="mt-1 block text-xs text-[#a52f24]">
+          <span className="mt-1 block text-xs text-peligro">
             {formatearMonto(p.vencido)} vencido
           </span>
         )}
@@ -845,7 +848,7 @@ function Semana({
       recargar();
     } catch (e) {
       setConfirmando(false);
-      setError(e instanceof Error ? e.message : String(e));
+      setError(mensajeParaPersona(e, "VistaPagos"));
     } finally {
       setTrabajando(false);
     }
@@ -863,7 +866,7 @@ function Semana({
   return (
     <>
       {error && (
-        <p role="alert" className="mx-6 mt-5 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm font-medium text-[#a52f24] lg:mx-8">
+        <p role="alert" className="mx-6 mt-5 rounded-xl bg-peligro-suave px-4 py-3 text-sm font-medium text-peligro lg:mx-8">
           {error}
         </p>
       )}
@@ -1070,23 +1073,14 @@ function Boton({
   secundario,
 }: {
   children: React.ReactNode;
-  onClick: () => void;
+  onClick: () => unknown;
   disabled?: boolean;
   secundario?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={`whitespace-nowrap rounded-full px-4 py-2 text-xs font-semibold transition-colors disabled:opacity-50 ${
-        secundario
-          ? "border border-mist-deep text-ink-soft hover:border-ink hover:text-ink"
-          : "bg-cyan text-white hover:bg-cyan-deep"
-      }`}
-    >
+    <BotonBase variante={secundario ? "secundario" : "primario"} tamano="chico" onClick={onClick} disabled={disabled} className="whitespace-nowrap">
       {children}
-    </button>
+    </BotonBase>
   );
 }
 
@@ -1113,7 +1107,7 @@ function FacturaDeOrden({ ordenId, alCerrar, alCambiar }: { ordenId: string; alC
   if (estado.estado === "error") {
     return (
       <Dialogo titulo="Registrar factura" abierto alCerrar={alCerrar}>
-        <p className="px-6 py-10 text-center text-sm text-[#a52f24]">{estado.mensaje}</p>
+        <p className="px-6 py-10 text-center text-sm text-peligro">{estado.mensaje}</p>
       </Dialogo>
     );
   }

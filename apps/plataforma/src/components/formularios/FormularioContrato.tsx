@@ -1,5 +1,7 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import { SeccionRespaldos, useRespaldos } from "@/components/ui/Respaldos";
 import { useState } from "react";
 import {
@@ -156,7 +158,7 @@ export function FormularioContrato({
     try {
       setResumenDemo(await borrarContratoDemo(contrato.id));
     } catch (error) {
-      setErrorDemo(error instanceof Error ? error.message : String(error));
+      setErrorDemo(mensajeParaPersona(error, "FormularioContrato"));
     } finally {
       setConsultandoDemo(false);
     }
@@ -171,7 +173,7 @@ export function FormularioContrato({
       alGuardado();
       alCerrar();
     } catch (error) {
-      setErrorDemo(error instanceof Error ? error.message : String(error));
+      setErrorDemo(mensajeParaPersona(error, "FormularioContrato"));
     } finally {
       setEliminandoDemo(false);
     }

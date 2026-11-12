@@ -1,5 +1,7 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import { useState } from "react";
 
 /**
@@ -41,7 +43,7 @@ export function ConfirmarOrden({
       setHecha({ en: new Date().toISOString(), por: nombre, fechaEntrega: fecha, comentario: comentario || null });
       setEditando(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo confirmar. Revisa tu conexión.");
+      setError(mensajeParaPersona(err, "ConfirmarOrden"));
     } finally {
       setEnviando(false);
     }
@@ -51,8 +53,8 @@ export function ConfirmarOrden({
 
   if (hecha && !editando) {
     return (
-      <div className="rounded-xl bg-[#e6f4ee] px-5 py-4">
-        <p className="font-semibold text-[#0e7a4f]">Orden confirmada</p>
+      <div className="rounded-xl bg-exito-suave px-5 py-4">
+        <p className="font-semibold text-exito">Orden confirmada</p>
         <p className="mt-1 text-sm text-ink">
           Entrega comprometida para el <strong>{fechaCorta(hecha.fechaEntrega)}</strong>
           {hecha.por ? `, confirmada por ${hecha.por}` : ""}.
@@ -110,12 +112,12 @@ export function ConfirmarOrden({
           />
         </label>
       </div>
-      {error && <p role="alert" className="mt-3 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm text-[#a52f24]">{error}</p>}
+      {error && <p role="alert" className="mt-3 rounded-xl bg-peligro-suave px-4 py-3 text-sm text-peligro">{error}</p>}
       <div className="mt-5 flex flex-wrap items-center gap-3">
         <button
           type="submit"
           disabled={enviando}
-          className="rounded-full bg-cyan px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:opacity-60"
+          className="rounded-full bg-cyan-deep px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo disabled:opacity-60"
         >
           {enviando ? "Confirmando…" : "Confirmo la orden"}
         </button>

@@ -188,13 +188,13 @@ export function LectorCotizacionOrden({
       />
 
       {error && (
-        <p role="alert" className="mt-3 rounded-lg bg-[#fdeeec] px-3 py-2 text-xs font-medium text-[#a52f24]">
+        <p role="alert" className="mt-3 rounded-lg bg-peligro-suave px-3 py-2 text-xs font-medium text-peligro">
           {error}
         </p>
       )}
 
       {lectura?.aviso && (
-        <p className="mt-3 rounded-lg bg-[#fdf4e6] px-3 py-2 text-xs text-[#8a5a09]">{lectura.aviso}</p>
+        <p className="mt-3 rounded-lg bg-alerta-suave px-3 py-2 text-xs text-alerta">{lectura.aviso}</p>
       )}
 
       {lectura && !lectura.aviso && (
@@ -251,7 +251,7 @@ export function LectorCotizacionOrden({
                         valor={f.precioUnitario}
                         alCambiar={(n) => cambiar(i, { precioUnitario: n, sinPrecio: false })}
                         ariaLabel="Precio unitario"
-                        className={`${claseCelda} text-right tabular-nums ${f.sinPrecio ? "border-[#e0a43a]" : ""}`}
+                        className={`${claseCelda} text-right tabular-nums ${f.sinPrecio ? "border-alerta-borde" : ""}`}
                       />
                     </td>
                     <td className="py-1.5 text-right font-semibold tabular-nums text-ink">
@@ -268,7 +268,7 @@ export function LectorCotizacionOrden({
               <Opcion marcada={usarProveedor} alCambiar={setUsarProveedor}>
                 Proveedor: <strong>{proveedorLeido.razonSocial}</strong>
                 {proveedorActual && proveedorActual !== proveedorLeido.id && (
-                  <span className="text-[#8a5a09]"> (cambia el proveedor ya elegido)</span>
+                  <span className="text-alerta"> (cambia el proveedor ya elegido)</span>
                 )}
               </Opcion>
             )}
@@ -295,7 +295,7 @@ export function LectorCotizacionOrden({
           </ul>
 
           {sinPrecio > 0 && (
-            <p className="mt-3 rounded-lg bg-[#fdf4e6] px-3 py-2 text-xs text-[#8a5a09]">
+            <p className="mt-3 rounded-lg bg-alerta-suave px-3 py-2 text-xs text-alerta">
               {sinPrecio === 1 ? "Una línea quedó" : `${sinPrecio} líneas quedaron`} sin precio. Escríbelo aquí o
               después en la orden.
             </p>
@@ -310,7 +310,7 @@ export function LectorCotizacionOrden({
               type="button"
               onClick={aplicar}
               disabled={elegidas.length === 0}
-              className="rounded-full bg-cyan px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:opacity-50"
+              className="rounded-full bg-cyan-deep px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo disabled:opacity-50"
             >
               Agregar {elegidas.length} {elegidas.length === 1 ? "ítem" : "ítems"} a la orden
             </button>

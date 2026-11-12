@@ -409,7 +409,7 @@ function Contenidos({
         </div>
 
         {lista.error ? (
-          <p role="alert" className="px-6 py-10 text-center text-sm text-[#a52f24] lg:px-8">
+          <p role="alert" className="px-6 py-10 text-center text-sm text-peligro lg:px-8">
             No se pudo cargar la lista: {lista.error}{" "}
             <button type="button" onClick={lista.recargar} className="font-semibold underline">
               Reintentar

@@ -3,7 +3,7 @@
 import { traerTodo } from "./paginar";
 import { supabase } from "./supabase";
 import { emisorOC as emisorSolicitud } from "./empresa";
-import { formatearFecha } from "./formato";
+import { formatearFecha, saludoA } from "./formato";
 
 /**
  * Datos del módulo de Abastecimiento: proveedores y SOLPED.
@@ -1087,6 +1087,33 @@ export async function pedirCotizacion({
     throw new Error("Elige al menos un ítem para pedirle a este proveedor.");
   }
 
+  const cabecera = {
+    numero,
+    solped_id: solped.id,
+    proveedor_id: proveedorId,
+    solicitada_en: new Date().toISOString().slice(0, 10),
+    // Sin respuesta todavía: es exactamente lo que la deja "esperando".
+    recibida_en: null,
+    validez_hasta: validezHasta,
+    estado: "solicitada",
+    observaciones,
+  };
+  const lineas = items.map((i) => ({
+    solped_item_id: i.solpedItemId,
+    cantidad: i.cantidad,
+    // Solo si se corrigió (y así nada se rompe antes de aplicar la 0108): la solicitud de faena no se toca.
+    ...(i.nombrePedido?.trim() ? { nombre_pedido: i.nombrePedido.trim() } : {}),
+    // Nace sin precio: el proveedor todavía no responde.
+    precio_unitario: 0,
+    disponible: true,
+  }));
+
+  /* Todo en una transacción y con el código decidido por la base (0120). */
+  const { data, error: falloRpc } = await supabase.rpc("pedir_cotizacion", { p_cotizacion: cabecera, p_items: lineas });
+  if (!falloRpc) return data as string;
+  if (!faltaFuncion(falloRpc)) throw new Error(falloRpc.message);
+
+  /* Sin la 0120 todavía: el camino de antes, paso a paso. Se puede borrar después de aplicarla. */
   const { count } = await supabase
     .from("cotizaciones")
     .select("id", { count: "exact", head: true })
@@ -1338,7 +1365,7 @@ export function armarCorreoSolicitud({
     .join("\n");
 
   const cuerpo = [
-    contacto ? `Estimado/a ${contacto}:` : "Estimados:",
+    saludoA(contacto),
     "",
     "Agradeceremos cotizar los siguientes ítems:",
     "",
@@ -1605,23 +1632,12 @@ export async function generarOrdenDesdeCotizacion({
   /* El código interno sale del contrato y de los últimos 6 dígitos del número,
      así que dos números distintos pueden dar el mismo código ("OC22-001128" y
      "OC23-001128"). Si el código ya está ocupado por OTRO número se le agrega un
-     sufijo; si está ocupado por el MISMO número, es una OC repetida y se avisa. */
+     sufijo; si está ocupado por el MISMO número, es una OC repetida y se avisa.
+     Desde la 0120 eso lo decide la base, dentro de la misma transacción. */
   const baseId = `OCP-${solped.contratoId.replace(/^C-/, "")}-${numero.replace(/\D/g, "").slice(-6)}`;
-  const { data: ocupados, error: falloBusqueda } = await supabase
-    .from("ordenes_compra_proveedor")
-    .select("id, numero")
-    .or(`id.eq.${baseId},id.like.${baseId}-%`);
-  if (falloBusqueda) throw new Error(falloBusqueda.message);
-  const filasOcupadas = (ocupados ?? []) as { id: string; numero: string }[];
-  const repetida = filasOcupadas.find((o) => o.numero === numero);
-  if (repetida) {
-    throw new Error(`Ya existe la orden ${numero} (${repetida.id}). Si quedó a medias de un intento anterior, ábrela en Órdenes de compra; si no, usa otro número.`);
-  }
-  let ordenId = baseId;
-  for (let sufijo = 2; filasOcupadas.some((o) => o.id === ordenId); sufijo += 1) ordenId = `${baseId}-${sufijo}`;
 
   const cabecera = {
-    id: ordenId,
+    id: baseId,
     contrato_id: solped.contratoId,
     numero,
     solped_id: solped.id,
@@ -1649,22 +1665,13 @@ export async function generarOrdenDesdeCotizacion({
     observaciones: `Generada desde ${solped.numero}.`,
   };
 
-  const { error: falloOrden } = await supabase
-    .from("ordenes_compra_proveedor")
-    .insert(cabecera);
-  if (falloOrden) throw new Error(falloOrden.message);
-
-  let n = 0;
-  for (const i of cotizados) {
-    n += 1;
+  /* Las líneas sin `id` ni `orden_id`: los pone la base cuando sabe el código final. */
+  const lineas: Record<string, unknown>[] = cotizados.map((i) => {
     const pedido = porId.get(i.solpedItemId);
     const cantidad = cantidades?.[i.solpedItemId] && cantidades[i.solpedItemId] > 0 ? cantidades[i.solpedItemId] : i.cantidad;
     const neto = Math.round(cantidad * i.precioUnitario);
-
-    const { error } = await supabase.from("items_compra").insert({
-      id: `IT-${ordenId}-${String(n).padStart(3, "0")}`,
+    return {
       contrato_id: solped.contratoId,
-      orden_id: ordenId,
       solped_item_id: i.solpedItemId,
       // Lo que se pidió del catálogo de Pagnol se compra con la misma referencia.
       pagnol_material_id: pedido?.pagnolMaterialId ?? null,
@@ -1678,9 +1685,8 @@ export async function generarOrdenDesdeCotizacion({
       // El tipo de gasto viene de la solicitud: es lo que decide si castiga el
       // margen, y no debería volver a decidirse acá.
       tipo: solped.tipoGasto,
-    });
-    if (error) throw new Error(error.message);
-  }
+    };
+  });
 
   /* El flete viaja como una línea más de la orden.
    *
@@ -1692,10 +1698,9 @@ export async function generarOrdenDesdeCotizacion({
    * Va sin categoría a propósito: el flete no es de ninguna en particular, y la
    * pantalla ya avisa cuando un ítem no tiene categoría. */
   if (incluirFlete && cotizacion.flete > 0) {
-    const { error } = await supabase.from("items_compra").insert({
-      id: `IT-${ordenId}-FLETE`,
+    lineas.push({
+      es_flete: true,
       contrato_id: solped.contratoId,
-      orden_id: ordenId,
       descripcion: "Flete y despacho",
       unidad: "gl",
       cantidad: 1,
@@ -1703,10 +1708,55 @@ export async function generarOrdenDesdeCotizacion({
       iva: Math.round(cotizacion.flete * 0.19),
       tipo: solped.tipoGasto,
     });
+  }
+
+  /* Todo en una transacción (0120): la orden queda completa o no queda. */
+  const { data, error } = await supabase.rpc("crear_orden_desde_cotizacion", {
+    p_orden: cabecera,
+    p_items: lineas,
+    p_solped: solped.id,
+  });
+  if (!error) return data as string;
+  if (!faltaFuncion(error)) throw new Error(error.message);
+
+  return crearOrdenPasoAPaso(cabecera, lineas, solped.id);
+}
+
+/** PostgREST no encuentra la función: la migración todavía no se aplicó. */
+const faltaFuncion = (e: { code?: string; message: string }) =>
+  e.code === "PGRST202" || /could not find the function/i.test(e.message);
+
+/**
+ * Lo mismo que `crear_orden_desde_cotizacion`, desde el navegador y en varios
+ * pasos. Solo mientras la 0120 no esté aplicada en la base: después de
+ * aplicarla, se puede borrar.
+ */
+async function crearOrdenPasoAPaso(cabecera: Record<string, unknown>, lineas: Record<string, unknown>[], solpedId: string) {
+  const baseId = cabecera.id as string;
+  const numero = cabecera.numero as string;
+  const { data: ocupados, error: falloBusqueda } = await supabase
+    .from("ordenes_compra_proveedor")
+    .select("id, numero")
+    .or(`id.eq.${baseId},id.like.${baseId}-%`);
+  if (falloBusqueda) throw new Error(falloBusqueda.message);
+  const filasOcupadas = (ocupados ?? []) as { id: string; numero: string }[];
+  const repetida = filasOcupadas.find((o) => o.numero === numero);
+  if (repetida) {
+    throw new Error(`Ya existe la orden ${numero} (${repetida.id}). Si quedó a medias de un intento anterior, ábrela en Órdenes de compra; si no, usa otro número.`);
+  }
+  let ordenId = baseId;
+  for (let sufijo = 2; filasOcupadas.some((o) => o.id === ordenId); sufijo += 1) ordenId = `${baseId}-${sufijo}`;
+
+  const { error: falloOrden } = await supabase.from("ordenes_compra_proveedor").insert({ ...cabecera, id: ordenId });
+  if (falloOrden) throw new Error(falloOrden.message);
+
+  let n = 0;
+  for (const { es_flete, ...linea } of lineas) {
+    const id = es_flete ? `IT-${ordenId}-FLETE` : `IT-${ordenId}-${String(++n).padStart(3, "0")}`;
+    const { error } = await supabase.from("items_compra").insert({ ...linea, id, orden_id: ordenId });
     if (error) throw new Error(error.message);
   }
 
-  await supabase.from("solped").update({ estado: "en-compra" }).eq("id", solped.id);
-
+  await supabase.from("solped").update({ estado: "en-compra" }).eq("id", solpedId);
   return ordenId;
 }

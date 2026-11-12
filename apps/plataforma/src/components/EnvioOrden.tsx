@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CampoTexto, Dialogo, Pie } from "./ui/Formulario";
 import { Chip } from "./ui/Chip";
 import { useEmpresa } from "@/lib/empresa-cliente";
-import { formatearFecha, formatearPesos } from "@/lib/formato";
+import { formatearFecha, formatearPesos, saludoA } from "@/lib/formato";
 import {
   abrirPdfDeOrden,
   cargarDestinatarios,
@@ -95,11 +95,11 @@ export function EnvioOrden({
     return (
       <Dialogo titulo={`Orden ${orden.numero} enviada`} abierto alCerrar={alCerrar} ancho="max-w-lg">
         <div className="px-6 py-6 text-sm text-ink">
-          <p className="rounded-xl bg-[#e6f4ee] px-4 py-3 font-medium text-[#0e7a4f]">
+          <p className="rounded-xl bg-exito-suave px-4 py-3 font-medium text-exito">
             Se le envió a {para}, con copia a {[emisor, ...cc].filter(Boolean).join(", ")}.
           </p>
           {avisoPagnol && (
-            <p className={`mt-4 rounded-xl px-4 py-3 ${avisoPagnol.ok ? "bg-[#e6f4ee] font-medium text-[#0e7a4f]" : "bg-[#fdf2e1] text-[#8a5a00]"}`}>
+            <p className={`mt-4 rounded-xl px-4 py-3 ${avisoPagnol.ok ? "bg-exito-suave font-medium text-exito" : "bg-alerta-suave text-alerta"}`}>
               {avisoPagnol.ok
                 ? "Anunciada a Pagnol: el pañolero ya la ve por recibir."
                 : `La orden salió, pero no se pudo anunciar a Pagnol: ${avisoPagnol.error ?? "error desconocido"}. Anúnciala desde el detalle de la orden.`}
@@ -111,7 +111,7 @@ export function EnvioOrden({
           </p>
         </div>
         <div className="flex justify-end border-t border-mist px-6 py-5">
-          <button type="button" onClick={alCerrar} className="rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-white hover:bg-cyan-deep">
+          <button type="button" onClick={alCerrar} className="rounded-full bg-cyan-deep px-5 py-2.5 text-sm font-semibold text-white hover:bg-cyan-hondo">
             Listo
           </button>
         </div>
@@ -129,7 +129,7 @@ export function EnvioOrden({
     >
       {borrador || anulada ? (
         <div className="px-6 py-6">
-          <p className="rounded-xl bg-[#fdf4e6] px-4 py-3 text-sm text-[#8a5a09]">
+          <p className="rounded-xl bg-alerta-suave px-4 py-3 text-sm text-alerta">
             {borrador
               ? "Esta orden está en Borrador, y un borrador nunca se le envía al proveedor. Ábrela con Editar, cámbiala a «Emitida» y vuelve acá."
               : "Esta orden está anulada: no se envía."}
@@ -189,7 +189,7 @@ export function EnvioOrden({
                 )}
                 <ul className="max-h-40 overflow-y-auto py-1 text-sm">
                   {personas === null && !errorPersonas && <li className="px-3 py-2 text-ink-soft">Cargando personas de Valar…</li>}
-                  {errorPersonas && <li className="px-3 py-2 text-[#a52f24]">{errorPersonas}</li>}
+                  {errorPersonas && <li className="px-3 py-2 text-peligro">{errorPersonas}</li>}
                   {personas && elegibles.length === 0 && <li className="px-3 py-2 text-ink-soft">Nadie más para copiar.</li>}
                   {elegibles.map((p) => (
                     <li key={p.correo}>
@@ -254,7 +254,7 @@ export function EnvioOrden({
 
 function mensajeInicial(o: Orden, firma: string) {
   return [
-    o.contacto ? `Estimado/a ${o.contacto}:` : "Estimados:",
+    saludoA(o.contacto),
     "",
     `Adjuntamos la orden de compra ${o.numero} de ${firma}, por un total de ${formatearPesos(o.total)} (IVA incluido).`,
     "",
@@ -263,8 +263,9 @@ function mensajeInicial(o: Orden, firma: string) {
       o.lugarEntrega ? `entrega en ${o.lugarEntrega}` : null,
     ]
       .filter(Boolean)
-      .join(", ") || null,
-    "Les pedimos confirmarla con su fecha de entrega en el enlace de más abajo.",
+      .join(", ")
+      .replace(/(.)$/, "$1.") || null,
+    "Por favor, confirmar la recepción de la orden de compra en el enlace de más abajo.",
     "",
     // Nombre, área, teléfono y empresa los pone la firma del perfil, debajo del mensaje.
     "Saludos cordiales,",

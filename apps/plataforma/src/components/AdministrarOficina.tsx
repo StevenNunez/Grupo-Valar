@@ -1,5 +1,7 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import { useState, type FormEvent } from "react";
 import { Chip } from "./ui/Chip";
 import { Dialogo } from "./ui/Formulario";
@@ -31,7 +33,7 @@ export function AdministrarOficina({ alCerrar, alCambiar }: { alCerrar: () => vo
     setError(null);
     const { error: fallo } = await accion();
     if (fallo) {
-      setError(/duplicate key/i.test(fallo.message) ? "Ya existe uno con ese nombre." : /row-level security|permission denied/i.test(fallo.message) ? "Tu acceso no permite este cambio." : fallo.message);
+      setError(/duplicate key/i.test(fallo.message) ? "Ya existe uno con ese nombre." : /row-level security|permission denied/i.test(fallo.message) ? "Tu acceso no permite este cambio." : mensajeParaPersona(fallo, "AdministrarOficina"));
       return false;
     }
     recargar();
@@ -43,10 +45,10 @@ export function AdministrarOficina({ alCerrar, alCambiar }: { alCerrar: () => vo
     <Dialogo titulo="Categorías y centros de costo" abierto alCerrar={alCerrar} ancho="max-w-3xl"
       descripcion="Oficina Central · lo que se defina acá es lo que aparece al cargar un egreso">
       {estado.estado === "cargando" && <p className="px-6 py-12 text-center text-sm text-ink-soft">Cargando…</p>}
-      {estado.estado === "error" && <p role="alert" className="px-6 py-12 text-center text-sm text-[#a52f24]">{estado.mensaje}</p>}
+      {estado.estado === "error" && <p role="alert" className="px-6 py-12 text-center text-sm text-peligro">{estado.mensaje}</p>}
       {estado.estado === "listo" && (
         <div className="flex flex-col gap-8 px-6 py-6">
-          {error && <p role="alert" className="rounded-xl bg-[#fdeeec] px-4 py-3 text-sm text-[#a52f24]">{error}</p>}
+          {error && <p role="alert" className="rounded-xl bg-peligro-suave px-4 py-3 text-sm text-peligro">{error}</p>}
 
           <Lista
             titulo="Centros de costo"
@@ -76,7 +78,7 @@ export function AdministrarOficina({ alCerrar, alCambiar }: { alCerrar: () => vo
           />
 
           <div className="flex justify-end border-t border-mist pt-4">
-            <button type="button" onClick={alCerrar} className="rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-white hover:bg-cyan-deep">Listo</button>
+            <button type="button" onClick={alCerrar} className="rounded-full bg-cyan-deep px-5 py-2.5 text-sm font-semibold text-white hover:bg-cyan-hondo">Listo</button>
           </div>
         </div>
       )}
@@ -169,10 +171,10 @@ function Lista({ titulo, ayuda, vacioNuevo, puedeEditar, conInversion, filas, al
             </label>
           )}
           <button type="submit" disabled={ocupado || !nuevo.trim() || repetido}
-            className="shrink-0 rounded-full bg-cyan px-4 py-2 text-xs font-semibold text-white hover:bg-cyan-deep disabled:opacity-50">
+            className="shrink-0 rounded-full bg-cyan-deep px-4 py-2 text-xs font-semibold text-white hover:bg-cyan-hondo disabled:opacity-50">
             Agregar
           </button>
-          {repetido && <span role="alert" className="w-full text-xs text-[#a52f24]">Ya existe uno con ese nombre.</span>}
+          {repetido && <span role="alert" className="w-full text-xs text-peligro">Ya existe uno con ese nombre.</span>}
         </form>
       )}
     </section>

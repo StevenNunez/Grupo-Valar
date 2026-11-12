@@ -85,7 +85,7 @@ export function VistaOficinaCentral() {
                 Categorías y centros
               </button>
               <button type="button" onClick={() => setFormulario({ registro: null, categoria: categoria === "todos" ? "compras" : categoria, centro: centro === "todos" ? CENTRO_GENERAL : centro })}
-                className="rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-white hover:bg-cyan-deep">
+                className="rounded-full bg-cyan-deep px-5 py-2.5 text-sm font-semibold text-white hover:bg-cyan-hondo">
                 Nuevo egreso
               </button>
             </div>
@@ -150,10 +150,10 @@ export function VistaOficinaCentral() {
                     {centrosVisibles.map(({ id, nombre }) => (
                       <button key={id} type="button" onClick={() => setCentro(centro === id ? "todos" : id)}
                         aria-pressed={centro === id}
-                        className={`rounded-2xl border p-4 text-left transition-colors ${centro === id ? "border-[#4a3aa7] bg-[#f3f0fc]" : "border-mist-deep bg-white hover:border-[#4a3aa7]"}`}>
+                        className={`rounded-2xl border p-4 text-left transition-colors ${centro === id ? "border-realce bg-realce-suave" : "border-mist-deep bg-white hover:border-realce"}`}>
                         <span className="block text-sm font-semibold text-ink">{nombre}</span>
                         <span className="mt-1.5 block font-display text-lg font-semibold text-ink">{formatearMonto(porCentro[id])}</span>
-                        <span className="mt-1.5 block text-xs text-[#4a3aa7]">{centro === id ? "Ver todos" : "Ver este centro"}</span>
+                        <span className="mt-1.5 block text-xs text-realce">{centro === id ? "Ver todos" : "Ver este centro"}</span>
                       </button>
                     ))}
                   </div>
@@ -204,9 +204,9 @@ function columnas(editar: ((fila: EgresoOficina) => void) | null, verHistorial: 
   return [
     { clave: "fecha", titulo: "Fecha", encabezado: true, celda: (f) => formatearFecha(f.fecha) },
     { clave: "categoria", titulo: "Categoría", celda: (f) => f.categoriaTitulo },
-    { clave: "centro", titulo: "Centro de costo", celda: (f) => f.centro_costo === CENTRO_GENERAL ? <span className="text-ink-soft">{f.centroNombre}</span> : <span className="font-semibold text-[#4a3aa7]">{f.centroNombre}</span> },
+    { clave: "centro", titulo: "Centro de costo", celda: (f) => f.centro_costo === CENTRO_GENERAL ? <span className="text-ink-soft">{f.centroNombre}</span> : <span className="font-semibold text-realce">{f.centroNombre}</span> },
     { clave: "detalle", titulo: "Detalle", celda: (f) => <><span className="block font-semibold text-ink">{f.descripcion}</span><span className="text-xs text-ink-soft">{f.proveedor}{f.documento ? ` · ${f.documento}` : ""}</span></> },
-    { clave: "estado", titulo: "Pago", celda: (f) => <span className={f.estado === "pagado" ? "text-[#0e7a4f]" : "text-[#8a5a09]"}>{f.estado === "pagado" ? "Pagado" : "Pendiente"}</span> },
+    { clave: "estado", titulo: "Pago", celda: (f) => <span className={f.estado === "pagado" ? "text-exito" : "text-alerta"}>{f.estado === "pagado" ? "Pagado" : "Pendiente"}</span> },
     { clave: "neto", titulo: "Neto", derecha: true, celda: (f) => formatearPesos(f.neto) },
     { clave: "iva", titulo: "IVA", derecha: true, celda: (f) => formatearPesos(f.iva) },
     { clave: "acciones", titulo: "Acciones", celda: (f) => <div className="flex gap-3 whitespace-nowrap">{editar && <button type="button" onClick={() => editar(f)} className="font-semibold text-cyan-deep hover:underline">Editar</button>}<button type="button" onClick={() => verHistorial(f)} className="text-ink-soft hover:underline">Historial</button></div> },

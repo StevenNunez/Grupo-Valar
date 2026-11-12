@@ -1,4 +1,5 @@
 import { cargarFirmaDeCorreo, cuerpoDelCorreo, enviarCorreoDeOrden, smtpConfigurado } from "@/lib/oc-envio/correo";
+import { anotarError } from "@/lib/errores-servidor";
 import {
   DIAS_DEL_ENLACE,
   cargarOrdenParaEnviar,
@@ -142,6 +143,7 @@ export async function POST(pedido: Request, { params }: Contexto) {
     });
   } catch (e) {
     await servicio.from("ordenes_envios").delete().eq("id", envio.id);
+    await anotarError({ origen: "servidor", donde: "api/ordenes/enviar (correo)", error: e, detalle: { orden: id } });
     return falla(`El correo no salió: ${e instanceof Error ? e.message : String(e)}`, 502);
   }
 
@@ -156,6 +158,7 @@ export async function POST(pedido: Request, { params }: Contexto) {
     }
   } catch (e) {
     pagnol = { ok: false, error: e instanceof Error ? e.message : String(e) };
+    await anotarError({ origen: "servidor", donde: "api/ordenes/enviar (anuncio a Pagnol)", error: e, detalle: { orden: id } });
   }
 
   return Response.json({ ok: true, envio: { id: envio.id, enviadaEn: envio.enviada_en, para, cc }, pagnol });

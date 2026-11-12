@@ -76,7 +76,7 @@ export function AnexosDelContrato({
         )}
 
         {estado.estado === "error" && (
-          <p role="alert" className="px-6 py-12 text-center text-sm text-[#a52f24]">
+          <p role="alert" className="px-6 py-12 text-center text-sm text-peligro">
             {estado.mensaje}
           </p>
         )}
@@ -204,7 +204,7 @@ function Lista({
                   {a.monto !== 0 && (
                     <p
                       className={`text-sm font-semibold tabular-nums ${
-                        a.monto < 0 && a.sumaAlContrato ? "text-[#a52f24]" : "text-ink"
+                        a.monto < 0 && a.sumaAlContrato ? "text-peligro" : "text-ink"
                       }`}
                     >
                       {a.sumaAlContrato ? (a.monto > 0 ? "+" : "−") : ""}

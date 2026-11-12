@@ -6,6 +6,7 @@ import { registrarCompraRecibida, registrarCorreccion } from "@/lib/pagnol/recep
 import { procesarYAnotar } from "@/lib/pagnol/reposicion";
 import { procesarSolicitudYAnotar, type AvisoSolicitud } from "@/lib/pagnol/solicitudes-entrantes";
 import { supabaseDeServicio } from "@/lib/supabase-servidor";
+import { anotarError } from "@/lib/errores-servidor";
 
 /**
  * Los avisos de Pagnol (Fase 3 del contrato, docs/integracion-pagnol-valar.md).
@@ -108,6 +109,7 @@ export async function POST(pedido: Request) {
       const { data: previo } = await sb.from("pagnol_webhooks_recibidos").select("procesado_en").eq("webhook_id", id).maybeSingle();
       if ((!esDeCompra(evento.type) && !esDeActivo(evento.type)) || previo?.procesado_en) return Response.json({ ok: true, duplicado: true });
     } else if (error) {
+      await anotarError({ origen: "servidor", donde: "webhook pagnol (anotar aviso)", error, detalle: { tipo: evento.type, webhook: id }, empresaId: empresa });
       return Response.json({ error: "No se pudo anotar el aviso." }, { status: 500 });
     }
   }
@@ -128,6 +130,7 @@ export async function POST(pedido: Request) {
       : await registrarCorreccion(sb, empresa, evento.data as Parameters<typeof registrarCorreccion>[2]);
     if (!r.ok && !r.permanente) {
       await sb.from("pagnol_webhooks_recibidos").update({ error: r.error }).eq("webhook_id", id);
+      await anotarError({ origen: "servidor", donde: `webhook pagnol (${evento.type})`, error: r.error, detalle: { webhook: id }, empresaId: empresa });
       return Response.json({ error: r.error }, { status: 500 });
     }
     await sb
@@ -147,6 +150,7 @@ export async function POST(pedido: Request) {
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
       await sb.from("pagnol_webhooks_recibidos").update({ error }).eq("webhook_id", id);
+      await anotarError({ origen: "servidor", donde: `webhook pagnol (${evento.type})`, error: e, detalle: { webhook: id }, empresaId: empresa });
       return Response.json({ error }, { status: 500 });
     }
     await sb.from("pagnol_webhooks_recibidos").update({ procesado_en: new Date().toISOString(), error: null }).eq("webhook_id", id);

@@ -1,5 +1,7 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import { useEffect, useState } from "react";
 import { avisar } from "@/lib/avisos";
 import { direccionCompleta } from "@/lib/empresa";
@@ -9,7 +11,7 @@ import { supabase } from "@/lib/supabase";
 
 const campo = "mt-2 w-full rounded-xl border border-mist-deep bg-white px-4 py-3.5 text-ink outline-none focus:border-cyan focus:ring-2 focus:ring-cyan/20";
 const etiqueta = "text-xs font-semibold uppercase tracking-[0.18em] text-ink-soft";
-const boton = "rounded-full bg-cyan px-7 py-3 font-semibold text-white hover:bg-cyan-deep disabled:cursor-wait disabled:opacity-70";
+const boton = "rounded-full bg-cyan-deep px-7 py-3 font-semibold text-white hover:bg-cyan-hondo disabled:cursor-wait disabled:opacity-70";
 
 /**
  * «Firma de los correos»: lo que cierra cada solicitud de cotización y cada
@@ -56,7 +58,7 @@ export function FirmaCorreoPerfil() {
       .eq("id", usuario.id);
     setTrabajando(false);
     if (falla) {
-      return setError(/firma_/.test(falla.message) ? "Falta aplicar la migración 0111 en la base." : falla.message);
+      return setError(/firma_/.test(falla.message) ? "Falta aplicar la migración 0111 en la base." : mensajeParaPersona(falla, "FirmaCorreoPerfil"));
     }
     avisar("Firma de correo guardada");
   }

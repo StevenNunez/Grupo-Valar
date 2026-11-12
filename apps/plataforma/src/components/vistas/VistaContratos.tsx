@@ -290,7 +290,7 @@ function TarjetaCierre({ c, alAbrir }: { c: Contrato; alAbrir: () => void }) {
         <button
           type="button"
           onClick={alAbrir}
-          className="rounded-full bg-cyan px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-cyan-deep"
+          className="rounded-full bg-cyan-deep px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-cyan-hondo"
         >
           Abrir ficha de cierre
         </button>
@@ -381,13 +381,13 @@ function TarjetaContrato({
         <div className="mt-3">
           <div className="flex items-baseline justify-between text-xs">
             <span className="text-ink-soft">Consumo del monto vigente</span>
-            <span className={`font-semibold ${pct > 100 ? "text-[#a52f24]" : pct > 85 ? "text-[#8a5a09]" : "text-[#0e7a4f]"}`}>
+            <span className={`font-semibold ${pct > 100 ? "text-peligro" : pct > 85 ? "text-alerta" : "text-exito"}`}>
               {pct.toFixed(0)}%
             </span>
           </div>
           <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-mist" aria-hidden="true">
             <div
-              className={`h-full rounded-full ${pct > 100 ? "bg-[#a52f24]" : pct > 85 ? "bg-[#c98a1c]" : "bg-[#0e7a4f]"}`}
+              className={`h-full rounded-full ${pct > 100 ? "bg-peligro" : pct > 85 ? "bg-alerta-vivo" : "bg-exito"}`}
               style={{ width: `${Math.min(100, pct)}%` }}
             />
           </div>

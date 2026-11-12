@@ -1,5 +1,7 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import { useCallback, useEffect, useState } from "react";
 import { Chip } from "./ui/Chip";
 import { Dialogo } from "./ui/Formulario";
@@ -19,7 +21,7 @@ const hoy = () => new Date().toISOString().slice(0, 10);
 const entero = (v: string) => Math.max(0, Math.round(Number(v.replace(/\D/g, "")) || 0));
 const campo = "w-full rounded-lg border border-mist-deep bg-white px-3 py-2 text-sm text-ink outline-none focus:border-cyan focus:ring-2 focus:ring-cyan/20";
 const boton = "rounded-full border border-mist-deep px-3.5 py-1.5 text-xs font-semibold text-ink hover:border-ink disabled:opacity-50";
-const botonPrimario = "rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-deep disabled:opacity-50";
+const botonPrimario = "rounded-full bg-cyan-deep px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-hondo disabled:opacity-50";
 
 export function PagosDeFactura({ linea, fechas, umbral, puedeProgramar, puedeMarcar, alCerrar, alCambiar }: {
   linea: CuentaPorPagar;
@@ -44,14 +46,14 @@ export function PagosDeFactura({ linea, fechas, umbral, puedeProgramar, puedeMar
     try {
       setCuotas(await cargarCuotas(compraId));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(mensajeParaPersona(e, "PagosDeFactura"));
     }
   }, [compraId]);
   useEffect(() => {
     let vigente = true;
     cargarCuotas(compraId)
       .then((c) => vigente && setCuotas(c))
-      .catch((e) => vigente && setError(e instanceof Error ? e.message : String(e)));
+      .catch((e) => vigente && setError(mensajeParaPersona(e, "PagosDeFactura")));
     return () => {
       vigente = false;
     };
@@ -65,7 +67,7 @@ export function PagosDeFactura({ linea, fechas, umbral, puedeProgramar, puedeMar
       await recargar();
       alCambiar();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(mensajeParaPersona(e, "PagosDeFactura"));
     } finally {
       setTrabajando(false);
     }
@@ -87,7 +89,7 @@ export function PagosDeFactura({ linea, fechas, umbral, puedeProgramar, puedeMar
           <Dato etiqueta="Falta pagar" valor={formatearPesos(Math.max(linea.total - pagado, 0))} tono={linea.total - pagado > 0 ? "aviso" : "bueno"} />
         </dl>
 
-        {error && <p role="alert" className="mt-4 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm text-[#a52f24]">{error}</p>}
+        {error && <p role="alert" className="mt-4 rounded-xl bg-peligro-suave px-4 py-3 text-sm text-peligro">{error}</p>}
 
         {cuotas === null ? (
           <p className="mt-6 text-sm text-ink-soft">Cargando…</p>
@@ -139,12 +141,12 @@ export function PagosDeFactura({ linea, fechas, umbral, puedeProgramar, puedeMar
                       {puedeProgramar && !c.fechaPago && (
                         quitando === c.id ? (
                           <span className="inline-flex items-center gap-2 text-xs">
-                            <button type="button" disabled={trabajando} className="font-semibold text-[#a52f24] hover:underline"
+                            <button type="button" disabled={trabajando} className="font-semibold text-peligro hover:underline"
                               onClick={() => hacer(async () => { await quitarCuota(c.id); setQuitando(null); })}>Sí, quitar</button>
                             <button type="button" className="text-ink-soft hover:underline" onClick={() => setQuitando(null)}>No</button>
                           </span>
                         ) : (
-                          <button type="button" disabled={trabajando} className="text-xs text-ink-soft hover:text-[#a52f24] hover:underline" onClick={() => setQuitando(c.id)}>Quitar</button>
+                          <button type="button" disabled={trabajando} className="text-xs text-ink-soft hover:text-peligro hover:underline" onClick={() => setQuitando(c.id)}>Quitar</button>
                         )
                       )}
                     </div>
@@ -170,7 +172,7 @@ export function PagosDeFactura({ linea, fechas, umbral, puedeProgramar, puedeMar
               ))}
             </ul>
 
-            <p className={`mt-3 text-xs ${saldoDelPlan === 0 ? "text-ink-soft" : "text-[#8a5a09]"}`}>
+            <p className={`mt-3 text-xs ${saldoDelPlan === 0 ? "text-ink-soft" : "text-alerta"}`}>
               {saldoDelPlan === 0
                 ? "Las cuotas suman exactamente el total de la factura."
                 : saldoDelPlan > 0
@@ -198,7 +200,7 @@ function Dato({ etiqueta, valor, tono }: { etiqueta: string; valor: string; tono
   return (
     <div className="rounded-xl border border-mist-deep px-4 py-3">
       <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-soft">{etiqueta}</dt>
-      <dd className={`mt-1 font-display text-lg font-semibold ${tono === "bueno" ? "text-[#1f6b3b]" : tono === "aviso" ? "text-[#8a5a09]" : "text-ink"}`}>{valor}</dd>
+      <dd className={`mt-1 font-display text-lg font-semibold ${tono === "bueno" ? "text-exito" : tono === "aviso" ? "text-alerta" : "text-ink"}`}>{valor}</dd>
     </div>
   );
 }
@@ -289,7 +291,7 @@ function PlanNuevo({ linea, trabajando, alCrear }: {
           ))}
         </ul>
       )}
-      {error && <p role="alert" className="mt-3 text-sm text-[#a52f24]">{error}</p>}
+      {error && <p role="alert" className="mt-3 text-sm text-peligro">{error}</p>}
       <div className="mt-4 flex items-center gap-3">
         <button type="button" disabled={trabajando || plan.length === 0} onClick={crear} className={botonPrimario}>
           {trabajando ? "Guardando…" : "Crear plan de cuotas"}

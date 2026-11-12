@@ -1,8 +1,11 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import { useMemo, useState } from "react";
 import { Chip, type Tono } from "../ui/Chip";
 import { Combo } from "../ui/Combo";
+import { Boton } from "../ui/Boton";
 import { CampoTexto, Campos, Dialogo, Pie, useFormulario } from "../ui/Formulario";
 import { Tabla, type Columna } from "../ui/Tabla";
 import { Contenido, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
@@ -132,7 +135,7 @@ export function VistaUsuarios() {
           <button
             type="button"
             onClick={() => setInvitando(true)}
-            className="inline-flex items-center gap-1.5 rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep"
+            className="inline-flex items-center gap-1.5 rounded-full bg-cyan-deep px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
               <path d="M12 5v14M5 12h14" strokeLinecap="round" />
@@ -214,7 +217,7 @@ type Comunes = {
 function Aviso({ texto }: { texto: string | null }) {
   if (!texto) return null;
   return (
-    <p role="alert" className="mb-4 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm font-medium text-[#a52f24]">
+    <p role="alert" className="mb-4 rounded-xl bg-peligro-suave px-4 py-3 text-sm font-medium text-peligro">
       {texto}
     </p>
   );
@@ -243,7 +246,7 @@ function Personas({ datos, yo, misModulos, filtros, alGuardado }: Comunes) {
       await cambiarCargo(p.id, rol);
       alGuardado();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(mensajeParaPersona(e, "VistaUsuarios"));
     }
   }
 
@@ -429,7 +432,7 @@ function DialogoPersona({
       setGuardado(aviso);
       alGuardado();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(mensajeParaPersona(e, "VistaUsuarios"));
     } finally {
       setOcupado(false);
     }
@@ -472,13 +475,13 @@ function DialogoPersona({
       <div className="max-h-[66vh] overflow-y-auto px-6 py-6">
         <Aviso texto={error} />
         {guardado && (
-          <p role="status" className="mb-4 rounded-xl bg-[#e6f4ee] px-4 py-3 text-sm font-medium text-[#0e7a4f]">
+          <p role="status" className="mb-4 rounded-xl bg-exito-suave px-4 py-3 text-sm font-medium text-exito">
             {guardado}
           </p>
         )}
 
         {soyYo && (
-          <p className="mb-5 rounded-xl bg-[#fdf4e6] px-4 py-3 text-sm text-[#8a5a09]">
+          <p className="mb-5 rounded-xl bg-alerta-suave px-4 py-3 text-sm text-alerta">
             No puedes cambiar tu propio acceso: es la forma más corta de quedarse fuera, o de darse
             más. Pídeselo a otro administrador.
           </p>
@@ -522,7 +525,7 @@ function DialogoPersona({
                   if (rol !== persona.rol) await cambiarCargo(persona.id, rol);
                 }, "Datos guardados.")
               }
-              className="rounded-full bg-cyan px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:opacity-50"
+              className="rounded-full bg-cyan-deep px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo disabled:opacity-50"
             >
               Guardar datos
             </button>
@@ -574,7 +577,7 @@ function DialogoPersona({
                       type="button"
                       disabled={ocupado}
                       onClick={() => void guardarModulo(m.id)}
-                      className="rounded-full bg-cyan px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:opacity-60"
+                      className="rounded-full bg-cyan-deep px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo disabled:opacity-60"
                     >
                       {ocupado ? "Guardando…" : `Guardar ${m.titulo}`}
                     </button>
@@ -891,7 +894,7 @@ function Cargos({ datos, filtros, alGuardado }: Comunes) {
             <button
               type="button"
               onClick={() => setEditando("nuevo")}
-              className="rounded-full bg-cyan px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-cyan-deep"
+              className="rounded-full bg-cyan-deep px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-cyan-hondo"
             >
               Nuevo cargo
             </button>
@@ -985,7 +988,7 @@ function Niveles({ datos, filtros, alGuardado }: Comunes) {
       await cambiarNivelPermiso(nivel, permiso, si);
       alGuardado();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(mensajeParaPersona(e, "VistaUsuarios"));
     } finally {
       setGuardando(null);
     }
@@ -1067,7 +1070,7 @@ function Invitaciones({ datos, filtros, alGuardado }: Comunes) {
       await cancelarInvitacion(id);
       alGuardado();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(mensajeParaPersona(e, "VistaUsuarios"));
     }
   }
 
@@ -1127,13 +1130,9 @@ function Invitaciones({ datos, filtros, alGuardado }: Comunes) {
       derecha: true,
       celda: (i) =>
         i.estado === "enviada" ? (
-          <button
-            type="button"
-            onClick={() => void cancelar(i.id)}
-            className="rounded-full border border-mist-deep px-3 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink"
-          >
+          <Boton variante="secundario" tamano="chico" onClick={() => cancelar(i.id)} trabajando="Cancelando…">
             Cancelar
-          </button>
+          </Boton>
         ) : null,
     },
   ];

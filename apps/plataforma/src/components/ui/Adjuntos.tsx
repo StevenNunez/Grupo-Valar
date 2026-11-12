@@ -1,5 +1,7 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import { useRef, useState } from "react";
 import { Confirmacion, Dialogo } from "./Formulario";
 import { useConsulta } from "@/lib/consulta";
@@ -51,8 +53,8 @@ import {
  */
 
 const iconos: Record<ReturnType<typeof claseDe>, { color: string; etiqueta: string }> = {
-  pdf: { color: "bg-[#a52f24]", etiqueta: "PDF" },
-  excel: { color: "bg-[#0e7a4f]", etiqueta: "XLS" },
+  pdf: { color: "bg-peligro", etiqueta: "PDF" },
+  excel: { color: "bg-exito", etiqueta: "XLS" },
   word: { color: "bg-cyan-deep", etiqueta: "DOC" },
   imagen: { color: "bg-ink-soft", etiqueta: "IMG" },
   archivo: { color: "bg-ink-soft", etiqueta: "ARC" },
@@ -159,7 +161,7 @@ function Contenido({
       const url = await enlaceDeAdjunto(adjunto, descargar);
       window.open(url, "_blank", "noopener,noreferrer");
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(mensajeParaPersona(e, "Adjuntos"));
     }
   }
 
@@ -173,7 +175,7 @@ function Contenido({
       recargar();
       alCambiar?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(mensajeParaPersona(e, "Adjuntos"));
     } finally {
       setBorrando(false);
     }
@@ -264,7 +266,7 @@ function Contenido({
                     type="button"
                     onClick={() => setPorSubir((p) => p.filter((_, j) => j !== i))}
                     disabled={subiendo}
-                    className="shrink-0 text-xs font-semibold text-[#a52f24] disabled:opacity-40"
+                    className="shrink-0 text-xs font-semibold text-peligro disabled:opacity-40"
                   >
                     Quitar
                   </button>
@@ -277,7 +279,7 @@ function Contenido({
         {error && (
           <p
             role="alert"
-            className="mt-4 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm font-medium text-[#a52f24]"
+            className="mt-4 rounded-xl bg-peligro-suave px-4 py-3 text-sm font-medium text-peligro"
           >
             {error}
           </p>
@@ -290,7 +292,7 @@ function Contenido({
           )}
 
           {estado.estado === "error" && (
-            <p role="alert" className="py-6 text-center text-sm text-[#a52f24]">
+            <p role="alert" className="py-6 text-center text-sm text-peligro">
               No se pudieron leer los respaldos: {estado.mensaje}
             </p>
           )}
@@ -364,7 +366,7 @@ function Contenido({
             type="button"
             onClick={() => void guardar()}
             disabled={subiendo || porSubir.length === 0}
-            className="rounded-full bg-cyan px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-full bg-cyan-deep px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo disabled:cursor-not-allowed disabled:opacity-50"
           >
             {subiendo
               ? "Guardando…"
@@ -461,7 +463,7 @@ function ClipDeRespaldos({ cuantos, onClick }: { cuantos?: number; onClick: () =
         />
       </svg>
       {!!cuantos && (
-        <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-cyan px-1 text-[10px] font-bold text-white">
+        <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-cyan-deep px-1 text-[10px] font-bold text-white">
           {cuantos}
         </span>
       )}

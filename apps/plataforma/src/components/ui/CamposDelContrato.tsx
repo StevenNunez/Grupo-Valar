@@ -46,7 +46,7 @@ export function CamposDelContrato({
             Lo que este contrato necesita para armar su estado de pago. Cada contrato
             pide lo suyo.
             {falta.length > 0 && (
-              <span className="mt-1 block text-[#8a5a09]">
+              <span className="mt-1 block text-alerta">
                 Falta completar: {falta.join(", ")}.
               </span>
             )}

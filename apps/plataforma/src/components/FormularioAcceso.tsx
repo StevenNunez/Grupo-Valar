@@ -119,7 +119,7 @@ export function FormularioAcceso() {
       {error && (
         <p
           role="alert"
-          className="rounded-xl bg-[#fdeeec] px-4 py-3 text-sm font-medium text-[#a52f24]"
+          className="rounded-xl bg-peligro-suave px-4 py-3 text-sm font-medium text-peligro"
         >
           {error}
         </p>
@@ -128,7 +128,7 @@ export function FormularioAcceso() {
       <button
         type="submit"
         disabled={enviando}
-        className="mt-1 inline-flex items-center justify-center gap-2 rounded-full bg-cyan px-7 py-4 font-semibold text-white transition-colors hover:bg-cyan-deep disabled:cursor-wait disabled:opacity-70"
+        className="mt-1 inline-flex items-center justify-center gap-2 rounded-full bg-cyan-deep px-7 py-4 font-semibold text-white transition-colors hover:bg-cyan-hondo disabled:cursor-wait disabled:opacity-70"
       >
         {enviando ? "Ingresando…" : "Ingresar"}
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

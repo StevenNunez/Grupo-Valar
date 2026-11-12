@@ -1,5 +1,7 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import { useEffect, useState } from "react";
 import { DialogoAdjuntos } from "./ui/Adjuntos";
 import { DialogoHistorial } from "./ui/Historial";
@@ -160,7 +162,7 @@ export function CondicionesLeidas({
             </ul>
           )}
           {s.hitos.length > 0 && sumaHitos(s) !== 100 && (
-            <p className="mt-1 text-xs text-[#8a5a09]">Los hitos suman {formatearNumero(sumaHitos(s))}%.</p>
+            <p className="mt-1 text-xs text-alerta">Los hitos suman {formatearNumero(sumaHitos(s))}%.</p>
           )}
         </>
       )}
@@ -249,7 +251,7 @@ function ResultadoPorAnexo({ c }: { c: Contrato }) {
               <td className="py-1 pr-2 text-ink">{f.nombre}</td>
               <td className="py-1 pr-2 text-right tabular-nums text-ink-soft">{formatearPesos(f.venta)}</td>
               <td className="py-1 pr-2 text-right tabular-nums text-ink-soft">{formatearPesos(f.costo)}</td>
-              <td className={`py-1 pr-2 text-right tabular-nums font-semibold ${f.margen < 0 ? "text-[#a52f24]" : "text-ink"}`}>{formatearPesos(f.margen)}</td>
+              <td className={`py-1 pr-2 text-right tabular-nums font-semibold ${f.margen < 0 ? "text-peligro" : "text-ink"}`}>{formatearPesos(f.margen)}</td>
               <td className="py-1 text-right tabular-nums text-ink-soft">{pct(f.margen, f.venta)}</td>
             </tr>
           ))}
@@ -346,7 +348,7 @@ export function AnexosDesplegados({
     let vigente = true;
     cargarAnexos(c.id)
       .then((a) => vigente && setLista(a))
-      .catch((e) => vigente && setError(e instanceof Error ? e.message : String(e)));
+      .catch((e) => vigente && setError(mensajeParaPersona(e, "FichaContrato")));
     contarAdjuntos("anexos").then((m) => vigente && setRespaldos(m));
     return () => {
       vigente = false;
@@ -364,7 +366,7 @@ export function AnexosDesplegados({
   return (
     <div className="mt-3 rounded-xl bg-mist/40 p-3">
       {error ? (
-        <p className="text-xs text-[#a52f24]">{error}</p>
+        <p className="text-xs text-peligro">{error}</p>
       ) : lista === null ? (
         <p className="text-xs text-ink-soft">Cargando anexos…</p>
       ) : lista.length === 0 ? (

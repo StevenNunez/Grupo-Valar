@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { BotonAdjuntos } from "./Adjuntos";
+import { claseDeBoton } from "./Boton";
 import { Dialogo } from "./Formulario";
 import { useConsulta } from "@/lib/consulta";
 import { cargarAdjuntos, contarAdjuntos, enlaceDeAdjunto } from "@/lib/adjuntos";
@@ -18,9 +19,9 @@ import { usePuede } from "@/lib/sesion";
  */
 
 const acciones: Record<Accion, { titulo: string; color: string }> = {
-  creado: { titulo: "Creó el registro", color: "bg-[#0e7a4f]" },
+  creado: { titulo: "Creó el registro", color: "bg-exito" },
   modificado: { titulo: "Modificó", color: "bg-cyan-deep" },
-  eliminado: { titulo: "Eliminó el registro", color: "bg-[#a52f24]" },
+  eliminado: { titulo: "Eliminó el registro", color: "bg-peligro" },
 };
 
 /** Nombres de columna en algo que se pueda leer. */
@@ -129,7 +130,7 @@ function Contenido({ tabla, registroId }: { tabla: string; registroId: string })
 
   if (estado.estado === "error") {
     return (
-      <p role="alert" className="px-6 py-10 text-center text-sm text-[#a52f24]">
+      <p role="alert" className="px-6 py-10 text-center text-sm text-peligro">
         No se pudo leer el historial: {estado.mensaje}
       </p>
     );
@@ -275,7 +276,7 @@ export function BotonNuevo({
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-2 rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep"
+      className={claseDeBoton("primario")}
     >
       <svg
         width="16"

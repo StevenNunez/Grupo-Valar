@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { explicarError, reportarError } from "./errores";
 
 /**
  * Estado de una consulta a Supabase.
@@ -125,6 +126,8 @@ export function useConsulta<T>(consultar: () => Promise<T>, clave?: string): Con
       .catch((e: unknown) => {
         if (!vigente) return;
         const mensaje = e instanceof Error ? e.message : String(e);
+        // Si es un error que la pantalla no sabe explicar (o la base tardó de más), queda registrado.
+        if (explicarError(e).reportar) reportarError(`cargar ${clave?.split(":").slice(2).join(":") || "datos"}`, e);
         setActualizando(false);
         // Con algo en pantalla, un fallo al refrescar no lo borra.
         setEstado((actual) => {

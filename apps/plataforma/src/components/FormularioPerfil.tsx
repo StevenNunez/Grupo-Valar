@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabase";
 
 const campo = "mt-2 w-full rounded-xl border border-mist-deep bg-white px-4 py-3.5 text-ink outline-none focus:border-cyan focus:ring-2 focus:ring-cyan/20";
 const etiqueta = "text-xs font-semibold uppercase tracking-[0.18em] text-ink-soft";
-const boton = "rounded-full bg-cyan px-7 py-3 font-semibold text-white hover:bg-cyan-deep disabled:cursor-wait disabled:opacity-70";
+const boton = "rounded-full bg-cyan-deep px-7 py-3 font-semibold text-white hover:bg-cyan-hondo disabled:cursor-wait disabled:opacity-70";
 
 export function FormularioPerfil() {
   const usuario = useUsuario();

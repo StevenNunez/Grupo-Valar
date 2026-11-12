@@ -144,7 +144,7 @@ export function VistaActivos() {
       />
       {aviso && (
         <p role={aviso.tono === "error" ? "alert" : "status"}
-          className={`mb-4 rounded-xl px-4 py-3 text-sm font-medium ${aviso.tono === "error" ? "bg-[#fdeeec] text-[#a52f24]" : "bg-[#e6f4ec] text-[#1d6b45]"}`}>
+          className={`mb-4 rounded-xl px-4 py-3 text-sm font-medium ${aviso.tono === "error" ? "bg-peligro-suave text-peligro" : "bg-exito-suave text-exito"}`}>
           {aviso.texto}
         </p>
       )}
@@ -256,7 +256,7 @@ export function VistaActivos() {
                     )}
                     {elegidos.size > 0 && (
                       <>
-                        <button type="button" onClick={() => setMasivo(true)} className="rounded-full bg-cyan px-4 py-1.5 text-xs font-semibold text-white hover:bg-cyan-deep">
+                        <button type="button" onClick={() => setMasivo(true)} className="rounded-full bg-cyan-deep px-4 py-1.5 text-xs font-semibold text-white hover:bg-cyan-hondo">
                           Identificar {elegidos.size} {elegidos.size === 1 ? "activo" : "activos"}…
                         </button>
                         <button type="button" onClick={() => setElegidos(new Map())} className="text-xs font-semibold text-ink-soft hover:text-ink hover:underline">Quitar la selección</button>
@@ -265,7 +265,7 @@ export function VistaActivos() {
                   </div>
                 )}
                 {lista.error ? (
-                  <p role="alert" className="px-6 py-10 text-center text-sm text-[#a52f24] lg:px-8">
+                  <p role="alert" className="px-6 py-10 text-center text-sm text-peligro lg:px-8">
                     No se pudo cargar la lista: {lista.error}{" "}
                     <button type="button" onClick={lista.recargar} className="font-semibold underline">Reintentar</button>
                   </p>

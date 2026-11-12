@@ -246,7 +246,7 @@ export function InformeImprimible({
                 </td>
               </tr>
               {total.hh.horasCobradas > 0 && total.hh.horasParada > total.hh.horasCobradas && (
-                <tr className="font-semibold text-[#a52f24]">
+                <tr className="font-semibold text-peligro">
                   <td className="py-2">No cobrado (parada de planta)</td>
                   <td />
                   <td className="py-2 text-right tabular-nums">

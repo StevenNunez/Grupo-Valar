@@ -1,5 +1,7 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import { useEffect, useState } from "react";
 import { avisar } from "@/lib/avisos";
 import { useEmpresa, useRecargarEmpresa } from "@/lib/empresa-cliente";
@@ -78,7 +80,7 @@ export function VistaEmpresa() {
       .maybeSingle()
       .then(({ data, error: falla }) => {
         if (!vigente) return;
-        if (falla) return setError(falla.message);
+        if (falla) return setError(mensajeParaPersona(falla, "VistaEmpresa"));
         const f = (data ?? {}) as Partial<Record<keyof Campos | "autoriza_ordenes_usuario_id", string | null>>;
         setAutoriza(f.autoriza_ordenes_usuario_id ?? "");
         setValores({
@@ -117,7 +119,7 @@ export function VistaEmpresa() {
     };
     const { data, error: falla } = await supabase.from("empresas").update(limpio).eq("id", usuario.empresa).select("id");
     setGuardando(false);
-    if (falla) return setError(falla.message);
+    if (falla) return setError(mensajeParaPersona(falla, "VistaEmpresa"));
     // El RLS no avisa cuando no deja escribir: simplemente no cambia ninguna fila.
     if (!data?.length) return setError("Tu acceso no permite cambiar los datos de la empresa.");
     recargar();
@@ -183,14 +185,14 @@ export function VistaEmpresa() {
             Así se ve hoy en una orden de compra: <strong className="text-ink">{datos.nombreEnOrdenes}</strong> · RUT {datos.rut} · {datos.direccion}, {datos.ciudad}
           </p>
 
-          {error && <p role="alert" className="rounded-xl bg-[#fdeeec] px-4 py-3 text-sm text-[#a52f24]">{error}</p>}
+          {error && <p role="alert" className="rounded-xl bg-peligro-suave px-4 py-3 text-sm text-peligro">{error}</p>}
 
           {edita ? (
             <div>
               <button
                 type="submit"
                 disabled={guardando}
-                className="rounded-full bg-cyan px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:opacity-60"
+                className="rounded-full bg-cyan-deep px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo disabled:opacity-60"
               >
                 {guardando ? "Guardando…" : "Guardar cambios"}
               </button>

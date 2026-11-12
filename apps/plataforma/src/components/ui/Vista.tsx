@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 import type { EstadoConsulta } from "@/lib/consulta";
+import { explicarError } from "@/lib/errores";
+import { Boton } from "./Boton";
 
 /**
  * Andamiaje de una vista del módulo: encabezado, tira de totales y la caja
@@ -51,11 +53,11 @@ export function Resumen({ datos }: { datos: Dato[] }) {
           <dd
             className={`mt-3 font-display text-2xl font-semibold leading-none ${
               d.acento === "critico"
-                ? "text-[#a52f24]"
+                ? "text-peligro"
                 : d.acento === "aviso"
-                  ? "text-[#8a5a09]"
+                  ? "text-alerta"
                   : d.acento === "bueno"
-                    ? "text-[#0e7a4f]"
+                    ? "text-exito"
                     : "text-ink"
             }`}
           >
@@ -240,27 +242,24 @@ export function Cargando() {
 }
 
 export function Fallo({ mensaje, reintentar }: { mensaje: string; reintentar?: () => void }) {
-  const lento = /timeout|timed out|failed to fetch|network|fetch failed|load failed/i.test(mensaje);
+  const explicado = explicarError(mensaje).mensaje;
   return (
-    <div role="alert" className="rounded-2xl border border-[#f0cdc8] bg-[#fdeeec] p-6">
-      <p className="font-display text-lg font-semibold text-[#a52f24]">
+    <div role="alert" className="rounded-2xl border border-peligro-borde bg-peligro-suave p-6">
+      <p className="font-display text-lg font-semibold text-peligro">
         No se pudieron cargar los datos
       </p>
-      <p className="mt-2 text-sm text-ink-soft">
-        {lento
-          ? "La base de datos tardó más de lo normal en responder, incluso después de reintentar. Suele ser pasajero: prueba de nuevo en unos segundos."
-          : "Vuelve a cargar la página. Si el problema sigue, avisa a quien administra la plataforma."}
-      </p>
+      <p className="mt-2 text-sm text-ink-soft">{explicado}</p>
       {reintentar && (
-        <button
-          type="button"
-          onClick={reintentar}
-          className="mt-4 rounded-lg bg-[#a52f24] px-4 py-2 text-sm font-medium text-white transition hover:opacity-90"
-        >
+        <Boton variante="peligro" tamano="chico" className="mt-4" onClick={reintentar}>
           Reintentar
-        </button>
+        </Boton>
       )}
-      <p className="mt-3 font-mono text-xs text-ink-soft/80">{mensaje}</p>
+      {explicado !== mensaje && (
+        <details className="mt-3 text-xs text-ink-soft">
+          <summary className="cursor-pointer select-none">Detalle técnico</summary>
+          <p className="mt-1 break-words font-mono">{mensaje}</p>
+        </details>
+      )}
     </div>
   );
 }

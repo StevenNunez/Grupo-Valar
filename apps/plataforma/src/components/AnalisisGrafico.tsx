@@ -607,7 +607,7 @@ export function EvolucionMensual({
                 x={centro(i)}
                 y={altoBarras + 30}
                 textAnchor="middle"
-                className={`text-[10px] font-semibold tabular-nums ${e.consolidado.margen < 0 ? "fill-[#a52f24]" : "fill-ink-soft"}`}
+                className={`text-[10px] font-semibold tabular-nums ${e.consolidado.margen < 0 ? "fill-peligro" : "fill-ink-soft"}`}
               >
                 {formatearMillones(e.consolidado.margen)}
               </text>
@@ -643,7 +643,7 @@ export function EvolucionMensual({
                 x={centro(i)}
                 y={yLinea(pct) - 11}
                 textAnchor="middle"
-                className={`text-[12px] font-semibold tabular-nums ${bajo ? "fill-[#a52f24]" : "fill-ink"}`}
+                className={`text-[12px] font-semibold tabular-nums ${bajo ? "fill-peligro" : "fill-ink"}`}
               >
                 {pct.toFixed(1)}%
               </text>

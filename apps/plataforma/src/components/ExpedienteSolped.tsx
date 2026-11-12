@@ -71,7 +71,7 @@ export function ExpedienteSolped({
       )}
 
       {estado.estado === "error" && (
-        <p role="alert" className="px-6 py-12 text-center text-sm text-[#a52f24]">
+        <p role="alert" className="px-6 py-12 text-center text-sm text-peligro">
           No se pudo leer el expediente: {estado.mensaje}
         </p>
       )}
@@ -204,7 +204,7 @@ function Cuerpo({ datos, exp }: { datos: Datos; exp: Expediente }) {
                   </td>
                   <td className="py-2.5 pr-3 text-right tabular-nums">
                     {i.cantidadPendiente > 0 ? (
-                      <span className="font-semibold text-[#8a5a09]">
+                      <span className="font-semibold text-alerta">
                         {formatearNumero(i.cantidadPendiente)}
                       </span>
                     ) : (
@@ -267,7 +267,7 @@ function Cuerpo({ datos, exp }: { datos: Datos; exp: Expediente }) {
                         </span>
                       )}
                       {c.itemsSinStock > 0 && (
-                        <span className="mt-0.5 block text-xs text-[#8a5a09]">
+                        <span className="mt-0.5 block text-xs text-alerta">
                           {c.itemsSinStock} sin stock
                         </span>
                       )}

@@ -22,7 +22,8 @@
     "usuarios": "node --env-file=.env.local scripts/crear-usuarios.mjs",
     "revisar-sql": "node scripts/revisar-sql.mjs",
     "equipo-demo": "node --env-file=.env.local scripts/sembrar-equipo-demo.mjs",
-    "verificar-accesos": "node --env-file=.env.local scripts/verificar-accesos.mjs"
+    "verificar-accesos": "node --env-file=.env.local scripts/verificar-accesos.mjs",
+    "tipos-supabase": "node scripts/generar-tipos-supabase.mjs"
   },
   "devDependencies": {
     "@supabase/supabase-js": "^2.115.0"

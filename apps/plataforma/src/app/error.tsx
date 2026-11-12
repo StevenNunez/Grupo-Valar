@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
+import { claseDeBoton } from "@/components/ui/Boton";
+import { reportarError } from "@/lib/errores";
 
 /**
  * Pantalla de error de toda la plataforma.
@@ -23,6 +25,8 @@ export default function ErrorDePagina({ error, retry }: { error: unknown; retry:
 
   useEffect(() => {
     console.error(error);
+    // Un deploy nuevo no es un error del código; lo demás se anota para enterarnos.
+    if (!vieja) reportarError(`pantalla rota ${window.location.pathname}`, error);
     if (!vieja) return;
     try {
       const ultima = Number(window.sessionStorage.getItem(CLAVE) ?? 0);
@@ -50,7 +54,7 @@ export default function ErrorDePagina({ error, retry }: { error: unknown; retry:
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep"
+            className={claseDeBoton("primario")}
           >
             Recargar
           </button>

@@ -158,7 +158,7 @@ function Tablero({ datos }: { datos: Datos }) {
                   <span
                     className={
                       s.diasAbierta > 7
-                        ? "text-xs font-semibold text-[#a52f24]"
+                        ? "text-xs font-semibold text-peligro"
                         : "text-xs text-ink-soft"
                     }
                   >
@@ -276,7 +276,7 @@ function Enlace({ href, children }: { href: string; children: React.ReactNode })
   return (
     <Link
       href={href}
-      className="inline-flex items-center gap-2 rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep"
+      className="inline-flex items-center gap-2 rounded-full bg-cyan-deep px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo"
     >
       {children}
     </Link>

@@ -6,6 +6,7 @@ import { Buscador } from "./ui/Buscador";
 import { Tabla, type Columna } from "./ui/Tabla";
 import { Filtro, Panel } from "./ui/Vista";
 import { Dialogo } from "./ui/Formulario";
+import { Boton } from "./ui/Boton";
 import { CicloOrden, type FacturaSugerida } from "./CicloOrden";
 import { FormularioReembolso } from "./formularios/FormularioReembolso";
 import { formatearRut } from "@/lib/abastecimiento";
@@ -347,7 +348,7 @@ export function FacturasSii({
                   type="button"
                   disabled={subiendo}
                   onClick={() => entrada.current?.click()}
-                  className="rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-white hover:bg-cyan-deep disabled:opacity-60"
+                  className="rounded-full bg-cyan-deep px-5 py-2.5 text-sm font-semibold text-white hover:bg-cyan-hondo disabled:opacity-60"
                 >
                   {subiendo ? "Leyendo…" : "Subir archivos del SII"}
                 </button>
@@ -361,7 +362,7 @@ export function FacturasSii({
         {aviso && (
           <p
             role="status"
-            className={`border-b border-mist px-6 py-3 text-sm lg:px-8 ${aviso.tono === "ok" ? "bg-[#eaf6ee] text-[#1f6b3a]" : "bg-[#fdeeec] text-[#a52f24]"}`}
+            className={`border-b border-mist px-6 py-3 text-sm lg:px-8 ${aviso.tono === "ok" ? "bg-exito-suave text-exito" : "bg-peligro-suave text-peligro"}`}
           >
             {aviso.texto}
           </p>
@@ -386,7 +387,7 @@ export function FacturasSii({
         {estado.estado === "cargando" ? (
           <p className="px-6 py-14 text-center text-sm text-ink-soft">Cargando…</p>
         ) : estado.estado === "error" ? (
-          <p className="px-6 py-14 text-center text-sm text-[#a52f24]">{estado.mensaje}</p>
+          <p className="px-6 py-14 text-center text-sm text-peligro">{estado.mensaje}</p>
         ) : (
           <>
             <Tabla
@@ -455,7 +456,7 @@ function ArmarRendicion({ docs, alCerrar, alGuardado }: { docs: FacturaSii[]; al
   if (estado.estado === "error") {
     return (
       <Dialogo titulo="Armar rendición" abierto alCerrar={alCerrar}>
-        <p className="px-6 py-10 text-center text-sm text-[#a52f24]">{estado.mensaje}</p>
+        <p className="px-6 py-10 text-center text-sm text-peligro">{estado.mensaje}</p>
       </Dialogo>
     );
   }
@@ -480,7 +481,7 @@ function RegistrarEnOrden({ doc, ordenId, alCerrar, alCambiar }: { doc: FacturaS
   if (estado.estado === "error") {
     return (
       <Dialogo titulo="Registrar factura" abierto alCerrar={alCerrar}>
-        <p className="px-6 py-10 text-center text-sm text-[#a52f24]">{estado.mensaje}</p>
+        <p className="px-6 py-10 text-center text-sm text-peligro">{estado.mensaje}</p>
       </Dialogo>
     );
   }
@@ -495,18 +496,11 @@ function RegistrarEnOrden({ doc, ordenId, alCerrar, alCambiar }: { doc: FacturaS
   return <CicloOrden orden={estado.datos} modoInicial="facturar" sugerida={sugerida} alCerrar={alCerrar} alCambiar={alCambiar} />;
 }
 
-function BotonChico({ children, onClick, secundario }: { children: React.ReactNode; onClick: () => void; secundario?: boolean }) {
+/* Si `onClick` devuelve una promesa (ignorar), el botón se bloquea hasta que termine. */
+function BotonChico({ children, onClick, secundario }: { children: React.ReactNode; onClick: () => unknown; secundario?: boolean }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={
-        secundario
-          ? "rounded-full border border-mist-deep px-3.5 py-1.5 text-xs font-semibold text-ink-soft hover:border-ink hover:text-ink"
-          : "rounded-full bg-cyan px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-cyan-deep"
-      }
-    >
+    <Boton variante={secundario ? "secundario" : "primario"} tamano="chico" onClick={onClick} className="px-3.5">
       {children}
-    </button>
+    </Boton>
   );
 }

@@ -156,7 +156,7 @@ export function FichaHaberes<T extends Haberes>({
           <p className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 text-sm text-ink-soft">
             <span>
               Sueldo líquido{" "}
-              <span className={`font-display text-lg font-semibold tabular-nums ${liquido < 0 ? "text-[#a52f24]" : "text-ink"}`}>
+              <span className={`font-display text-lg font-semibold tabular-nums ${liquido < 0 ? "text-peligro" : "text-ink"}`}>
                 {formatearPesos(liquido)}
               </span>
             </span>

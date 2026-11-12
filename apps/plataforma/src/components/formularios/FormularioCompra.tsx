@@ -1,5 +1,7 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import { SeccionRespaldos, useRespaldos } from "@/components/ui/Respaldos";
 import { SelectorAnexo } from "../ui/SelectorAnexo";
 import { useEffect, useState } from "react";
@@ -154,7 +156,7 @@ export function FormularioCompra({
             : [lineaVacia({ descripcion: compra.detalle, cantidad: 1, precio_unitario: compra.neto, categoria_id: compra.categoriaId ?? "", tipo: compra.tipo })],
         );
       })
-      .catch((e) => vigente && f.setError(e instanceof Error ? e.message : String(e)))
+      .catch((e) => vigente && f.setError(mensajeParaPersona(e, "FormularioCompra")))
       .finally(() => vigente && setCargandoLineas(false));
     return () => {
       vigente = false;
@@ -267,7 +269,7 @@ export function FormularioCompra({
       alGuardado();
       alCerrar();
     } catch (e) {
-      setErrorPaso(e instanceof Error ? e.message : String(e));
+      setErrorPaso(mensajeParaPersona(e, "FormularioCompra"));
     } finally {
       setPasando(false);
     }
@@ -289,7 +291,7 @@ export function FormularioCompra({
       alGuardado();
       alCerrar();
     } catch (e) {
-      setErrorBorrado(e instanceof Error ? e.message : String(e));
+      setErrorBorrado(mensajeParaPersona(e, "FormularioCompra"));
     } finally {
       setBorrando(false);
     }
@@ -483,9 +485,9 @@ export function FormularioCompra({
                 <p
                   className={`rounded-xl px-4 py-3 text-sm leading-relaxed ${
                     acumulado > categoria.presupuestoMensual
-                      ? "bg-[#fdeeec] text-[#a52f24]"
+                      ? "bg-peligro-suave text-peligro"
                       : acumulado > categoria.presupuestoMensual * 0.85
-                        ? "bg-[#fdf3e3] text-[#8a5a09]"
+                        ? "bg-alerta-suave text-alerta"
                         : "bg-mist/50 text-ink-soft"
                   }`}
                 >

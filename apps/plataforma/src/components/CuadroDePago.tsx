@@ -59,7 +59,7 @@ export function CuadroDePago({
         {lineas.length} {lineas.length === 1 ? "documento" : "documentos"} · total a
         transferir <strong className="text-ink">{formatearPesos(total)}</strong>
         {total > tope && (
-          <span className="text-[#a52f24]">
+          <span className="text-peligro">
             {" "}
             — {formatearPesos(total - tope)} sobre el tope semanal de {formatearPesos(tope)}
           </span>
@@ -162,7 +162,7 @@ export function CuadroDePago({
         </table>
 
         {bloqueados.length > 0 && (
-          <p className="mt-3 rounded-lg border border-[#e2b7b1] bg-[#fdeeec] px-4 py-3 text-xs leading-relaxed text-[#a52f24]">
+          <p className="mt-3 rounded-lg border border-peligro-borde bg-peligro-suave px-4 py-3 text-xs leading-relaxed text-peligro">
             <strong>No transferir todavía a:</strong>{" "}
             {bloqueados.map((n) => n.beneficiario).join(", ")}. Falta crear o validar la
             cuenta bancaria, o el RUT del proveedor.

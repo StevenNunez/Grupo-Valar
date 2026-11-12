@@ -1,5 +1,7 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 
@@ -22,7 +24,7 @@ export function FormularioRecuperacion() {
       // La respuesta es la misma exista o no la cuenta.
       setEnviado(true);
     } catch (fallo) {
-      setError(fallo instanceof Error ? fallo.message : "No se pudo pedir el enlace. Intenta nuevamente.");
+      setError(mensajeParaPersona(fallo, "FormularioRecuperacion"));
     } finally {
       setEnviando(false);
     }
@@ -47,8 +49,8 @@ export function FormularioRecuperacion() {
           className="mt-2 w-full rounded-xl border border-mist-deep bg-white px-4 py-3.5 text-ink outline-none focus:border-cyan focus:ring-2 focus:ring-cyan/20"
         />
       </div>
-      {error && <p role="alert" className="rounded-xl bg-[#fdeeec] px-4 py-3 text-sm text-[#a52f24]">{error}</p>}
-      <button type="submit" disabled={enviando} className="rounded-full bg-cyan px-7 py-4 font-semibold text-white hover:bg-cyan-deep disabled:opacity-70">
+      {error && <p role="alert" className="rounded-xl bg-peligro-suave px-4 py-3 text-sm text-peligro">{error}</p>}
+      <button type="submit" disabled={enviando} className="rounded-full bg-cyan-deep px-7 py-4 font-semibold text-white hover:bg-cyan-hondo disabled:opacity-70">
         {enviando ? "Enviando…" : "Enviar enlace"}
       </button>
     </form>

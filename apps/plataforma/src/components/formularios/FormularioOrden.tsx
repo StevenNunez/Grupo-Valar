@@ -626,7 +626,7 @@ export function FormularioOrden({
                 <button
                   type="button"
                   onClick={recuperar}
-                  className="rounded-full bg-cyan px-4 py-1.5 text-xs font-semibold text-white hover:bg-cyan-deep"
+                  className="rounded-full bg-cyan-deep px-4 py-1.5 text-xs font-semibold text-white hover:bg-cyan-hondo"
                 >
                   Recuperarla
                 </button>
@@ -804,7 +804,7 @@ export function FormularioOrden({
                       type="button"
                       aria-pressed={enUf === (id === "UF")}
                       onClick={() => elegirMoneda(id === "UF")}
-                      className={`px-4 py-2 transition-colors ${enUf === (id === "UF") ? "bg-cyan text-white" : "text-ink-soft hover:text-ink"}`}
+                      className={`px-4 py-2 transition-colors ${enUf === (id === "UF") ? "bg-cyan-deep text-white" : "text-ink-soft hover:text-ink"}`}
                     >
                       {titulo}
                     </button>
@@ -814,7 +814,7 @@ export function FormularioOrden({
                   type="button"
                   onClick={() => setLeyendoPdf((p) => !p)}
                   aria-expanded={leyendoPdf}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-cyan-deep px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo"
                 >
                   Leer cotización (PDF)
                 </button>
@@ -905,7 +905,7 @@ export function FormularioOrden({
                       <button
                         type="button"
                         onClick={() => agregarPegadas(filasPegadas)}
-                        className="rounded-full bg-cyan px-4 py-2 text-xs font-semibold text-white hover:bg-cyan-deep"
+                        className="rounded-full bg-cyan-deep px-4 py-2 text-xs font-semibold text-white hover:bg-cyan-hondo"
                       >
                         Agregar {filasPegadas.length} ítems
                       </button>
@@ -946,7 +946,7 @@ export function FormularioOrden({
             )}
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[52rem] border-collapse text-sm">
+              <table className="lineas-movil w-full md:min-w-[52rem] border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-mist text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
                     <th className="py-2 pr-3">Descripción</th>
@@ -962,7 +962,7 @@ export function FormularioOrden({
                 <tbody>
                   {lineas.map((l) => (
                     <tr key={l.id} className="border-b border-mist last:border-0">
-                      <td className="py-2 pr-3">
+                      <td data-label="Descripción" data-ancho className="py-2 pr-3">
                         <CampoConPagnol
                           ariaLabel="Descripción"
                           valor={l.descripcion}
@@ -985,7 +985,7 @@ export function FormularioOrden({
                           className={claseCelda}
                         />
                       </td>
-                      <td className="py-2 pr-3">
+                      <td data-label="Categoría" className="py-2 pr-3">
                         <select
                           value={l.categoria_id}
                           onChange={(e) => cambiar(l.id, "categoria_id", e.target.value)}
@@ -998,14 +998,14 @@ export function FormularioOrden({
                           ))}
                         </select>
                       </td>
-                      <td className="py-2 pr-3">
+                      <td data-label="UM" className="py-2 pr-3">
                         <input
                           value={l.unidad}
                           onChange={(e) => cambiar(l.id, "unidad", e.target.value)}
                           className={claseCelda}
                         />
                       </td>
-                      <td className="py-2 pr-3">
+                      <td data-label="Cant." className="py-2 pr-3">
                         <input
                           type="number"
                           min="0"
@@ -1015,7 +1015,7 @@ export function FormularioOrden({
                           className={`${claseCelda} text-right tabular-nums`}
                         />
                       </td>
-                      <td className="py-2 pr-3">
+                      <td data-label={enUf ? "P. unitario (UF)" : "P. unitario"} className="py-2 pr-3">
                         <CampoPrecio
                           valor={enUf ? l.precio_uf : l.precio_unitario}
                           alCambiar={(n) => cambiar(l.id, enUf ? "precio_uf" : "precio_unitario", n)}
@@ -1027,7 +1027,7 @@ export function FormularioOrden({
                           </p>
                         )}
                       </td>
-                      <td className="py-2 pr-3">
+                      <td data-label="Tipo" className="py-2 pr-3">
                         <select
                           value={l.tipo}
                           onChange={(e) => cambiar(l.id, "tipo", e.target.value)}
@@ -1040,18 +1040,18 @@ export function FormularioOrden({
                           ))}
                         </select>
                       </td>
-                      <td className="py-2 text-right font-semibold tabular-nums text-ink">
+                      <td data-label="Total" className="py-2 text-right font-semibold tabular-nums text-ink">
                         {formatearPesos(Math.round(l.cantidad * listaEnPesos(l)))}
                         {enUf && l.precio_uf > 0 && (
                           <p className="text-[11px] font-normal text-ink-soft">{formatearUf(l.cantidad * l.precio_uf)} UF</p>
                         )}
                       </td>
-                      <td className="py-2 text-right">
+                      <td data-acciones className="py-2 text-right">
                         <button
                           type="button"
                           onClick={() => quitar(l)}
                           aria-label="Quitar ítem"
-                          className="rounded-lg p-1.5 text-ink-soft transition-colors hover:bg-[#fdeeec] hover:text-[#a52f24]"
+                          className="rounded-lg p-1.5 text-ink-soft transition-colors hover:bg-peligro-suave hover:text-peligro"
                         >
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
                             <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
@@ -1070,7 +1070,7 @@ export function FormularioOrden({
                   type="checkbox"
                   checked={exenta}
                   onChange={(e) => setExenta(e.target.checked)}
-                  className="h-4 w-4 accent-[#0e7490]"
+                  className="h-4 w-4 accent-cyan-deep"
                 />
                 Orden exenta de IVA
                 <span className="text-xs font-normal text-ink-soft">(exámenes médicos, capacitación…)</span>

@@ -9,9 +9,9 @@
 export type Tono = "bueno" | "aviso" | "critico" | "neutro" | "info";
 
 const tonos: Record<Tono, { texto: string; fondo: string; simbolo: string }> = {
-  bueno: { texto: "text-[#0e7a4f]", fondo: "bg-[#eaf4ef]", simbolo: "●" },
-  aviso: { texto: "text-[#8a5a09]", fondo: "bg-[#fdf3e3]", simbolo: "▲" },
-  critico: { texto: "text-[#a52f24]", fondo: "bg-[#fdeeec]", simbolo: "■" },
+  bueno: { texto: "text-exito", fondo: "bg-exito-suave", simbolo: "●" },
+  aviso: { texto: "text-alerta", fondo: "bg-alerta-suave", simbolo: "▲" },
+  critico: { texto: "text-peligro", fondo: "bg-peligro-suave", simbolo: "■" },
   info: { texto: "text-cyan-deep", fondo: "bg-cyan/10", simbolo: "◆" },
   neutro: { texto: "text-ink-soft", fondo: "bg-mist", simbolo: "○" },
 };

@@ -67,14 +67,14 @@ export function PanelFiniquitos({
             {f.conReserva && (
               <span
                 title={f.reservaDetalle ? `Reservó: ${f.reservaDetalle}` : "Firmó con reserva de derechos"}
-                className="ml-2 inline-block rounded-full bg-[#fdf1dc] px-2 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-[0.08em] text-[#8a5a09]"
+                className="ml-2 inline-block rounded-full bg-alerta-suave px-2 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-[0.08em] text-alerta"
               >
                 Con reserva
               </span>
             )}
           </span>
           <span className="text-xs text-ink-soft">{[f.rut, f.cargo].filter(Boolean).join(" · ") || "—"}</span>
-          {f.conReserva && f.reservaDetalle && <span className="block text-xs text-[#8a5a09]">Reservó: {f.reservaDetalle}</span>}
+          {f.conReserva && f.reservaDetalle && <span className="block text-xs text-alerta">Reservó: {f.reservaDetalle}</span>}
         </>
       ),
     },
@@ -355,7 +355,7 @@ function FormularioFiniquito({
                   type="checkbox"
                   checked={d.con_reserva}
                   onChange={(e) => f.cambiar("con_reserva", e.target.checked)}
-                  className="mt-0.5 h-4 w-4 accent-[#8a5a09]"
+                  className="mt-0.5 h-4 w-4 accent-alerta"
                 />
                 <span>
                   <span className="block text-sm font-semibold text-ink">Firmó con reserva de derechos</span>

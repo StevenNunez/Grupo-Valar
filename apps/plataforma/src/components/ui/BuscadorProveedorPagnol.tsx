@@ -86,7 +86,7 @@ export function BuscadorProveedorPagnol({
       {texto.length >= MINIMO && (
         <div className="mt-2">
           {buscando && <p className="text-xs text-ink-soft">Buscando en Pagnol…</p>}
-          {error && !buscando && <p className="text-xs text-[#8a5a09]">{error}</p>}
+          {error && !buscando && <p className="text-xs text-alerta">{error}</p>}
           {!error && !buscando && resultados.length === 0 && (
             <p className="text-xs text-ink-soft">No está en Pagnol. Completa la ficha a mano.</p>
           )}

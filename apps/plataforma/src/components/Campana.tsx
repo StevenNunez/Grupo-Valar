@@ -167,7 +167,7 @@ export function Campana() {
           <path d="M13.7 21a2 2 0 0 1-3.4 0" />
         </svg>
         {sinLeer > 0 && (
-          <span className="absolute -right-1 -top-1 grid min-w-5 place-items-center rounded-full bg-[#a52f24] px-1 text-[11px] font-bold leading-5 text-white">
+          <span className="absolute -right-1 -top-1 grid min-w-5 place-items-center rounded-full bg-peligro px-1 text-[11px] font-bold leading-5 text-white">
             {sinLeer > 9 ? "9+" : sinLeer}
           </span>
         )}
@@ -198,7 +198,7 @@ export function Campana() {
                     >
                       <span
                         aria-hidden="true"
-                        className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${a.leida_en ? "bg-transparent" : a.urgente ? "bg-[#a52f24]" : "bg-cyan"}`}
+                        className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${a.leida_en ? "bg-transparent" : a.urgente ? "bg-peligro" : "bg-cyan"}`}
                       />
                       <span className="min-w-0">
                         <span className="block text-sm font-semibold text-ink">{a.titulo}</span>
@@ -233,7 +233,7 @@ export function Campana() {
                 type="button"
                 disabled={ocupada}
                 onClick={() => void activar()}
-                className="w-full rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:opacity-50"
+                className="w-full rounded-full bg-cyan-deep px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo disabled:opacity-50"
               >
                 {ocupada ? "Activando…" : "Activar avisos en este dispositivo"}
               </button>
@@ -247,7 +247,7 @@ export function Campana() {
                 Instalar la app en este equipo
               </button>
             )}
-            {error && <p role="alert" className="text-[#a52f24]">{error}</p>}
+            {error && <p role="alert" className="text-peligro">{error}</p>}
           </div>
         </div>
       )}

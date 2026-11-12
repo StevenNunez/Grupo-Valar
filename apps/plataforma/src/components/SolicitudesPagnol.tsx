@@ -111,7 +111,7 @@ export function SolicitudesPagnol() {
                       {d.solicitante?.nombre ? ` · ${d.solicitante.nombre}` : ""}
                       {` · Contrato en Pagnol: ${d.contrato?.nombre ?? "sin contrato"}`}
                     </p>
-                    {a.error && <p className="mt-1 text-xs text-[#8a5a09]">{a.error}</p>}
+                    {a.error && <p className="mt-1 text-xs text-alerta">{a.error}</p>}
                     {procesa && (
                       <div className="mt-2 flex flex-col gap-2 sm:flex-row">
                         <select aria-label={`Contrato de ${d.codigo ?? "la solicitud"}`} value={elegidos[a.webhook_id] ?? ""}
@@ -132,7 +132,7 @@ export function SolicitudesPagnol() {
             </ul>
           )}
           {mensaje && (
-            <p role="status" className={`mt-3 rounded-xl px-3 py-2 text-sm ${mensaje.ok ? "bg-[#e7f4ec] text-[#1f6b3b]" : "bg-[#fdeeec] text-[#a52f24]"}`}>
+            <p role="status" className={`mt-3 rounded-xl px-3 py-2 text-sm ${mensaje.ok ? "bg-exito-suave text-exito" : "bg-peligro-suave text-peligro"}`}>
               {mensaje.ok ? "✓ " : ""}
               {mensaje.texto}
             </p>

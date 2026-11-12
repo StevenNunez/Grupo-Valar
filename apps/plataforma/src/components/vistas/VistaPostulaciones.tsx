@@ -1,5 +1,7 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import { useMemo, useState } from "react";
 import { Buscador } from "../ui/Buscador";
 import { Chip, type Tono } from "../ui/Chip";
@@ -140,7 +142,7 @@ export function VistaPostulaciones() {
       >
         <Buscador valor={texto} alCambiar={setTexto} etiqueta="Buscar postulantes" placeholder="Buscar por nombre, correo, ciudad o teléfono…" />
         {lista.error ? (
-          <p role="alert" className="px-6 py-10 text-center text-sm text-[#a52f24] lg:px-8">
+          <p role="alert" className="px-6 py-10 text-center text-sm text-peligro lg:px-8">
             No se pudo cargar la lista: {lista.error}{" "}
             <button type="button" onClick={lista.recargar} className="font-semibold underline">Reintentar</button>
           </p>
@@ -186,7 +188,7 @@ function DetallePostulacion({ p, alCerrar, alCambiar }: { p: Postulacion; alCerr
     try {
       window.open(await enlaceDelCV(p.cvRuta), "_blank", "noopener");
     } catch (e) {
-      setErrorCV(e instanceof Error ? e.message : "No se pudo abrir el currículum.");
+      setErrorCV(mensajeParaPersona(e, "VistaPostulaciones"));
     } finally {
       setAbriendo(false);
     }
@@ -200,7 +202,7 @@ function DetallePostulacion({ p, alCerrar, alCambiar }: { p: Postulacion; alCerr
       alCambiar();
       alCerrar();
     } catch (e) {
-      setErrorBorrado(e instanceof Error ? e.message : "No se pudo eliminar.");
+      setErrorBorrado(mensajeParaPersona(e, "VistaPostulaciones"));
       setBorrando("confirmar");
     }
   }
@@ -242,7 +244,7 @@ function DetallePostulacion({ p, alCerrar, alCambiar }: { p: Postulacion; alCerr
               </button>
               <span className="text-xs text-ink-soft">{p.cvNombre} · {peso(p.cvTamano)}</span>
             </dd>
-            {errorCV && <p role="alert" className="mt-2 text-sm text-[#a52f24]">{errorCV}</p>}
+            {errorCV && <p role="alert" className="mt-2 text-sm text-peligro">{errorCV}</p>}
           </div>
           {dato("Aceptó la política de privacidad", `versión ${p.versionPrivacidad.split("-").reverse().join("-")}`)}
         </dl>
@@ -277,19 +279,19 @@ function DetallePostulacion({ p, alCerrar, alCambiar }: { p: Postulacion; alCerr
                   ? `Pasó los ${MESES_DE_CONSERVACION} meses de conservación: corresponde eliminarla.`
                   : "A pedido de la persona, o al vencer la conservación, se elimina con su CV."}
               </span>
-              <button type="button" onClick={() => setBorrando("confirmar")} className="font-semibold text-[#a52f24] hover:underline">
+              <button type="button" onClick={() => setBorrando("confirmar")} className="font-semibold text-peligro hover:underline">
                 Eliminar postulación…
               </button>
             </div>
           ) : (
             <div>
-              <p className="font-semibold text-[#a52f24]">¿Eliminar a {p.nombre} y su CV? No se puede deshacer.</p>
+              <p className="font-semibold text-peligro">¿Eliminar a {p.nombre} y su CV? No se puede deshacer.</p>
               <div className="mt-3 flex gap-3">
                 <button
                   type="button"
                   onClick={() => void borrar()}
                   disabled={borrando === "trabajando"}
-                  className="rounded-full bg-[#a52f24] px-5 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                  className="rounded-full bg-peligro px-5 py-2 text-sm font-semibold text-white disabled:opacity-60"
                 >
                   {borrando === "trabajando" ? "Eliminando…" : "Sí, eliminar"}
                 </button>
@@ -297,7 +299,7 @@ function DetallePostulacion({ p, alCerrar, alCambiar }: { p: Postulacion; alCerr
                   No
                 </button>
               </div>
-              {errorBorrado && <p role="alert" className="mt-2 text-[#a52f24]">{errorBorrado}</p>}
+              {errorBorrado && <p role="alert" className="mt-2 text-peligro">{errorBorrado}</p>}
             </div>
           )}
         </div>

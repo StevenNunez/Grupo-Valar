@@ -42,7 +42,7 @@ export function Impresion({
           <button
             type="button"
             onClick={() => window.print()}
-            className="rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep"
+            className="rounded-full bg-cyan-deep px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo"
           >
             Imprimir o guardar PDF
           </button>

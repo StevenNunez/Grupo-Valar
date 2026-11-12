@@ -86,7 +86,7 @@ export function SeccionRespaldos({ respaldos }: { respaldos: RespaldosDeFormular
                   <button
                     type="button"
                     onClick={() => setPorSubir((p) => p.filter((_, j) => j !== i))}
-                    className="ml-3 font-semibold text-[#a52f24]"
+                    className="ml-3 font-semibold text-peligro"
                   >
                     Quitar
                   </button>

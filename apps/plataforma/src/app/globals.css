@@ -11,6 +11,28 @@
   --color-mist-deep: #cdd3d7;
   --color-cyan: #18a6cd;
   --color-cyan-deep: #0f7d9c;
+  /* Para el hover del botón primario, que va sobre cyan-deep (blanco sobre
+     cyan claro no se lee: 2,85:1; sobre cyan-deep, 4,74:1). */
+  --color-cyan-hondo: #0b6680;
+
+  /* Estados. Antes eran hex sueltos en cada pantalla (37 tonos distintos para
+     lo mismo); ahora un solo juego. El color de texto cumple 4,5:1 sobre su
+     fondo suave y sobre blanco. */
+  --color-peligro: #a52f24;
+  --color-peligro-fuerte: #8a2820;
+  --color-peligro-suave: #fdeeec;
+  --color-peligro-borde: #e8c2bc;
+  --color-peligro-claro: #ffb4a9; /* sobre fondo oscuro */
+  --color-alerta: #8a5a09;
+  --color-alerta-suave: #fdf3e3;
+  --color-alerta-borde: #ecd5a8;
+  --color-alerta-vivo: #c98a1c; /* barras y rellenos, no texto */
+  --color-exito: #0e7a4f;
+  --color-exito-suave: #e8f5ee;
+  --color-realce: #4a3aa7;
+  --color-realce-suave: #f3f0fc;
+  --color-realce-borde: #c9bff0;
+  --color-noche: #1f2a33;
 
   --font-display: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
@@ -44,6 +66,58 @@
 
   .sin-barra-scroll::-webkit-scrollbar {
     display: none;
+  }
+}
+
+/* ─── Líneas de formulario en el teléfono ────────────────────────────────────
+   Las tablas de ítems (OC, solicitud, gasto, servicio) tienen 7 a 9 columnas:
+   en un teléfono había que arrastrarlas de lado y se perdía qué columna era
+   cuál. Bajo 768 px cada fila pasa a ser una tarjeta: dos campos por renglón,
+   cada uno con su título encima (`data-label`), la descripción a lo ancho y la
+   papelera abajo a la derecha. */
+
+@media (max-width: 767px) {
+  .lineas-movil,
+  .lineas-movil tbody {
+    display: block;
+  }
+
+  .lineas-movil thead {
+    display: none;
+  }
+
+  .lineas-movil tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    padding: 1rem 0;
+  }
+
+  .lineas-movil td {
+    display: block;
+    padding: 0 !important;
+    text-align: left;
+  }
+
+  .lineas-movil td[data-ancho],
+  .lineas-movil td[colspan] {
+    grid-column: 1 / -1;
+  }
+
+  .lineas-movil td[data-acciones] {
+    grid-column: 1 / -1;
+    text-align: right;
+  }
+
+  .lineas-movil td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.3rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-ink-soft);
   }
 }
 

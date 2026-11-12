@@ -21,3 +21,18 @@ export async function traerTodo<T>(
     if (lote.length < TANDA) return filas;
   }
 }
+
+/**
+ * Lo mismo que `traerTodo`, pero con la forma `{ data, error }` de Supabase:
+ * para cambiar una consulta suelta por su versión completa sin tocar el código
+ * que lee su resultado (que puede decidir seguir sin ella si falla).
+ */
+export async function todasLasFilas<T = Record<string, unknown>>(
+  tanda: (desde: number, hasta: number) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>,
+): Promise<{ data: T[] | null; error: { message: string } | null }> {
+  try {
+    return { data: (await traerTodo(tanda)) as T[], error: null };
+  } catch (e) {
+    return { data: null, error: { message: e instanceof Error ? e.message : String(e) } };
+  }
+}

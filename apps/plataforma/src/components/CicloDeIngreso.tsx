@@ -1,5 +1,7 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import { useState } from "react";
 import { Chip, type Tono } from "./ui/Chip";
 import { Confirmacion, useBorrado } from "./ui/Formulario";
@@ -173,7 +175,7 @@ export function FichaDeCiclo({
 /* La marca lleva color y símbolo: el estado del paso no se distingue solo por
    el verde contra el gris. */
 const marcas = {
-  hecho: { fondo: "bg-[#0e7a4f]", simbolo: "✓" },
+  hecho: { fondo: "bg-exito", simbolo: "✓" },
   activo: { fondo: "bg-cyan-deep", simbolo: "▸" },
   bloqueado: { fondo: "bg-mist-deep", simbolo: "○" },
 };
@@ -245,10 +247,8 @@ function PasoEdp({
   const aprobado = ciclo.estado !== "presentado" && ciclo.estado !== "rechazado";
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const borrado = useBorrado("estados_pago", ciclo.id, () => {
-    borrado.cerrar();
-    alCambiar();
-  });
+  // La confirmación se cierra sola al borrar (useBorrado).
+  const borrado = useBorrado("estados_pago", ciclo.id, alCambiar);
 
   async function aprobar() {
     setError(null);
@@ -260,7 +260,7 @@ function PasoEdp({
       });
       alCambiar();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(mensajeParaPersona(e, "CicloDeIngreso"));
     } finally {
       setGuardando(false);
     }
@@ -485,7 +485,7 @@ function FormularioOrdenMandante({
       alGuardado();
       alCerrar();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(mensajeParaPersona(e, "CicloDeIngreso"));
     } finally {
       setGuardando(false);
     }
@@ -627,7 +627,7 @@ function PasoFactura({
         await marcarFacturaPagada(facturaId!);
         alCambiar();
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        setError(mensajeParaPersona(e, "CicloDeIngreso"));
       } finally {
         setPagando(false);
       }
@@ -754,7 +754,7 @@ function FormularioFacturaDesdeOrden({
       alGuardado();
       alCerrar();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(mensajeParaPersona(e, "CicloDeIngreso"));
     } finally {
       setGuardando(false);
     }
@@ -874,7 +874,7 @@ function Aviso({ tono, children }: { tono: "ojo" | "malo"; children: React.React
     <p
       role={tono === "malo" ? "alert" : undefined}
       className={`mt-3 rounded-lg px-3 py-2 text-xs leading-relaxed ${
-        tono === "malo" ? "bg-[#fdeeec] font-medium text-[#a52f24]" : "bg-[#fdf3e3] text-[#8a5a09]"
+        tono === "malo" ? "bg-peligro-suave font-medium text-peligro" : "bg-alerta-suave text-alerta"
       }`}
     >
       {children}
@@ -910,7 +910,7 @@ function BotonChico({
       disabled={disabled}
       className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold transition-colors disabled:opacity-50 ${
         destacado
-          ? "bg-cyan text-white hover:bg-cyan-deep"
+          ? "bg-cyan-deep text-white hover:bg-cyan-hondo"
           : "border border-mist-deep bg-white text-ink-soft hover:border-ink hover:text-ink"
       }`}
     >

@@ -1,0 +1,36 @@
+name: Revisión
+
+# En cada push y pull request: tipos, lint y pruebas de la plataforma.
+# No despliega nada: el deploy sigue siendo el de Vercel.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  plataforma:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/plataforma
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Instalar
+        working-directory: .
+        run: npm ci
+
+      - name: Tipos
+        run: npm run tipos
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Pruebas
+        run: npm test

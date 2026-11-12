@@ -120,7 +120,7 @@ export function PanelPagnolDeOrden({ ordenId, anuncio, puedeEscribir, alCambiar,
   return (
     <section className="rounded-xl border border-mist-deep p-4">
       <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-soft">Recepción en Pagnol</h3>
-      <p className={`mt-2 text-sm ${anuncio.estado === "error" ? "text-[#a52f24]" : "text-ink"}`}>{estadoTexto}</p>
+      <p className={`mt-2 text-sm ${anuncio.estado === "error" ? "text-peligro" : "text-ink"}`}>{estadoTexto}</p>
 
       {hayAbiertas && !cancelada && (
         <div className="mt-4">
@@ -161,7 +161,7 @@ export function PanelPagnolDeOrden({ ordenId, anuncio, puedeEscribir, alCambiar,
                           type="button"
                           disabled={enlazando === l.id}
                           onClick={() => void enlazar(l, null)}
-                          className="mt-1 text-[11px] font-semibold text-[#a52f24] hover:underline disabled:opacity-60"
+                          className="mt-1 text-[11px] font-semibold text-peligro hover:underline disabled:opacity-60"
                         >
                           Quitar enlace
                         </button>
@@ -195,31 +195,31 @@ export function PanelPagnolDeOrden({ ordenId, anuncio, puedeEscribir, alCambiar,
             type="button"
             disabled={trabajando}
             onClick={anunciar}
-            className="rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-deep disabled:opacity-60"
+            className="rounded-full bg-cyan-deep px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-hondo disabled:opacity-60"
           >
             {trabajando ? "Hablando con Pagnol…" : anunciada ? "Actualizar en Pagnol" : "Anunciar a Pagnol"}
           </button>
           {anunciada && (
-            <button type="button" disabled={trabajando} onClick={() => setCancelando(true)} className="text-sm font-semibold text-[#a52f24] hover:underline disabled:opacity-60">
+            <button type="button" disabled={trabajando} onClick={() => setCancelando(true)} className="text-sm font-semibold text-peligro hover:underline disabled:opacity-60">
               Cancelar en Pagnol
             </button>
           )}
         </div>
       )}
-      {errorPanoles && <p className="mt-2 text-xs text-[#a52f24]">{errorPanoles}</p>}
+      {errorPanoles && <p className="mt-2 text-xs text-peligro">{errorPanoles}</p>}
 
       {cancelando && (
-        <div className="mt-3 rounded-lg bg-[#fdf2e1] p-3 text-sm text-[#8a5a00]">
+        <div className="mt-3 rounded-lg bg-alerta-suave p-3 text-sm text-alerta">
           <p>Pagnol dejará de esperar lo que falta de esta orden. Lo que ya recibió el pañolero se queda en su inventario.</p>
           <div className="mt-2 flex gap-3">
-            <button type="button" disabled={trabajando} onClick={cancelar} className="font-semibold text-[#a52f24] hover:underline">Sí, cancelar</button>
+            <button type="button" disabled={trabajando} onClick={cancelar} className="font-semibold text-peligro hover:underline">Sí, cancelar</button>
             <button type="button" onClick={() => setCancelando(false)} className="font-semibold text-ink-soft hover:underline">No</button>
           </div>
         </div>
       )}
 
       {mensaje && (
-        <p className={`mt-3 rounded-lg px-3 py-2 text-sm ${mensaje.tono === "ok" ? "bg-[#e6f4ee] text-[#0e7a4f]" : "bg-[#fbe9e7] text-[#a52f24]"}`}>{mensaje.texto}</p>
+        <p className={`mt-3 rounded-lg px-3 py-2 text-sm ${mensaje.tono === "ok" ? "bg-exito-suave text-exito" : "bg-peligro-suave text-peligro"}`}>{mensaje.texto}</p>
       )}
     </section>
   );

@@ -492,7 +492,7 @@ function PanelOrdinarioExtra({ total }: { total: Totales }) {
   const resultadoOrd = total.ventaOrdinaria - total.costoOrdinario;
   const resultadoExtra = total.ventaExtraordinaria - costoExtra;
   const pct = (resultado: number, venta: number) => (venta > 0 ? `${((resultado / venta) * 100).toFixed(1)}%` : "—");
-  const color = (n: number) => (n < 0 ? "text-[#a52f24]" : "text-ink");
+  const color = (n: number) => (n < 0 ? "text-peligro" : "text-ink");
   const horas = (n: number) => `${n.toLocaleString("es-CL", { maximumFractionDigits: 1 })} h`;
   const { hh } = total;
   /* Lo que se trabajó en parada contra lo que el EP extraordinario cobra. */
@@ -505,7 +505,7 @@ function PanelOrdinarioExtra({ total }: { total: Totales }) {
   const cifra = (titulo: string, valor: string, detalle: string | null, rojo = false) => (
     <div key={titulo} className="flex items-baseline justify-between gap-3 border-b border-mist-deep/60 py-3 last:border-0">
       <dt className="text-sm font-semibold text-ink">{titulo}</dt>
-      <dd className={`text-right font-display text-lg font-semibold ${rojo ? "text-[#a52f24]" : "text-ink"}`}>
+      <dd className={`text-right font-display text-lg font-semibold ${rojo ? "text-peligro" : "text-ink"}`}>
         {valor}
         {detalle && <span className="ml-2 text-sm font-normal text-ink-soft">({detalle})</span>}
       </dd>
@@ -556,7 +556,7 @@ function PanelOrdinarioExtra({ total }: { total: Totales }) {
           <div className="rounded-xl bg-mist/50 p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
               <span className="font-semibold text-ink">Sobrecosto ordinario · horas extra no cobradas</span>
-              <span className={`font-semibold ${hh.sobrecosto > 0 ? "text-[#a52f24]" : "text-ink"}`}>{formatearMonto(hh.sobrecosto)}</span>
+              <span className={`font-semibold ${hh.sobrecosto > 0 ? "text-peligro" : "text-ink"}`}>{formatearMonto(hh.sobrecosto)}</span>
             </div>
             <p className="mt-1 text-xs text-ink-soft">
               HH extra que no van en el estado de pago extraordinario (todo menos parada de planta)
@@ -566,7 +566,7 @@ function PanelOrdinarioExtra({ total }: { total: Totales }) {
               <dl className="mt-3 grid gap-2 rounded-lg bg-white p-3 text-sm sm:grid-cols-2">
                 <div>
                   <dt className="text-xs text-ink-soft">Pesa sobre la venta ordinaria</dt>
-                  <dd className="font-semibold text-[#a52f24]">{pctDe(hh.sobrecosto, total.ventaOrdinaria)}</dd>
+                  <dd className="font-semibold text-peligro">{pctDe(hh.sobrecosto, total.ventaOrdinaria)}</dd>
                 </div>
                 <div>
                   <dt className="text-xs text-ink-soft">Margen ordinario sin el sobrecosto</dt>
@@ -593,7 +593,7 @@ function PanelOrdinarioExtra({ total }: { total: Totales }) {
                       </span>
                     </div>
                     <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white" aria-hidden="true">
-                      <span className="block h-full rounded-full bg-[#9c5518]" style={{ width: `${hh.sobrecosto > 0 ? Math.min((m.valor / hh.sobrecosto) * 100, 100) : 0}%` }} />
+                      <span className="block h-full rounded-full bg-alerta" style={{ width: `${hh.sobrecosto > 0 ? Math.min((m.valor / hh.sobrecosto) * 100, 100) : 0}%` }} />
                     </div>
                   </li>
                 ))}
@@ -605,7 +605,7 @@ function PanelOrdinarioExtra({ total }: { total: Totales }) {
           <div className="rounded-xl bg-mist/50 p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
               <span className="font-semibold text-ink">Parada de planta contra el EP extraordinario</span>
-              <span className={`font-semibold ${usoExtra !== null && usoExtra > 100 ? "text-[#a52f24]" : "text-ink"}`}>
+              <span className={`font-semibold ${usoExtra !== null && usoExtra > 100 ? "text-peligro" : "text-ink"}`}>
                 {usoExtra === null ? (costoExtra > 0 ? "Sin EP extraordinario" : "Sin parada de planta") : `${usoExtra.toFixed(0)}% del EP`}
               </span>
             </div>
@@ -618,12 +618,12 @@ function PanelOrdinarioExtra({ total }: { total: Totales }) {
                 <div>
                   <dt className="text-xs text-ink-soft">Horas trabajadas · cobradas · sin cobrar</dt>
                   <dd className="font-semibold text-ink">
-                    {horas(hh.horasParada)} · {horas(hh.horasCobradas)} · <span className="text-[#a52f24]">{horas(sinCobrar)}</span>
+                    {horas(hh.horasParada)} · {horas(hh.horasCobradas)} · <span className="text-peligro">{horas(sinCobrar)}</span>
                   </dd>
                 </div>
                 <div>
                   <dt className="text-xs text-ink-soft">Dejado de ganar (a {formatearMonto(tarifaCobrada)} la hora cobrada)</dt>
-                  <dd className="font-semibold text-[#a52f24]">
+                  <dd className="font-semibold text-peligro">
                     {formatearMonto(sinCobrar * tarifaCobrada)}
                     <span className="ml-1 text-xs font-normal text-ink-soft">(esas horas costaron {formatearMonto(sinCobrar * costoPorHora)})</span>
                   </dd>
@@ -658,8 +658,8 @@ function IndicadoresParalelos({
 
   const mini = (etiqueta: string, valor: string, nota: string, oscuro: boolean, rojo = false) => (
     <div key={etiqueta} className="min-w-[9.5rem] flex-1">
-      <dt className={`text-[0.65rem] font-semibold uppercase tracking-[0.14em] ${oscuro ? "text-white/60" : "text-[#4a3aa7]"}`}>{etiqueta}</dt>
-      <dd className={`mt-1.5 font-display text-lg font-semibold leading-none ${rojo ? (oscuro ? "text-[#ffb4a9]" : "text-[#a52f24]") : oscuro ? "text-white" : "text-[#4a3aa7]"}`}>{valor}</dd>
+      <dt className={`text-[0.65rem] font-semibold uppercase tracking-[0.14em] ${oscuro ? "text-white/60" : "text-realce"}`}>{etiqueta}</dt>
+      <dd className={`mt-1.5 font-display text-lg font-semibold leading-none ${rojo ? (oscuro ? "text-peligro-claro" : "text-peligro") : oscuro ? "text-white" : "text-realce"}`}>{valor}</dd>
       <dd className={`mt-1 text-xs ${oscuro ? "text-white/60" : "text-ink-soft"}`}>{nota}</dd>
     </div>
   );
@@ -667,7 +667,7 @@ function IndicadoresParalelos({
   return (
     <section aria-label="Oficina Central y finiquitos" className="mb-6 grid gap-4 lg:grid-cols-[1fr_auto_1fr] lg:gap-0">
       {conOficina && (
-        <div className="rounded-2xl bg-[#1f2a33] p-5 text-white lg:rounded-r-none">
+        <div className="rounded-2xl bg-noche p-5 text-white lg:rounded-r-none">
           <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="font-display text-base font-semibold">Oficina Central</h2>
             <Link href="/control-de-gestion/egresos/oficina-central/" className="text-xs font-semibold text-white/70 hover:text-white hover:underline">Ver movimientos →</Link>
@@ -698,8 +698,8 @@ function IndicadoresParalelos({
       )}
       {/* Línea de separación entre Oficina Central y Finiquitos. */}
       {conOficina && <div aria-hidden="true" className="hidden w-px bg-mist-deep lg:mx-0 lg:block" />}
-      <div className={`rounded-2xl border border-[#c9bff0] bg-[#f3f0fc] p-5 ${conOficina ? "lg:rounded-l-none" : "lg:col-span-3"}`}>
-        <h2 className="mb-4 font-display text-base font-semibold text-[#4a3aa7]">Finiquitos · informativo</h2>
+      <div className={`rounded-2xl border border-realce-borde bg-realce-suave p-5 ${conOficina ? "lg:rounded-l-none" : "lg:col-span-3"}`}>
+        <h2 className="mb-4 font-display text-base font-semibold text-realce">Finiquitos · informativo</h2>
         <dl className="flex flex-wrap gap-x-6 gap-y-4">
           {mini("Finiquitos pagados", formatearMonto(finiquitos), "No son costo del contrato; se imputan al cerrarlo", false)}
           {conOficina && mini("Resultado consolidado", formatearMonto(consolidado), "Contratos − oficina − finiquitos", false, consolidado < 0)}
@@ -1031,7 +1031,7 @@ function Casilla({
 }) {
   return (
     <label className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm hover:bg-mist/60">
-      <input type="checkbox" checked={marcada} onChange={alCambiar} className="h-4 w-4 shrink-0 accent-[#137e9e]" />
+      <input type="checkbox" checked={marcada} onChange={alCambiar} className="h-4 w-4 shrink-0 accent-cyan-deep" />
       <span className={`min-w-0 truncate ${fuerte ? "font-semibold text-ink" : "text-ink-soft"}`}>{children}</span>
     </label>
   );
@@ -1090,10 +1090,10 @@ function TablaEvolucion({ evolucion, meta }: { evolucion: Evolucion[]; meta: num
         const luz = semaforo(f.consolidado.margenPct, f.meta);
         const color =
           luz === "bueno"
-            ? "text-[#0e7a4f]"
+            ? "text-exito"
             : luz === "aviso"
-              ? "text-[#8a5a09]"
-              : "text-[#a52f24]";
+              ? "text-alerta"
+              : "text-peligro";
         return (
           <span className={`font-semibold ${color}`}>{f.consolidado.margenPct.toFixed(1)}%</span>
         );
@@ -1222,7 +1222,7 @@ function TablaCategorias({
         if (f.presupuesto === 0) return <span className="text-ink-soft">—</span>;
         const pct = (f.real / f.presupuesto) * 100;
         const color =
-          pct > 110 ? "text-[#a52f24]" : pct > 100 ? "text-[#8a5a09]" : "text-[#0e7a4f]";
+          pct > 110 ? "text-peligro" : pct > 100 ? "text-alerta" : "text-exito";
         return <span className={`font-semibold ${color}`}>{pct.toFixed(0)}%</span>;
       },
     },
@@ -1334,7 +1334,7 @@ function ValorUf() {
       </span>
       <span>al {formatearFecha(uf.fechaValor)}</span>
       {atrasada ? (
-        <span className="rounded-full bg-[#fdeeec] px-2.5 py-0.5 text-xs font-semibold text-[#a52f24]">
+        <span className="rounded-full bg-peligro-suave px-2.5 py-0.5 text-xs font-semibold text-peligro">
           La serie no se actualiza hace {dias} días
         </span>
       ) : (

@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { olvidarConsultas } from "./consulta";
 import { supabase } from "./supabase";
@@ -154,6 +155,59 @@ function huella(u: Usuario) {
   return JSON.stringify([u.nombre, u.cargo, u.rol, u.general, u.empresa, u.accesos, [...u.permisos].sort()]);
 }
 
+/* ── El perfil de la última vez ────────────────────────────────────────────────
+   Antes, cada vez que se abría la plataforma había que esperar al perfil, los
+   accesos y los permisos antes de dibujar nada. Ahora se guarda lo último que se
+   leyó (sessionStorage: se borra al cerrar la pestaña) y la pantalla abre con
+   eso mientras se confirma por detrás. Es solo para dibujar: quien decide qué
+   datos llegan sigue siendo el RLS, así que un perfil viejo no abre nada. */
+
+const CLAVE_USUARIO = "sesion:usuario";
+
+function guardarUsuario(u: Usuario) {
+  try {
+    sessionStorage.setItem(CLAVE_USUARIO, JSON.stringify({ ...u, permisos: [...u.permisos] }));
+  } catch {
+    // Sin almacenamiento: la próxima vez espera, como antes.
+  }
+}
+
+function olvidarUsuario() {
+  leidoUnaVez = { valor: null };
+  try {
+    sessionStorage.removeItem(CLAVE_USUARIO);
+  } catch {
+    // Nada que borrar.
+  }
+}
+
+/** El id de la sesión que Supabase dejó guardada, sin pedir nada a la red. */
+function idDeSesionGuardada(): string | null {
+  try {
+    for (const k of Object.keys(localStorage)) {
+      if (!/^sb-.+-auth-token$/.test(k)) continue;
+      const id = (JSON.parse(localStorage.getItem(k) ?? "null") as { user?: { id?: string } } | null)?.user?.id;
+      if (typeof id === "string") return id;
+    }
+  } catch {
+    // Almacenamiento bloqueado o con otro formato: se espera a Supabase.
+  }
+  return null;
+}
+
+/** El perfil de la última vez, si es de la misma persona que tiene la sesión guardada. */
+function usuarioGuardado(): Usuario | null {
+  try {
+    const texto = sessionStorage.getItem(CLAVE_USUARIO);
+    if (!texto) return null;
+    const u = JSON.parse(texto) as Omit<Usuario, "permisos"> & { permisos: string[] };
+    if (!u?.id || u.id !== idDeSesionGuardada()) return null;
+    return { ...u, permisos: new Set(u.permisos) };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Estado de sesión, sincronizado con Supabase.
  *
@@ -164,23 +218,38 @@ function huella(u: Usuario) {
 export function useSesion(): EstadoSesion {
   const [estado, setEstado] = useState<EstadoSesion>({ estado: "cargando" });
 
+  /* Si hay un perfil guardado de esta misma sesión, la pantalla abre con él
+     mientras Supabase confirma. Se lee con useSyncExternalStore porque el
+     servidor no tiene sessionStorage: el primer dibujo coincide con el suyo
+     (null) y React pasa al guardado antes de pintar. */
+  const guardado = useSyncExternalStore(sinSuscripcion, usuarioGuardadoEstable, () => null);
+
   useEffect(() => {
     let vigente = true;
     let actual: { id: string; correo: string; huella: string } | null = null;
+    const previo = usuarioGuardado();
 
     const { data } = supabase.auth.onAuthStateChange((_evento, sesion) => {
       if (!sesion?.user) {
         actual = null;
         // Lo que vio esta sesión no puede abrirle la pantalla a la siguiente.
         olvidarConsultas();
+        olvidarUsuario();
         if (vigente) setEstado({ estado: "sin-sesion" });
         return;
       }
 
       const { id, email } = sesion.user;
+      // Supabase avisa varias veces (sesión inicial, token renovado): con el mismo
+      // usuario ya cargado no hace falta volver a pedir el perfil.
+      if (actual?.id === id) return;
       cargarUsuario(id, email ?? "").then((usuario) => {
         if (!vigente) return;
-        actual = { id, correo: email ?? "", huella: huella(usuario) };
+        const h = huella(usuario);
+        actual = { id, correo: email ?? "", huella: h };
+        guardarUsuario(usuario);
+        // Si es lo mismo que ya se mostró desde el guardado, no se vuelve a pintar.
+        if (previo?.id === id && huella(previo) === h) return;
         setEstado({ estado: "con-sesion", usuario });
       });
     });
@@ -198,6 +267,7 @@ export function useSesion(): EstadoSesion {
         const ahora = huella(usuario);
         if (ahora === antes) return;
         actual = { id, correo, huella: ahora };
+        guardarUsuario(usuario);
         setEstado({ estado: "con-sesion", usuario });
       });
     }
@@ -210,7 +280,18 @@ export function useSesion(): EstadoSesion {
     };
   }, []);
 
+  if (estado.estado === "cargando" && guardado) return { estado: "con-sesion", usuario: guardado };
   return estado;
+}
+
+/* El guardado no cambia por fuera mientras la pantalla vive: no hay a qué suscribirse. */
+const sinSuscripcion = () => () => {};
+
+/* useSyncExternalStore exige el mismo objeto mientras no cambie: se lee una vez. */
+let leidoUnaVez: { valor: Usuario | null } | null = null;
+function usuarioGuardadoEstable() {
+  if (!leidoUnaVez) leidoUnaVez = { valor: usuarioGuardado() };
+  return leidoUnaVez.valor;
 }
 
 /** Traduce los errores de Supabase Auth a algo que se pueda leer en pantalla. */

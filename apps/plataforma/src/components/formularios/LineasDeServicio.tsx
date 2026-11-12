@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Etiqueta } from "../ui/Chip";
+import { Boton as BotonBase } from "../ui/Boton";
 import { claseCelda } from "./LineasDeGasto";
 import {
   cobrosLinea,
@@ -113,12 +114,12 @@ export function LineasDeServicio({
         </div>
       </div>
 
-      {aviso && <p className="mb-3 text-xs text-[#a52f24]">{aviso}</p>}
+      {aviso && <p className="mb-3 text-xs text-peligro">{aviso}</p>}
 
       {lineas.length > 0 && (
         <>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[64rem] border-collapse text-sm">
+            <table className="lineas-movil w-full md:min-w-[64rem] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-mist text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
                   <th className="py-2 pr-3">Equipo</th>
@@ -135,45 +136,45 @@ export function LineasDeServicio({
               <tbody>
                 {lineas.map((l) => (
                   <tr key={l.clave} className="border-b border-mist last:border-0">
-                    <td className="py-2 pr-3">
+                    <td data-label="Equipo" data-ancho className="py-2 pr-3">
                       <input aria-label="Equipo" value={l.equipo} placeholder="Torre 01" className={claseCelda}
                         onChange={(e) => cambiar(l.clave, { equipo: e.target.value })} />
                     </td>
-                    <td className="py-2 pr-3">
+                    <td data-label="Concepto" className="py-2 pr-3">
                       <select aria-label="Concepto" value={l.concepto} className={claseCelda}
                         onChange={(e) => cambiar(l.clave, { concepto: e.target.value as LineaServicio["concepto"] })}>
                         {conceptosLinea.map((c) => <option key={c.id} value={c.id}>{c.titulo}</option>)}
                       </select>
                     </td>
-                    <td className="py-2 pr-3">
+                    <td data-label="Faena" className="py-2 pr-3">
                       <input aria-label="Faena" value={l.faena} className={claseCelda}
                         onChange={(e) => cambiar(l.clave, { faena: e.target.value })} />
                     </td>
-                    <td className="py-2 pr-3">
+                    <td data-label="Días" className="py-2 pr-3">
                       <input aria-label="Días" type="number" min="0" value={l.dias || ""} className={`${claseCelda} text-right tabular-nums`}
                         onChange={(e) => cambiar(l.clave, { dias: Number(e.target.value) || 0 })} />
                     </td>
-                    <td className="py-2 pr-3">
+                    <td data-label="Cant." className="py-2 pr-3">
                       <input aria-label="Cantidad" type="number" min="0" step="any" value={l.cantidad} className={`${claseCelda} text-right tabular-nums`}
                         onChange={(e) => cambiar(l.clave, { cantidad: Number(e.target.value) || 0 })} />
                     </td>
-                    <td className="py-2 pr-3">
+                    <td data-label="Tarifa" className="py-2 pr-3">
                       <select aria-label="Cómo se cobra" value={l.cobro} className={claseCelda}
                         onChange={(e) => cambiar(l.clave, { cobro: e.target.value as LineaServicio["cobro"] })}>
                         {cobrosLinea.map((c) => <option key={c.id} value={c.id}>{c.titulo}</option>)}
                       </select>
                     </td>
-                    <td className="py-2 pr-3">
+                    <td data-label="Valor tarifa" className="py-2 pr-3">
                       <input aria-label="Valor de la tarifa" inputMode="numeric" value={pesos(l.precioUnitario)} placeholder="0" className={`${claseCelda} text-right tabular-nums`}
                         onChange={(e) => cambiar(l.clave, { precioUnitario: soloNumero(e.target.value) })} />
                     </td>
-                    <td className="py-2 pr-3">
+                    <td data-label="Neto" className="py-2 pr-3">
                       <input aria-label="Neto" inputMode="numeric" value={pesos(l.neto)} placeholder="0" className={`${claseCelda} text-right font-semibold tabular-nums`}
                         onChange={(e) => cambiar(l.clave, { neto: soloNumero(e.target.value) })} />
                     </td>
-                    <td className="py-2 text-right">
+                    <td data-acciones className="py-2 text-right">
                       <button type="button" aria-label="Quitar línea" onClick={() => alCambiar(lineas.filter((x) => x.clave !== l.clave))}
-                        className="rounded-lg p-1.5 text-ink-soft transition-colors hover:bg-[#fdeeec] hover:text-[#a52f24]">
+                        className="rounded-lg p-1.5 text-ink-soft transition-colors hover:bg-peligro-suave hover:text-peligro">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
                           <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
                         </svg>
@@ -189,7 +190,7 @@ export function LineasDeServicio({
             <div className="flex flex-wrap items-center gap-2">
               <Etiqueta destacada>{equiposDistintos} equipos en arriendo</Etiqueta>
               {contratados > 0 && equiposDistintos !== contratados && (
-                <span className="text-xs font-semibold text-[#a15c07]">
+                <span className="text-xs font-semibold text-alerta">
                   El contrato contempla {contratados}; este estado de pago trae {equiposDistintos}.
                 </span>
               )}
@@ -204,14 +205,10 @@ export function LineasDeServicio({
   );
 }
 
-function Boton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+function Boton({ onClick, children }: { onClick: () => unknown; children: React.ReactNode }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded-full border border-mist-deep px-4 py-2 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink"
-    >
+    <BotonBase variante="secundario" onClick={onClick} className="min-h-10 py-2">
       {children}
-    </button>
+    </BotonBase>
   );
 }

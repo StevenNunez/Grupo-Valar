@@ -48,6 +48,23 @@ export function formatearFecha(iso: string | null) {
   });
 }
 
+const TRATAMIENTOS = new Set(["sr", "sra", "srta", "don", "doña", "dña", "ing", "dr", "dra"]);
+
+/**
+ * El saludo con que abre un correo al proveedor: solo el primer nombre del
+ * contacto («FABIOLA ROJAS SOTO» → «Estimado/a Fabiola:»), que es como se
+ * escribe hoy un correo. Sin contacto, «Estimados:».
+ */
+export function saludoA(contacto: string | null | undefined) {
+  const palabras = (contacto ?? "").trim().split(/\s+/).filter(Boolean);
+  const primero =
+    palabras.find((p) => !TRATAMIENTOS.has(p.replace(/\.$/, "").toLocaleLowerCase("es"))) ?? "";
+  // Un correo o un número en el campo de contacto no es un nombre.
+  if (!primero || /[@\d]/.test(primero)) return "Estimados:";
+  const nombre = primero.charAt(0).toLocaleUpperCase("es") + primero.slice(1).toLocaleLowerCase("es");
+  return `Estimado/a ${nombre}:`;
+}
+
 const MESES = [
   "Ene", "Feb", "Mar", "Abr", "May", "Jun",
   "Jul", "Ago", "Sep", "Oct", "Nov", "Dic",

@@ -1,4 +1,5 @@
 import { abrirEnlace, confirmarEnvio } from "@/lib/oc-envio/publico";
+import { anotarError } from "@/lib/errores-servidor";
 
 /** El proveedor confirma la orden y la fecha en que la entrega. */
 
@@ -33,6 +34,7 @@ export async function POST(pedido: Request, { params }: Contexto) {
   try {
     await confirmarEnvio(r.envio, { nombre, fechaEntrega, comentario });
   } catch (e) {
+    await anotarError({ origen: "servidor", donde: "oc/confirmar (proveedor)", error: e });
     return falla(e instanceof Error ? e.message : String(e), 500);
   }
   return Response.json({ ok: true });

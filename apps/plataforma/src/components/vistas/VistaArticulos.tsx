@@ -253,7 +253,7 @@ const columnas = (edicion: ReturnType<typeof useEdicion<Articulo>>): Columna<Art
       a.nombreTecnico ? (
         <span className="text-ink">{a.nombreTecnico}</span>
       ) : (
-        <span className="text-[#8a5a09]">Se pide con el nombre de faena</span>
+        <span className="text-alerta">Se pide con el nombre de faena</span>
       ),
   },
   {
@@ -270,7 +270,7 @@ const columnas = (edicion: ReturnType<typeof useEdicion<Articulo>>): Columna<Art
         <span className="text-ink-soft">—</span>
       ) : (
         <>
-          <span className={a.bajoMinimo ? "font-semibold text-[#a52f24]" : "text-ink"}>
+          <span className={a.bajoMinimo ? "font-semibold text-peligro" : "text-ink"}>
             {formatearNumero(a.stockActual)}
           </span>
           {a.stockMinimo !== null && (

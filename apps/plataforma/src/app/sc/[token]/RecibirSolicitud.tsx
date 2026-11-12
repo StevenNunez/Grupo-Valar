@@ -1,5 +1,7 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import { useState } from "react";
 
 /**
@@ -33,7 +35,7 @@ export function RecibirSolicitud({
       if (!j.ok) throw new Error(j.error ?? "No se pudo registrar.");
       setHecha({ en: new Date().toISOString(), por: nombre, comentario: comentario || null });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo registrar. Revisa tu conexión.");
+      setError(mensajeParaPersona(err, "RecibirSolicitud"));
     } finally {
       setEnviando(false);
     }
@@ -41,8 +43,8 @@ export function RecibirSolicitud({
 
   if (hecha) {
     return (
-      <div className="rounded-xl bg-[#e6f4ee] px-5 py-4">
-        <p className="font-semibold text-[#0e7a4f]">Solicitud recibida</p>
+      <div className="rounded-xl bg-exito-suave px-5 py-4">
+        <p className="font-semibold text-exito">Solicitud recibida</p>
         <p className="mt-1 text-sm text-ink">
           Quedó registrado{hecha.por ? ` por ${hecha.por}` : ""}.
         </p>
@@ -83,7 +85,7 @@ export function RecibirSolicitud({
         </label>
       </div>
       {error && (
-        <p role="alert" className="mt-3 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm text-[#a52f24]">
+        <p role="alert" className="mt-3 rounded-xl bg-peligro-suave px-4 py-3 text-sm text-peligro">
           {error}
         </p>
       )}
@@ -91,7 +93,7 @@ export function RecibirSolicitud({
         <button
           type="submit"
           disabled={enviando}
-          className="rounded-full bg-cyan px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:opacity-60"
+          className="rounded-full bg-cyan-deep px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo disabled:opacity-60"
         >
           {enviando ? "Registrando…" : "Recibí la solicitud"}
         </button>

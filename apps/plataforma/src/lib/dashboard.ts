@@ -2,6 +2,7 @@
 
 import { mesCorto } from "./formato";
 import { supabase } from "./supabase";
+import { todasLasFilas } from "./paginar";
 import { anexoRaiz, cargarAnexos, etiquetaAnexo } from "./anexos";
 import { cargarPersonal } from "./egresos";
 import { cargarFiniquitos } from "./finiquitos";
@@ -199,9 +200,15 @@ function unirResumenPorMes(filas: FilaResumenSQL[]): FilaResumenSQL[] {
 }
 
 export async function cargarDashboard(): Promise<DatosDashboard> {
+  /* Las vistas se leen completas, por tandas: PostgREST corta en 1000 filas sin
+     avisar y el Dashboard sumaría de menos. Cada orden termina en la llave de
+     la vista para que las tandas no repitan ni salten filas. Con menos de 1000
+     filas sigue siendo una sola consulta. */
   const [resumen, categorias, oficina, nominas, anexos, alias, edpsAnexo, costosAnexo, finiquitos, finiquitosOficina, personal, edpsHh] = await Promise.all([
-    supabase.from("resumen_mensual").select("*").order("periodo"),
-    supabase.from("costos_por_categoria").select("*"),
+    todasLasFilas((d, h) => supabase.from("resumen_mensual").select("*").order("periodo").order("contrato_id").range(d, h)),
+    todasLasFilas((d, h) =>
+      supabase.from("costos_por_categoria").select("*").order("contrato_id").order("categoria_id").order("periodo").range(d, h),
+    ),
     cargarEgresosOficina(),
     /* Si la 0048 todavía no está aplicada, el Dashboard sigue sin la nómina.
        Quien no ve sueldos recibe la lista vacía (RLS), no un error. */
@@ -211,22 +218,36 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
     supabase.from("contratos").select("id, nombre_corto, estado"),
     /* Lo de los anexos se separa del contrato: sus EDP y sus costos. Si falla,
        el Dashboard sale igual, con todo en el contrato (como antes). */
-    supabase.from("estados_pago").select("contrato_id, anexo_id, periodo, tipo_edp, monto_neto, monto_cobrado").not("anexo_id", "is", null),
-    supabase.from("costos_unificados").select("contrato_id, anexo_id, categoria_id, categoria, familia, periodo, tipo, neto").not("anexo_id", "is", null),
+    todasLasFilas((d, h) =>
+      supabase.from("estados_pago").select("contrato_id, anexo_id, periodo, tipo_edp, monto_neto, monto_cobrado").not("anexo_id", "is", null).order("id").range(d, h),
+    ),
+    todasLasFilas((d, h) =>
+      supabase
+        .from("costos_unificados")
+        .select("contrato_id, anexo_id, categoria_id, categoria, familia, periodo, tipo, neto")
+        .not("anexo_id", "is", null)
+        .order("id")
+        .order("periodo")
+        .range(d, h),
+    ),
     /* Quien no ve personal recibe la lista vacía; si la tabla falla, el Dashboard sale igual. */
     cargarFiniquitos("contratos").catch(() => []),
     cargarFiniquitos("oficina").catch(() => []),
     /* De acá sale el costo extraordinario (HH por motivo). Sin acceso a personal llega vacío. */
     cargarPersonal().catch(() => []),
     /* Las HH que cobra cada EP extraordinario, para contrastarlas con las trabajadas. */
-    supabase.from("estados_pago").select("contrato_id, anexo_id, periodo, datos").eq("tipo_edp", "extraordinario"),
+    todasLasFilas((d, h) =>
+      supabase.from("estados_pago").select("contrato_id, anexo_id, periodo, datos").eq("tipo_edp", "extraordinario").order("id").range(d, h),
+    ),
   ]);
 
   const fallo = resumen.error ?? categorias.error;
   if (fallo) throw new Error(fallo.message);
 
   /* Los activos comprados para un contrato: si falla, el Dashboard sale igual sin ellos. */
-  const { data: activosCostos } = await supabase.from("costos_unificados").select("contrato_id, periodo, neto").eq("es_activo", true);
+  const { data: activosCostos } = await todasLasFilas<{ contrato_id: string; periodo: string; neto: number }>((d, h) =>
+    supabase.from("costos_unificados").select("contrato_id, periodo, neto").eq("es_activo", true).order("id").order("periodo").range(d, h),
+  );
 
   /* Los contratos cerrados (0083) salen del tablero operativo; su historia sigue acá. */
   const cerrados = (alias.error ? [] : alias.data ?? []).filter((f) => f.estado === "cerrado").map((f) => f.id as string);

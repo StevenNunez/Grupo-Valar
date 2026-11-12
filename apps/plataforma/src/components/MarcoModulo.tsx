@@ -249,7 +249,7 @@ function EntradaSeccion({
           aria-current={resaltada ? "page" : undefined}
           className={`flex flex-1 items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
             resaltada
-              ? "bg-cyan font-semibold text-white"
+              ? "bg-cyan-deep font-semibold text-white"
               : activa
                 ? "font-semibold text-white"
                 : "text-white/70 hover:bg-white/5 hover:text-white"
@@ -300,7 +300,7 @@ function EntradaSeccion({
                   aria-current={activaSub ? "page" : undefined}
                   className={`block rounded-lg px-3 py-2 text-[13px] transition-colors ${
                     activaSub
-                      ? "bg-cyan font-semibold text-white"
+                      ? "bg-cyan-deep font-semibold text-white"
                       : "text-white/60 hover:bg-white/5 hover:text-white"
                   }`}
                 >
@@ -370,7 +370,7 @@ function SubseccionDesplegable({
                   aria-current={activaHija ? "page" : undefined}
                   className={`block rounded-lg px-3 py-1.5 text-[12.5px] transition-colors ${
                     activaHija
-                      ? "bg-cyan font-semibold text-white"
+                      ? "bg-cyan-deep font-semibold text-white"
                       : "text-white/55 hover:bg-white/5 hover:text-white"
                   }`}
                 >

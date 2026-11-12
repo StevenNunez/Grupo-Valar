@@ -1,5 +1,7 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import { SeccionRespaldos, useRespaldos } from "@/components/ui/Respaldos";
 import { SelectorAnexo } from "../ui/SelectorAnexo";
 import { useEffect, useState } from "react";
@@ -173,7 +175,7 @@ export function FormularioReembolso({
           pagado: Math.round(l.cantidad * l.precio_unitario) + l.iva,
         })));
       })
-      .catch((e) => vigente && f.setError(e instanceof Error ? e.message : String(e)))
+      .catch((e) => vigente && f.setError(mensajeParaPersona(e, "FormularioReembolso")))
       .finally(() => vigente && setCargandoLineas(false));
     return () => {
       vigente = false;
@@ -256,7 +258,7 @@ export function FormularioReembolso({
       alGuardado();
       alCerrar();
     } catch (e) {
-      setErrorBorrado(e instanceof Error ? e.message : String(e));
+      setErrorBorrado(mensajeParaPersona(e, "FormularioReembolso"));
     } finally {
       setBorrando(false);
     }
@@ -423,7 +425,7 @@ export function FormularioReembolso({
                         </td>
                         <td className="py-2 text-right">
                           <button type="button" aria-label="Quitar gasto" onClick={() => setLineas((ls) => ls.filter((x) => x.clave !== l.clave))}
-                            className="rounded-lg p-1.5 text-ink-soft hover:bg-[#fdeeec] hover:text-[#a52f24]">
+                            className="rounded-lg p-1.5 text-ink-soft hover:bg-peligro-suave hover:text-peligro">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden="true">
                               <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
                             </svg>

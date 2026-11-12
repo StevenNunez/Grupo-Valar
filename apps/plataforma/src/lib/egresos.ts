@@ -3,6 +3,7 @@
 import type { Datos } from "./campos";
 import { detalleDeOtrosHaberes, motivosHhExtra, type MontoHh, type OtroHaber } from "./haberes";
 import { supabase } from "./supabase";
+import { todasLasFilas } from "./paginar";
 
 /**
  * Egresos del módulo: compras, servicios y costo de personal.
@@ -326,17 +327,22 @@ type FilaPersonal = {
 };
 
 export async function cargarPersonal(): Promise<CostoPersonal[]> {
-  const { data, error } = await supabase
-    .from("costos_personal")
-    .select(
-      "id, contrato_id, anexo_id, categoria_id, faena, periodo, dotacion, horas_hombre, remuneraciones, " +
-        "sueldo_bruto, horas_extra_monto, hh_reemplazo, hh_parada_planta, " +
-        "hh_feriado_compensado, hh_apoyo_oficina, hh_otras, horas_extra_cantidad, " +
-        "monto_hh_reemplazo, monto_hh_parada_planta, monto_hh_feriado_compensado, monto_hh_apoyo_oficina, monto_hh_otras, " +
-        "total_no_imponible, otros_haberes, otros_haberes_detalle, descuento_trabajador, leyes_sociales, aporte_patronal, costo_total, datos, contratos(nombre)",
-    )
-    .order("periodo", { ascending: false })
-    .order("contrato_id");
+  // Por tandas: una fila por contrato, categoría y mes pasa las 1000 con el tiempo.
+  const { data, error } = await todasLasFilas((d, h) =>
+    supabase
+      .from("costos_personal")
+      .select(
+        "id, contrato_id, anexo_id, categoria_id, faena, periodo, dotacion, horas_hombre, remuneraciones, " +
+          "sueldo_bruto, horas_extra_monto, hh_reemplazo, hh_parada_planta, " +
+          "hh_feriado_compensado, hh_apoyo_oficina, hh_otras, horas_extra_cantidad, " +
+          "monto_hh_reemplazo, monto_hh_parada_planta, monto_hh_feriado_compensado, monto_hh_apoyo_oficina, monto_hh_otras, " +
+          "total_no_imponible, otros_haberes, otros_haberes_detalle, descuento_trabajador, leyes_sociales, aporte_patronal, costo_total, datos, contratos(nombre)",
+      )
+      .order("periodo", { ascending: false })
+      .order("contrato_id")
+      .order("id")
+      .range(d, h),
+  );
 
   if (error) throw new Error(error.message);
 

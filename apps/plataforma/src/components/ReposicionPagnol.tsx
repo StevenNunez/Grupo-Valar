@@ -128,7 +128,7 @@ export function ReposicionPagnol() {
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-soft">Cada pañol, a su contrato</h3>
           </div>
           {datos.errorPanoles ? (
-            <p className="mt-2 text-sm text-[#8a5a09]">{datos.errorPanoles}</p>
+            <p className="mt-2 text-sm text-alerta">{datos.errorPanoles}</p>
           ) : (datos.panoles ?? []).length === 0 ? (
             <p className="mt-2 text-sm text-ink-soft">Pagnol no tiene pañoles activos.</p>
           ) : (
@@ -151,7 +151,7 @@ export function ReposicionPagnol() {
             </ul>
           )}
           {guardado && (
-            <p role="status" className={`mt-3 rounded-xl px-3 py-2 text-sm ${guardado.ok ? "bg-[#e7f4ec] text-[#1f6b3b]" : "bg-[#fdeeec] text-[#a52f24]"}`}>
+            <p role="status" className={`mt-3 rounded-xl px-3 py-2 text-sm ${guardado.ok ? "bg-exito-suave text-exito" : "bg-peligro-suave text-peligro"}`}>
               {guardado.ok ? "✓ " : ""}
               {guardado.texto}
             </p>
@@ -196,7 +196,7 @@ export function ReposicionPagnol() {
                       {formatearFecha(a.recibido_en.slice(0, 10))}
                       {(d.existencias ?? []).filter((e) => e.panol?.nombre).map((e) => ` · ${e.panol!.nombre} (${e.cantidad ?? 0})`).join("")}
                     </p>
-                    {a.error && <p className="mt-1 text-xs text-[#8a5a09]">{a.error}</p>}
+                    {a.error && <p className="mt-1 text-xs text-alerta">{a.error}</p>}
                   </li>
                 );
               })}

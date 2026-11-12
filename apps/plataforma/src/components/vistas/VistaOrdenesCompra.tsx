@@ -320,12 +320,12 @@ const columnas = (
           <span aria-hidden="true" className="h-1.5 flex-1 overflow-hidden rounded-full bg-mist">
             <span
               style={{ width: `${Math.min(porcentaje, 100)}%` }}
-              className={`block h-full rounded-full ${apretado ? "bg-[#8a5a09]" : "bg-cyan-deep"}`}
+              className={`block h-full rounded-full ${apretado ? "bg-alerta" : "bg-cyan-deep"}`}
             />
           </span>
           <span
             className={`w-9 shrink-0 text-right font-semibold tabular-nums ${
-              apretado ? "text-[#8a5a09]" : "text-ink"
+              apretado ? "text-alerta" : "text-ink"
             }`}
           >
             {porcentaje.toFixed(0)}%
@@ -364,10 +364,10 @@ const columnas = (
       return (
         <>
           <span className="block whitespace-nowrap text-xs text-ink-soft">Pagado {formatearMonto(k.pagado)}</span>
-          <span className={`block whitespace-nowrap text-xs ${k.pendientePago > 0 ? "font-semibold text-[#8a5a09]" : "text-ink-soft"}`}>
+          <span className={`block whitespace-nowrap text-xs ${k.pendientePago > 0 ? "font-semibold text-alerta" : "text-ink-soft"}`}>
             Por cobrar {formatearMonto(k.pendientePago)}
           </span>
-          <span className={`block whitespace-nowrap text-xs ${k.porFacturar > 0 ? "font-semibold text-[#8a5a09]" : "text-ink-soft"}`}>
+          <span className={`block whitespace-nowrap text-xs ${k.porFacturar > 0 ? "font-semibold text-alerta" : "text-ink-soft"}`}>
             Sin facturar {formatearMonto(k.porFacturar)}
           </span>
         </>

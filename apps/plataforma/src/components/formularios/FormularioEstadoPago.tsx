@@ -433,7 +433,7 @@ export function FormularioEstadoPago({
                   {porSubir.length > 0 && <ul className="mt-2 flex flex-col gap-1 text-xs text-ink-soft">
                     {porSubir.map((a, i) => <li key={a.name + i} className="flex items-center justify-between rounded-lg bg-mist/50 px-3 py-1.5">
                       <span className="truncate">{a.name}</span>
-                      <button type="button" onClick={() => setPorSubir((p) => p.filter((_, j) => j !== i))} className="ml-3 font-semibold text-[#a52f24]">Quitar</button>
+                      <button type="button" onClick={() => setPorSubir((p) => p.filter((_, j) => j !== i))} className="ml-3 font-semibold text-peligro">Quitar</button>
                     </li>)}
                   </ul>}
                   <p className="mt-1.5 text-xs text-ink-soft">Se adjuntan al crear el estado de pago.</p>
@@ -441,7 +441,7 @@ export function FormularioEstadoPago({
               </div>
             </Ancho>
 
-            {errorUf && <Ancho><p role="alert" className="text-sm text-[#a52f24]">{errorUf}</p></Ancho>}
+            {errorUf && <Ancho><p role="alert" className="text-sm text-peligro">{errorUf}</p></Ancho>}
 
             <CamposDelContrato
               campos={camposAdicionales}

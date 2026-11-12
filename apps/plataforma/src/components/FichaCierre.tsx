@@ -1,5 +1,7 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import { useState } from "react";
 import { PanelFiniquitos } from "./Finiquitos";
 import { InformativosDelContrato } from "./InformativosDelContrato";
@@ -59,7 +61,7 @@ export function FichaCierre({
       alCambiar();
       if (cerrarDespues) alCerrar();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo guardar.");
+      setError(mensajeParaPersona(e, "FichaCierre"));
     } finally {
       setTrabajando(false);
       setConfirmando(false);
@@ -157,7 +159,7 @@ export function FichaCierre({
 
       <div className="border-t border-mist px-6 py-5">
         {error && (
-          <p role="alert" className="mb-4 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm font-medium text-[#a52f24]">
+          <p role="alert" className="mb-4 rounded-xl bg-peligro-suave px-4 py-3 text-sm font-medium text-peligro">
             {error}
           </p>
         )}
@@ -167,7 +169,7 @@ export function FichaCierre({
               type="button"
               disabled={trabajando}
               onClick={() => ejecutar(() => reabrirContrato(contrato.id), true)}
-              className={`${claseBoton} mr-auto text-[#a52f24] hover:bg-[#fdeeec]`}
+              className={`${claseBoton} mr-auto text-peligro hover:bg-peligro-suave`}
             >
               Reabrir contrato
             </button>
@@ -195,7 +197,7 @@ export function FichaCierre({
               type="button"
               disabled={trabajando}
               onClick={() => ejecutar(() => guardarObservacionesCierre(contrato.id, observaciones), false)}
-              className={`${claseBoton} bg-cyan text-white hover:bg-cyan-deep`}
+              className={`${claseBoton} bg-cyan-deep text-white hover:bg-cyan-hondo`}
             >
               {trabajando ? "Guardando…" : "Guardar observaciones"}
             </button>
@@ -204,7 +206,7 @@ export function FichaCierre({
             <button
               type="button"
               onClick={() => setConfirmando(true)}
-              className={`${claseBoton} bg-cyan text-white hover:bg-cyan-deep`}
+              className={`${claseBoton} bg-cyan-deep text-white hover:bg-cyan-hondo`}
             >
               Cerrar contrato
             </button>
@@ -214,7 +216,7 @@ export function FichaCierre({
               type="button"
               disabled={trabajando || !fecha}
               onClick={() => ejecutar(() => cerrarContrato(contrato.id, fecha, observaciones), true)}
-              className={`${claseBoton} bg-[#a52f24] text-white hover:bg-[#8c261d]`}
+              className={`${claseBoton} bg-peligro text-white hover:bg-peligro`}
             >
               {trabajando ? "Cerrando…" : "Confirmar: pasa a Cerrados"}
             </button>
@@ -232,7 +234,7 @@ export function FichaCierre({
 
 function Cifras({ d }: { d: DatosCierre }) {
   const pct = d.rentabilidadPct;
-  const tono = pct === null ? "" : pct < 0 ? "text-[#a52f24]" : "text-[#0e7a4f]";
+  const tono = pct === null ? "" : pct < 0 ? "text-peligro" : "text-exito";
   const items: { etiqueta: string; valor: string; nota?: string; clase?: string }[] = [
     { etiqueta: "Ingresos totales", valor: formatearMonto(d.ingresos), nota: "Estados de pago netos" },
     {
@@ -249,7 +251,7 @@ function Cifras({ d }: { d: DatosCierre }) {
       etiqueta: "Resultado económico",
       valor: formatearMonto(d.resultado),
       nota: "Ingresos − costos − finiquitos",
-      clase: d.resultado < 0 ? "text-[#a52f24]" : "text-ink",
+      clase: d.resultado < 0 ? "text-peligro" : "text-ink",
     },
     {
       etiqueta: "Rentabilidad final",

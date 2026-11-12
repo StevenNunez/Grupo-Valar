@@ -77,7 +77,7 @@ export function CategoriasDelContrato({
         )}
 
         {estado.estado === "error" && (
-          <p role="alert" className="px-6 py-12 text-center text-sm text-[#a52f24]">
+          <p role="alert" className="px-6 py-12 text-center text-sm text-peligro">
             {estado.mensaje}
           </p>
         )}

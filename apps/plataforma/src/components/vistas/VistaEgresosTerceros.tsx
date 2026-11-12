@@ -374,7 +374,7 @@ function MenuNuevo({
         aria-haspopup="menu"
         aria-expanded={abierto}
         onClick={() => setAbierto((a) => !a)}
-        className="inline-flex items-center gap-2 rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep"
+        className="inline-flex items-center gap-2 rounded-full bg-cyan-deep px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
           <path d="M12 5v14M5 12h14" strokeLinecap="round" />
@@ -673,7 +673,7 @@ const columnas = (
           <span className="mt-0.5 block text-xs text-ink-soft">Documento: {formatearFecha(e.fecha)}</span>
         )}
         {e.recurrente && (
-          <span className="mt-0.5 block text-xs font-semibold text-[#8a5a09]">
+          <span className="mt-0.5 block text-xs font-semibold text-alerta">
             {e.periodicidad ?? "recurrente"}
           </span>
         )}
@@ -833,7 +833,7 @@ const columnasOrden = (abrir: (id: string) => void): Columna<Orden>[] => [
       return (
         <span className="flex flex-col items-start gap-1">
           <Chip tono={e.tono}>{e.titulo}</Chip>
-          {o.solicitarNc && <span className="text-xs font-semibold text-[#a52f24]">Solicitar NC</span>}
+          {o.solicitarNc && <span className="text-xs font-semibold text-peligro">Solicitar NC</span>}
         </span>
       );
     },

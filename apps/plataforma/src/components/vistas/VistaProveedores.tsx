@@ -194,7 +194,7 @@ const columnas = (edicion: ReturnType<typeof useEdicion<Proveedor>>): Columna<Pr
       <>
         <span className="block font-semibold text-ink">{p.razonSocial}</span>
         <span className="mt-0.5 block text-xs text-ink-soft">
-          <span className={p.rut ? "" : "text-[#8a5a09]"}>{formatearRut(p.rut)}</span>
+          <span className={p.rut ? "" : "text-alerta"}>{formatearRut(p.rut)}</span>
           {p.nombreFantasia ? ` · ${p.nombreFantasia}` : ""}
         </span>
       </>

@@ -1,5 +1,7 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Chip } from "./ui/Chip";
@@ -49,7 +51,7 @@ import {
   type LecturaCotizacion,
 } from "@/lib/lector-cotizacion";
 import { crear } from "@/lib/crud";
-import { formatearFecha, formatearNumero, formatearPesos, formatearPesosUnitario } from "@/lib/formato";
+import { formatearFecha, formatearNumero, formatearPesos, formatearPesosUnitario, saludoA } from "@/lib/formato";
 import { cargarDestinatarios, siguienteNumero, type Destinatario } from "@/lib/ordenes";
 import { useEmpresa } from "@/lib/empresa-cliente";
 import { puede, useUsuario } from "@/lib/sesion";
@@ -139,13 +141,13 @@ export function CotizacionesDeSolped({
     porElegirId && estado.estado === "listo"
       ? (estado.datos.cotizaciones.find((c) => c.id === porElegirId) ?? null)
       : null;
-  // Si ya era el elegido no hay nada que elegir: se pasa directo a la orden.
-  useEffect(() => {
-    if (encadenada?.seleccionada) {
-      setPorGenerarId(encadenada.id);
-      setPorElegirId(null);
-    }
-  }, [encadenada]);
+  /* Si ya era el elegido no hay nada que elegir: se pasa directo a la orden. Se
+     ajusta al dibujar (no en un efecto): así no hay un cuadro intermedio en que
+     se vea el paso de elegir. `porElegirId` vuelve a null, así que pasa una vez. */
+  if (encadenada?.seleccionada && porElegirId) {
+    setPorGenerarId(encadenada.id);
+    setPorElegirId(null);
+  }
   const aElegir = eligiendo ?? (encadenada?.seleccionada ? null : encadenada);
 
   return (
@@ -162,7 +164,7 @@ export function CotizacionesDeSolped({
         )}
 
         {estado.estado === "error" && (
-          <p role="alert" className="px-6 py-12 text-center text-sm text-[#a52f24]">
+          <p role="alert" className="px-6 py-12 text-center text-sm text-peligro">
             {estado.mensaje}
           </p>
         )}
@@ -297,13 +299,21 @@ function Comparativo({
   const mejor = recibidas.length > 0 ? Math.min(...recibidas.map((c) => c.costoPuesto)) : 0;
   const elegida = datos.cotizaciones.find((c) => c.seleccionada);
 
-  // Espera a que la recarga traiga al proveedor ya elegido y abre la orden.
+  /* Espera a que la recarga traiga al proveedor ya elegido y abre la orden. El
+     diálogo se abre al dibujar (una vez por pedido: `abiertoPara` lo recuerda) y
+     al padre se le avisa después, en el efecto, para que limpie su pedido. */
+  const listoParaGenerar = !!generarId && elegida?.id === generarId && puedeEmitir;
+  const [abiertoPara, setAbiertoPara] = useState<string | null>(null);
+  if (listoParaGenerar && abiertoPara !== generarId) {
+    setAbiertoPara(generarId);
+    setGenerando(true);
+  } else if (!generarId && abiertoPara !== null) {
+    // Atendido el pedido, se olvida: un pedido nuevo del mismo proveedor vuelve a abrir.
+    setAbiertoPara(null);
+  }
   useEffect(() => {
-    if (generarId && elegida?.id === generarId && puedeEmitir) {
-      setGenerando(true);
-      alGenerarAbierto();
-    }
-  }, [generarId, elegida?.id, puedeEmitir]);
+    if (listoParaGenerar) alGenerarAbierto();
+  }, [listoParaGenerar, alGenerarAbierto]);
 
   return (
     <div className="px-6 py-6">
@@ -319,7 +329,7 @@ function Comparativo({
           <button
             type="button"
             onClick={() => setPidiendo(true)}
-            className="inline-flex items-center gap-1.5 rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep"
+            className="inline-flex items-center gap-1.5 rounded-full bg-cyan-deep px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden="true">
               <path d="M4 5h16v14H4Z" strokeLinejoin="round" />
@@ -349,12 +359,12 @@ function Comparativo({
         const hayCompra = datos.items.some((i) => i.cantidadComprada > 0);
         if (!hayCompra && faltan.length === 0) return null;
         return faltan.length === 0 ? (
-          <p className="mt-5 rounded-xl bg-[#eaf6ef] px-4 py-3 text-sm font-medium text-[#0e7a4f]">
+          <p className="mt-5 rounded-xl bg-exito-suave px-4 py-3 text-sm font-medium text-exito">
             Todos los ítems de la solicitud ya están comprados.
           </p>
         ) : (
-          <div className="mt-5 rounded-xl border border-[#ecd9b0] bg-[#fdf4e6] px-4 py-3">
-            <p className="text-sm font-semibold text-[#8a5a09]">
+          <div className="mt-5 rounded-xl border border-alerta-borde bg-alerta-suave px-4 py-3">
+            <p className="text-sm font-semibold text-alerta">
               Faltan {faltan.length} de {datos.items.length} ítems por comprar
             </p>
             <ul className="mt-2 grid gap-x-6 gap-y-1 text-sm text-ink sm:grid-cols-2">
@@ -368,7 +378,7 @@ function Comparativo({
                       <button
                         type="button"
                         onClick={() => setCompletando(i)}
-                        className="rounded-full border border-[#ecd9b0] bg-white px-2.5 py-0.5 text-[11px] font-semibold text-[#8a5a09] transition-colors hover:border-[#8a5a09]"
+                        className="rounded-full border border-alerta-borde bg-white px-2.5 py-0.5 text-[11px] font-semibold text-alerta transition-colors hover:border-alerta"
                       >
                         Dar por completo
                       </button>
@@ -423,7 +433,7 @@ function Comparativo({
                         <EstadoDelEnvio envio={datos.envios.find((e) => e.cotizacionId === c.id)} />
                       )}
                       {c.recibidaEn === null && !c.enviadaEn && (
-                        <span className="mt-1 block text-xs font-semibold text-[#8a5a09]">
+                        <span className="mt-1 block text-xs font-semibold text-alerta">
                           Todavía no se le manda
                         </span>
                       )}
@@ -444,7 +454,7 @@ function Comparativo({
                         {formatearPesos(c.costoPuesto)}
                       </span>
                       {esMejor && !c.seleccionada && (
-                        <span className="mt-0.5 block text-xs text-[#0e7a4f]">el más bajo</span>
+                        <span className="mt-0.5 block text-xs text-exito">el más bajo</span>
                       )}
                     </td>
                     <td className="py-3 pr-3 text-right tabular-nums text-ink-soft">
@@ -494,7 +504,7 @@ function Comparativo({
                             className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
                               c.enviadaEn
                                 ? "border border-mist-deep text-ink-soft hover:border-ink hover:text-ink"
-                                : "bg-cyan text-white hover:bg-cyan-deep"
+                                : "bg-cyan-deep text-white hover:bg-cyan-hondo"
                             }`}
                           >
                             {c.enviadaEn ? "Reenviar" : "Enviar"}
@@ -506,7 +516,7 @@ function Comparativo({
                             <button
                               type="button"
                               onClick={() => alAgregar(c.proveedorId)}
-                              className="rounded-full bg-cyan px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-cyan-deep"
+                              className="rounded-full bg-cyan-deep px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-cyan-hondo"
                             >
                               Cargar precios
                             </button>
@@ -533,14 +543,14 @@ function Comparativo({
           </p>
 
           {ordenCreada ? (
-            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl bg-[#eaf6ef] px-4 py-3 text-sm font-medium text-[#0e7a4f]">
+            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl bg-exito-suave px-4 py-3 text-sm font-medium text-exito">
               <p className="min-w-0 flex-1">
                 Orden {ordenCreada} creada en borrador. Ábrela en Órdenes de Compra para
                 revisarla y emitirla.
               </p>
               <Link
                 href="/abastecimiento/ordenes/"
-                className="rounded-full bg-cyan px-5 py-2 font-semibold text-white transition-colors hover:bg-cyan-deep"
+                className="rounded-full bg-cyan-deep px-5 py-2 font-semibold text-white transition-colors hover:bg-cyan-hondo"
               >
                 Ir a Órdenes de Compra
               </Link>
@@ -549,7 +559,7 @@ function Comparativo({
             <button
               type="button"
               onClick={() => setGenerando(true)}
-              className="mt-4 rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep"
+              className="mt-4 rounded-full bg-cyan-deep px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo"
             >
               Generar orden de compra
             </button>
@@ -725,7 +735,7 @@ function DialogoDarPorCompleto({
       await darPorCompletoItem({ solpedId: solped.id, solpedItemId: item.id, motivo });
       alListo();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(mensajeParaPersona(e, "CotizacionesDeSolped"));
       setGuardando(false);
     }
   }
@@ -759,7 +769,7 @@ function DialogoDarPorCompleto({
         </label>
 
         {error && (
-          <p role="alert" className="mt-4 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm font-medium text-[#a52f24]">
+          <p role="alert" className="mt-4 rounded-xl bg-peligro-suave px-4 py-3 text-sm font-medium text-peligro">
             {error}
           </p>
         )}
@@ -778,7 +788,7 @@ function DialogoDarPorCompleto({
           type="button"
           onClick={() => void confirmar()}
           disabled={guardando || !motivo.trim()}
-          className="rounded-full bg-cyan px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:opacity-50"
+          className="rounded-full bg-cyan-deep px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo disabled:opacity-50"
         >
           {guardando ? "Guardando…" : "Dar por completo"}
         </button>
@@ -1430,7 +1440,7 @@ function FormularioCotizacion({
             </span>
           </label>
           {sinPrecio > 0 && lineas.length > 0 && (
-            <p className="mt-3 text-xs text-[#8a5a09]">
+            <p className="mt-3 text-xs text-alerta">
               {sinPrecio} {sinPrecio === 1 ? "ítem sigue" : "ítems siguen"} sin precio. Si el proveedor no lo tiene,
               desmarca «¿Tiene?».
             </p>
@@ -1453,7 +1463,7 @@ function FormularioCotizacion({
           {error && (
             <p
               role="alert"
-              className="mb-4 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm font-medium text-[#a52f24]"
+              className="mb-4 rounded-xl bg-peligro-suave px-4 py-3 text-sm font-medium text-peligro"
             >
               {error}
             </p>
@@ -1470,7 +1480,7 @@ function FormularioCotizacion({
             <button
               type="submit"
               disabled={guardando || !proveedorId}
-              className="rounded-full bg-cyan px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:cursor-wait disabled:opacity-70"
+              className="rounded-full bg-cyan-deep px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo disabled:cursor-wait disabled:opacity-70"
             >
               {guardando ? "Guardando…" : corrigiendo ? "Guardar cambios" : "Guardar cotización"}
             </button>
@@ -1516,7 +1526,7 @@ function DialogoSeleccion({
       alElegido();
       alCerrar();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(mensajeParaPersona(e, "CotizacionesDeSolped"));
     } finally {
       setGuardando(false);
     }
@@ -1532,7 +1542,7 @@ function DialogoSeleccion({
     >
       <div className="px-6 py-6">
         {!esElMasBarato && (
-          <p className="mb-4 rounded-xl bg-[#fdf4e6] px-4 py-3 text-sm text-[#8a5a09]">
+          <p className="mb-4 rounded-xl bg-alerta-suave px-4 py-3 text-sm text-alerta">
             No es la más barata: hay otra {formatearPesos(diferencia)} más abajo. Puede
             haber buenas razones —plazo, stock, garantía—, y conviene que queden escritas.
           </p>
@@ -1556,7 +1566,7 @@ function DialogoSeleccion({
         {error && (
           <p
             role="alert"
-            className="mt-4 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm font-medium text-[#a52f24]"
+            className="mt-4 rounded-xl bg-peligro-suave px-4 py-3 text-sm font-medium text-peligro"
           >
             {error}
           </p>
@@ -1576,7 +1586,7 @@ function DialogoSeleccion({
           type="button"
           onClick={() => void confirmar()}
           disabled={guardando || !motivo.trim()}
-          className="rounded-full bg-cyan px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:opacity-50"
+          className="rounded-full bg-cyan-deep px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo disabled:opacity-50"
         >
           {guardando ? "Guardando…" : "Elegir este proveedor"}
         </button>
@@ -1767,7 +1777,7 @@ function DialogoGenerarOrden({
       });
       alCreada(numero || id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(mensajeParaPersona(e, "CotizacionesDeSolped"));
       setGuardando(false);
     }
   }
@@ -1857,7 +1867,7 @@ function DialogoGenerarOrden({
                         <span className="mt-0.5 block text-xs text-ink-soft">Se pidió: {pedido.descripcion}</span>
                       )}
                       {yaComprado && (
-                        <span className="mt-0.5 block text-xs text-[#8a5a09]">
+                        <span className="mt-0.5 block text-xs text-alerta">
                           Ya se compraron {formatearNumero(pedido?.cantidadComprada ?? 0)}{" "}
                           {pedido?.unidad} en otra orden
                         </span>
@@ -1923,7 +1933,7 @@ function DialogoGenerarOrden({
         {error && (
           <p
             role="alert"
-            className="mb-4 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm font-medium text-[#a52f24]"
+            className="mb-4 rounded-xl bg-peligro-suave px-4 py-3 text-sm font-medium text-peligro"
           >
             {error}
           </p>
@@ -1941,7 +1951,7 @@ function DialogoGenerarOrden({
             type="button"
             onClick={() => void crearOrden()}
             disabled={guardando || marcados.size === 0}
-            className="rounded-full bg-cyan px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-full bg-cyan-deep px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo disabled:cursor-not-allowed disabled:opacity-60"
           >
             {guardando ? "Generando…" : `Generar orden por ${formatearPesos(total)}`}
           </button>
@@ -2139,7 +2149,7 @@ function LectorDeCotizacion({
       />
 
       {error && (
-        <p role="alert" className="mt-3 rounded-lg bg-[#fdeeec] px-3 py-2 text-xs font-medium text-[#a52f24]">
+        <p role="alert" className="mt-3 rounded-lg bg-peligro-suave px-3 py-2 text-xs font-medium text-peligro">
           {error}
         </p>
       )}
@@ -2147,7 +2157,7 @@ function LectorDeCotizacion({
       {lectura && (
         <div className="mt-4 border-t border-mist pt-4">
           {lectura.aviso ? (
-            <p className="rounded-lg bg-[#fdf4e6] px-3 py-2 text-xs text-[#8a5a09]">
+            <p className="rounded-lg bg-alerta-suave px-3 py-2 text-xs text-alerta">
               {lectura.aviso}
             </p>
           ) : (
@@ -2201,7 +2211,7 @@ function LectorDeCotizacion({
                   type="button"
                   onClick={aplicar}
                   disabled={aplicables.length === 0}
-                  className="rounded-full bg-cyan px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:opacity-50"
+                  className="rounded-full bg-cyan-deep px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo disabled:opacity-50"
                 >
                   Usar estos precios
                 </button>
@@ -2318,7 +2328,7 @@ function DialogoPedirCotizacion({
       alPedida(id);
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e);
-      setError(/nombre_pedido/.test(m) ? "Falta aplicar la migración 0108 en la base." : m);
+      setError(/nombre_pedido/.test(m) ? "Falta aplicar la migración 0108 en la base." : mensajeParaPersona(e, "pedir cotización"));
       setGuardando(false);
     }
   }
@@ -2432,7 +2442,7 @@ function DialogoPedirCotizacion({
         {error && (
           <p
             role="alert"
-            className="mb-4 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm font-medium text-[#a52f24]"
+            className="mb-4 rounded-xl bg-peligro-suave px-4 py-3 text-sm font-medium text-peligro"
           >
             {error}
           </p>
@@ -2450,7 +2460,7 @@ function DialogoPedirCotizacion({
             type="button"
             onClick={() => void pedir()}
             disabled={guardando || !proveedorId || elegidos.size === 0}
-            className="rounded-full bg-cyan px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-full bg-cyan-deep px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo disabled:cursor-not-allowed disabled:opacity-60"
           >
             {guardando
               ? "Creando…"
@@ -2685,7 +2695,7 @@ function DialogoEnviar({
       if (abrirCliente) window.location.href = enlace;
       alEnviada();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(mensajeParaPersona(e, "CotizacionesDeSolped"));
       setEnviando(false);
     }
   }
@@ -2704,7 +2714,7 @@ function DialogoEnviar({
     return (
       <Dialogo titulo={`Solicitud ${numero} enviada`} abierto alCerrar={alCerrar} ancho="max-w-lg">
         <div className="px-6 py-6 text-sm text-ink">
-          <p className="rounded-xl bg-[#e6f4ee] px-4 py-3 font-medium text-[#0e7a4f]">
+          <p className="rounded-xl bg-exito-suave px-4 py-3 font-medium text-exito">
             Se le envió a {enviada.para.join(", ")}
             {enviada.cc.length ? `, con copia a ${enviada.cc.join(", ")}` : ""}.
           </p>
@@ -2717,7 +2727,7 @@ function DialogoEnviar({
           <button
             type="button"
             onClick={alCerrar}
-            className="rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-white hover:bg-cyan-deep"
+            className="rounded-full bg-cyan-deep px-5 py-2.5 text-sm font-semibold text-white hover:bg-cyan-hondo"
           >
             Listo
           </button>
@@ -2787,7 +2797,7 @@ function DialogoEnviar({
                 {personas === null && !errorPersonas && (
                   <li className="px-3 py-2 text-ink-soft">Cargando personas de Valar…</li>
                 )}
-                {errorPersonas && <li className="px-3 py-2 text-[#a52f24]">{errorPersonas}</li>}
+                {errorPersonas && <li className="px-3 py-2 text-peligro">{errorPersonas}</li>}
                 {personas && elegibles.length === 0 && <li className="px-3 py-2 text-ink-soft">Nadie más de Valar para copiar.</li>}
                 {elegibles.map((p) => (
                   <li key={p.correo}>
@@ -2854,7 +2864,7 @@ function DialogoEnviar({
           </details>
 
           {muyLargo && (
-            <p className="rounded-xl bg-[#fdf4e6] px-4 py-3 text-sm leading-relaxed text-[#8a5a09]">
+            <p className="rounded-xl bg-alerta-suave px-4 py-3 text-sm leading-relaxed text-alerta">
               Si usas <strong>Abrir en mi correo</strong>: el mensaje es largo y algunos clientes de correo lo cortan.
               Mejor usa <strong>Enviar</strong>, que no tiene ese límite.
             </p>
@@ -2863,7 +2873,7 @@ function DialogoEnviar({
 
         <div className="border-t border-mist px-6 py-5">
           {error && (
-            <p role="alert" className="mb-4 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm font-medium text-[#a52f24]">
+            <p role="alert" className="mb-4 rounded-xl bg-peligro-suave px-4 py-3 text-sm font-medium text-peligro">
               {error}
             </p>
           )}
@@ -2899,7 +2909,7 @@ function DialogoEnviar({
             <button
               type="submit"
               disabled={enviando || !para.trim()}
-              className="rounded-full bg-cyan px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-full bg-cyan-deep px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo disabled:cursor-not-allowed disabled:opacity-60"
             >
               {enviando ? "Enviando…" : cotizacion.enviadaEn ? "Reenviar" : "Enviar"}
             </button>
@@ -2918,7 +2928,7 @@ function mensajeInicialSolicitud(d: {
   empresa: string;
 }) {
   return [
-    d.contacto ? `Estimado/a ${d.contacto}:` : "Estimados:",
+    saludoA(d.contacto),
     "",
     "Agradeceremos cotizar los ítems que se detallan más abajo.",
     d.fechaRequerida ? `Se necesitan en faena el ${formatearFecha(d.fechaRequerida)}.` : null,

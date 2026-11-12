@@ -1,5 +1,6 @@
 "use client";
 
+import { todasLasFilas } from "./paginar";
 import { supabase } from "./supabase";
 
 /**
@@ -25,13 +26,23 @@ export type InformativosContrato = {
 const vacio = (): InformativosContrato => ({ porCobrar: 0, porPagar: 0, activos: 0, activosFuente: null, deudaPorProveedor: [] });
 
 export async function cargarInformativos(): Promise<Record<string, InformativosContrato>> {
+  /* Completas, por tandas: con más de 1000 facturas pendientes o cuotas pagadas,
+     PostgREST cortaría la lista sin avisar y "Por pagar" saldría mal. */
   const [edps, compras, servicios, cuotas, contratos, activos] = await Promise.all([
-    supabase.from("estados_pago").select("contrato_id, monto_neto, monto_cobrado, estado").in("estado", ["presentado", "aprobado", "facturado"]),
-    supabase.from("compras").select("id, contrato_id, proveedor, total, estado_pago").in("estado_pago", ["pendiente", "retenida"]),
-    supabase.from("servicios").select("contrato_id, contratista, total, estado_pago").eq("estado_pago", "pendiente"),
-    supabase.from("pagos_factura").select("compra_id, monto").not("fecha_pago", "is", null),
-    supabase.from("contratos").select("id, valor_activos_referencia"),
-    supabase.from("activos_valar").select("contrato_origen_id, valor").not("contrato_origen_id", "is", null),
+    todasLasFilas((d, h) =>
+      supabase.from("estados_pago").select("contrato_id, monto_neto, monto_cobrado, estado").in("estado", ["presentado", "aprobado", "facturado"]).order("id").range(d, h),
+    ),
+    todasLasFilas((d, h) =>
+      supabase.from("compras").select("id, contrato_id, proveedor, total, estado_pago").in("estado_pago", ["pendiente", "retenida"]).order("id").range(d, h),
+    ),
+    todasLasFilas((d, h) =>
+      supabase.from("servicios").select("id, contrato_id, contratista, total, estado_pago").eq("estado_pago", "pendiente").order("id").range(d, h),
+    ),
+    todasLasFilas((d, h) => supabase.from("pagos_factura").select("id, compra_id, monto").not("fecha_pago", "is", null).order("id").range(d, h)),
+    todasLasFilas((d, h) => supabase.from("contratos").select("id, valor_activos_referencia").order("id").range(d, h)),
+    todasLasFilas((d, h) =>
+      supabase.from("activos_valar").select("id, contrato_origen_id, valor").not("contrato_origen_id", "is", null).order("id").range(d, h),
+    ),
   ]);
   /* Los datos de EDP y de compras son la base: si fallan, se avisa. El resto es un extra
      (una migración sin aplicar no debe tumbar el Dashboard). */

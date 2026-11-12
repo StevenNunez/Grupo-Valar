@@ -138,12 +138,12 @@ export function BienvenidaAvisos() {
         </ul>
 
         {listo ? (
-          <p role="status" className="mt-5 rounded-xl bg-[#e6f4ec] px-4 py-3 text-sm font-medium text-[#1d6b45]">
+          <p role="status" className="mt-5 rounded-xl bg-exito-suave px-4 py-3 text-sm font-medium text-exito">
             ✓ Listo: los avisos quedaron activados en este dispositivo.
           </p>
         ) : (
           error && (
-            <p role="alert" className="mt-5 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm font-medium text-[#a52f24]">
+            <p role="alert" className="mt-5 rounded-xl bg-peligro-suave px-4 py-3 text-sm font-medium text-peligro">
               {error}
             </p>
           )
@@ -155,7 +155,7 @@ export function BienvenidaAvisos() {
               type="button"
               disabled={ocupada}
               onClick={() => void activar()}
-              className="rounded-full bg-cyan px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:opacity-50"
+              className="rounded-full bg-cyan-deep px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo disabled:opacity-50"
             >
               {ocupada ? "Activando…" : "Activar avisos en este dispositivo"}
             </button>

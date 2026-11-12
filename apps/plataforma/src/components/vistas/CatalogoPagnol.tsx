@@ -133,7 +133,7 @@ function TablaMateriales({ filas, verPanoles }: { filas: MaterialPagnol[]; verPa
           <span className="text-ink-soft">—</span>
         ) : (
           <>
-            <span className={bajoMinimo(m) ? "font-semibold text-[#a52f24]" : "text-ink"}>
+            <span className={bajoMinimo(m) ? "font-semibold text-peligro" : "text-ink"}>
               {formatearNumero(m.stock_actual)} <span className="text-xs text-ink-soft">{m.unidad_medida}</span>
             </span>
             {m.stock_minimo != null && <span className="mt-0.5 block text-xs text-ink-soft">mín. {formatearNumero(m.stock_minimo)}</span>}
@@ -236,7 +236,7 @@ function DialogoExistencias({ material, alCerrar }: { material: MaterialPagnol; 
   return (
     <Dialogo titulo={material.nombre} descripcion={`${material.codigo} · dónde está el stock en Pagnol`} abierto alCerrar={alCerrar} ancho="max-w-xl">
       {error ? (
-        <p className="text-sm text-[#8a5a09]">{error}</p>
+        <p className="text-sm text-alerta">{error}</p>
       ) : !datos ? (
         <p className="text-sm text-ink-soft">Consultando Pagnol…</p>
       ) : datos.existencias.length === 0 ? (

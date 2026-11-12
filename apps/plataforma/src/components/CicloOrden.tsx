@@ -252,8 +252,8 @@ function Resumen({ orden, ciclo, alModo, alCorregir, alAdjuntos, puedeRecibir, p
                   <span className="text-xs text-ink-soft">{formatearPesosUnitario(l.precioUnitario)} / {l.unidad}</span>
                 </td>
                 <td className="py-2 pr-3 text-right tabular-nums">{formatearNumero(l.pedida)}</td>
-                <td className={`py-2 pr-3 text-right tabular-nums ${l.recibida < l.vigente ? "text-[#8a5a09]" : "text-ink"}`}>{formatearNumero(l.recibida)}</td>
-                <td className={`py-2 pr-3 text-right tabular-nums ${l.sinRecibir > 0 ? "font-semibold text-[#a52f24]" : "text-ink"}`}>{formatearNumero(l.facturadaNeta)}</td>
+                <td className={`py-2 pr-3 text-right tabular-nums ${l.recibida < l.vigente ? "text-alerta" : "text-ink"}`}>{formatearNumero(l.recibida)}</td>
+                <td className={`py-2 pr-3 text-right tabular-nums ${l.sinRecibir > 0 ? "font-semibold text-peligro" : "text-ink"}`}>{formatearNumero(l.facturadaNeta)}</td>
                 <td className="py-2 pr-3 text-right tabular-nums text-ink-soft">{l.acreditada ? formatearNumero(l.acreditada) : "—"}</td>
                 <td className="py-2 pr-3 text-right tabular-nums text-ink-soft">{l.cerrada ? formatearNumero(l.cerrada) : "—"}</td>
                 <td className="py-2 text-right font-semibold tabular-nums text-ink">{formatearPesos(Math.round(l.vigente * l.precioUnitario))}</td>
@@ -284,14 +284,14 @@ function Resumen({ orden, ciclo, alModo, alCorregir, alAdjuntos, puedeRecibir, p
                     {r.recibidoPor && ` — recibió ${r.recibidoPor}`}
                   </p>
                   {r.desdePagnol ? (
-                    <p className="mt-1.5 text-xs font-semibold text-[#0e7a4f]">Recibida en Pagnol ✓ · si algo no venía, se corrige allá y el cambio llega solo</p>
+                    <p className="mt-1.5 text-xs font-semibold text-exito">Recibida en Pagnol ✓ · si algo no venía, se corrige allá y el cambio llega solo</p>
                   ) : (
                     <EstadoEnPagnol recepcion={r} conPagnol={r.lineas.some((x) => deLaOrdenEnPagnol.has(x.itemId))}
                       trabajando={trabajando === r.id} alReintentar={() => reintentar(r.id)} />
                   )}
                   {puedeRecibir && !r.desdePagnol && (
                     <button type="button" onClick={() => { setErrorAnular(null); setAnulando(r.id); }}
-                      className="mt-2 text-xs font-semibold text-[#a52f24] hover:underline">
+                      className="mt-2 text-xs font-semibold text-peligro hover:underline">
                       Anular recepción
                     </button>
                   )}
@@ -376,10 +376,10 @@ function EstadoEnPagnol({ recepcion, conPagnol, trabajando, alReintentar }: {
   const p = recepcion.pagnol;
   const listo = p !== null && p.total > 0 && p.enviados === p.total && p.errores.length === 0;
   if (listo) {
-    return <p className="mt-1.5 text-xs font-semibold text-[#0e7a4f]">Informado a Pagnol ✓ ({p.total} {p.total === 1 ? "registro" : "registros"})</p>;
+    return <p className="mt-1.5 text-xs font-semibold text-exito">Informado a Pagnol ✓ ({p.total} {p.total === 1 ? "registro" : "registros"})</p>;
   }
   return (
-    <div className="mt-1.5 rounded-lg bg-[#fdf3e3] px-2.5 py-1.5 text-xs text-[#8a5a09]">
+    <div className="mt-1.5 rounded-lg bg-alerta-suave px-2.5 py-1.5 text-xs text-alerta">
       <span className="font-semibold">{p ? `Pagnol: ${p.enviados} de ${p.total} informados` : "Pagnol: sin informar"}</span>
       {p?.errores.slice(0, 2).map((e) => <span key={e} className="block">{e}</span>)}
       <button type="button" onClick={alReintentar} disabled={trabajando}
@@ -411,8 +411,8 @@ function Cifra({ etiqueta, valor, nota }: { etiqueta: string; valor: number; not
 
 function Aviso({ tono, children }: { tono: "critico" | "aviso" | "info"; children: React.ReactNode }) {
   const clases = {
-    critico: "bg-[#fdeeec] text-[#a52f24]",
-    aviso: "bg-[#fdf3e3] text-[#8a5a09]",
+    critico: "bg-peligro-suave text-peligro",
+    aviso: "bg-alerta-suave text-alerta",
     info: "bg-cyan/10 text-cyan-deep",
   }[tono];
   return <p className={`rounded-xl px-4 py-2.5 text-sm font-medium ${clases}`}>{children}</p>;
@@ -422,7 +422,7 @@ function Accion({ onClick, destacada = false, children }: { onClick: () => void;
   return (
     <button type="button" onClick={onClick}
       className={destacada
-        ? "rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-white hover:bg-cyan-deep"
+        ? "rounded-full bg-cyan-deep px-5 py-2.5 text-sm font-semibold text-white hover:bg-cyan-hondo"
         : "rounded-full border border-cyan px-5 py-2.5 text-sm font-semibold text-cyan-deep hover:bg-cyan/5"}>
       {children}
     </button>

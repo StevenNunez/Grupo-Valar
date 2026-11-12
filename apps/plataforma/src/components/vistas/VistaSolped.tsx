@@ -1,5 +1,7 @@
 "use client";
 
+import { mensajeParaPersona } from "@/lib/errores";
+
 import { useFiltro } from "@/lib/vista-guardada";
 import { useMemo, useState } from "react";
 import { CotizacionesDeSolped } from "../CotizacionesDeSolped";
@@ -399,7 +401,7 @@ function Contenidos({
         </div>
 
         {lista.error ? (
-          <p role="alert" className="px-6 py-10 text-center text-sm text-[#a52f24] lg:px-8">
+          <p role="alert" className="px-6 py-10 text-center text-sm text-peligro lg:px-8">
             No se pudo cargar la lista: {lista.error}{" "}
             <button type="button" onClick={lista.recargar} className="font-semibold underline">
               Reintentar
@@ -499,7 +501,7 @@ const columnas = (
       if (CERRADAS.includes(s.estado)) return <span className="text-ink-soft">—</span>;
       const alerta = s.diasAbierta > 7;
       return (
-        <span className={alerta ? "font-semibold text-[#a52f24]" : "text-ink-soft"}>
+        <span className={alerta ? "font-semibold text-peligro" : "text-ink-soft"}>
           {s.diasAbierta} d
         </span>
       );
@@ -512,12 +514,12 @@ const columnas = (
       <>
         <Chip tono={tonos[s.estado]}>{nombreEstadoSolped[s.estado]}</Chip>
         {enCompraIncompleta(s, pendientes) && (
-          <span className="mt-1 block text-xs font-semibold text-[#8a5a09]">
+          <span className="mt-1 block text-xs font-semibold text-alerta">
             Faltan {pendientes[s.id]} de {s.items} ítems por comprar
           </span>
         )}
         {s.prioridad !== "normal" && (
-          <span className="mt-1 block text-xs font-semibold uppercase tracking-wide text-[#8a5a09]">
+          <span className="mt-1 block text-xs font-semibold uppercase tracking-wide text-alerta">
             {s.prioridad}
           </span>
         )}
@@ -629,7 +631,7 @@ function DialogoAprobacion({
       alFirmado();
       alCerrar();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(mensajeParaPersona(e, "VistaSolped"));
     } finally {
       setProcesando(false);
     }
@@ -666,7 +668,7 @@ function DialogoAprobacion({
             )}
 
             {!puedeFirmar && (
-              <p className="mt-4 rounded-xl bg-[#fdf4e6] px-4 py-3 text-sm text-[#8a5a09]">
+              <p className="mt-4 rounded-xl bg-alerta-suave px-4 py-3 text-sm text-alerta">
                 Tu acceso no incluye <strong>Aprobar solicitudes</strong>. Pídeselo al
                 administrador de Abastecimiento.
               </p>
@@ -723,7 +725,7 @@ function DialogoAprobacion({
         {error && (
           <p
             role="alert"
-            className="mt-4 rounded-xl bg-[#fdeeec] px-4 py-3 text-sm font-medium text-[#a52f24]"
+            className="mt-4 rounded-xl bg-peligro-suave px-4 py-3 text-sm font-medium text-peligro"
           >
             {error}
           </p>
@@ -745,7 +747,7 @@ function DialogoAprobacion({
             type="button"
             onClick={() => void ejecutar("enviar")}
             disabled={procesando}
-            className="rounded-full bg-cyan px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:cursor-wait disabled:opacity-70"
+            className="rounded-full bg-cyan-deep px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo disabled:cursor-wait disabled:opacity-70"
           >
             {procesando ? "Enviando…" : "Enviar a aprobación"}
           </button>
@@ -754,7 +756,7 @@ function DialogoAprobacion({
             type="button"
             onClick={() => void ejecutar("reabrir")}
             disabled={procesando || !puedeFirmar}
-            className="rounded-full bg-cyan px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:cursor-wait disabled:opacity-70"
+            className="rounded-full bg-cyan-deep px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo disabled:cursor-wait disabled:opacity-70"
           >
             {procesando ? "Reabriendo…" : "Reabrir solicitud"}
           </button>
@@ -764,7 +766,7 @@ function DialogoAprobacion({
               type="button"
               onClick={() => void ejecutar("rechazado")}
               disabled={procesando || !puedeFirmar}
-              className="rounded-full border border-[#e2b8b2] px-5 py-2.5 text-sm font-semibold text-[#a52f24] transition-colors hover:bg-[#fdeeec] disabled:opacity-50"
+              className="rounded-full border border-peligro-borde px-5 py-2.5 text-sm font-semibold text-peligro transition-colors hover:bg-peligro-suave disabled:opacity-50"
             >
               Rechazar
             </button>
@@ -772,7 +774,7 @@ function DialogoAprobacion({
               type="button"
               onClick={() => void ejecutar("aprobado")}
               disabled={procesando || !puedeFirmar}
-              className="rounded-full bg-cyan px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-deep disabled:cursor-wait disabled:opacity-70"
+              className="rounded-full bg-cyan-deep px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo disabled:cursor-wait disabled:opacity-70"
             >
               {procesando ? "Firmando…" : "Aprobar"}
             </button>

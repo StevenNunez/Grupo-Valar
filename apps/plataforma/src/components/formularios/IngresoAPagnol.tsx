@@ -173,7 +173,7 @@ export function IngresoAPagnol({
       </p>
 
       {mensaje && (
-        <p role="status" className={`mt-3 rounded-xl px-4 py-2.5 text-sm font-medium ${mensaje.tono === "bueno" ? "bg-[#e6f4ee] text-[#0e7a4f]" : "bg-[#fdf4e6] text-[#8a5a09]"}`}>
+        <p role="status" className={`mt-3 rounded-xl px-4 py-2.5 text-sm font-medium ${mensaje.tono === "bueno" ? "bg-exito-suave text-exito" : "bg-alerta-suave text-alerta"}`}>
           {mensaje.texto}
         </p>
       )}
@@ -224,7 +224,7 @@ export function IngresoAPagnol({
               <option value="">{panoles === null ? "Cargando pañoles…" : "Sin pañol asignado"}</option>
               {(panoles ?? []).map((p) => <option key={p.id} value={p.id}>{p.nombre}{p.ubicacion ? ` · ${p.ubicacion}` : ""}</option>)}
             </select>
-            {errorPanoles && <p className="mt-1 text-xs text-[#8a5a09]">{errorPanoles}</p>}
+            {errorPanoles && <p className="mt-1 text-xs text-alerta">{errorPanoles}</p>}
           </div>
 
           <div className="mt-4 overflow-x-auto">
@@ -263,7 +263,7 @@ export function IngresoAPagnol({
                       </td>
                       <td className="py-2">
                         <button type="button" aria-label="Quitar fila" onClick={() => setFilas((fs) => fs.filter((x) => x.clave !== f.clave))}
-                          className="rounded-full px-2 py-1 text-ink-soft hover:text-[#a52f24]">×</button>
+                          className="rounded-full px-2 py-1 text-ink-soft hover:text-peligro">×</button>
                       </td>
                     </tr>
                   ))}
@@ -278,7 +278,7 @@ export function IngresoAPagnol({
               Agregar material
             </button>
             <button type="button" disabled={trabajando || listas.length === 0} onClick={() => void informar(true)}
-              className="rounded-full bg-cyan px-5 py-2 text-sm font-semibold text-white hover:bg-cyan-deep disabled:opacity-50">
+              className="rounded-full bg-cyan-deep px-5 py-2 text-sm font-semibold text-white hover:bg-cyan-hondo disabled:opacity-50">
               {trabajando ? "Informando…" : listas.length === 0 ? "Elige un material de Pagnol" : `Informar ${listas.length} ${listas.length === 1 ? "línea" : "líneas"} a Pagnol`}
             </button>
           </div>
