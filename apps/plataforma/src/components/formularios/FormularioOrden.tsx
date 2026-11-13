@@ -1,4 +1,5 @@
 "use client";
+import { ivaDe } from "@/lib/iva";
 
 import { SeccionRespaldos, useRespaldos } from "@/components/ui/Respaldos";
 import { useEffect, useState } from "react";
@@ -439,7 +440,7 @@ export function FormularioOrden({
   const netoDe = (l: Linea) => Math.round(l.cantidad * precioConDescuento(listaEnPesos(l), descuento));
   const subtotal = lineas.reduce((t, l) => t + Math.round(l.cantidad * listaEnPesos(l)), 0);
   const neto = lineas.reduce((t, l) => t + netoDe(l), 0);
-  const iva = exenta ? 0 : Math.round(neto * 0.19);
+  const iva = exenta ? 0 : ivaDe(neto);
   const reembolsable = lineas.filter((l) => l.tipo === "reembolsable").reduce((t, l) => t + netoDe(l), 0);
 
   function cambiar(id: string, campo: keyof Linea, valor: unknown) {
@@ -579,7 +580,7 @@ export function FormularioOrden({
           precio_unitario: precioConDescuento(listaEnPesos(l), descuento),
           ...(descuento > 0 || descuentoInicial > 0 ? { precio_lista: descuento > 0 ? listaEnPesos(l) : null } : {}),
           // El IVA de la línea sigue la regla general, salvo en la orden exenta.
-          iva: exenta ? 0 : Math.round(l.cantidad * precioConDescuento(listaEnPesos(l), descuento) * 0.19),
+          iva: exenta ? 0 : ivaDe(l.cantidad * precioConDescuento(listaEnPesos(l), descuento)),
           ...(enUf || enUfInicial ? { precio_uf: enUf ? l.precio_uf : null } : {}),
           tipo: l.tipo,
         };
@@ -948,7 +949,7 @@ export function FormularioOrden({
             <div className="overflow-x-auto">
               <table className="lineas-movil w-full md:min-w-[52rem] border-collapse text-sm">
                 <thead>
-                  <tr className="border-b border-mist text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
+                  <tr className="border-b border-mist text-left text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">
                     <th className="py-2 pr-3">Descripción</th>
                     <th className="w-40 py-2 pr-3">Categoría</th>
                     <th className="w-20 py-2 pr-3">UM</th>
@@ -1022,7 +1023,7 @@ export function FormularioOrden({
                           className={`${claseCelda} text-right tabular-nums`}
                         />
                         {enUf && l.precio_uf > 0 && valorUf > 0 && (
-                          <p className="mt-0.5 text-right text-[11px] tabular-nums text-ink-soft">
+                          <p className="mt-0.5 text-right text-xs tabular-nums text-ink-soft">
                             = {formatearPesosUnitario(listaEnPesos(l))}
                           </p>
                         )}
@@ -1043,7 +1044,7 @@ export function FormularioOrden({
                       <td data-label="Total" className="py-2 text-right font-semibold tabular-nums text-ink">
                         {formatearPesos(Math.round(l.cantidad * listaEnPesos(l)))}
                         {enUf && l.precio_uf > 0 && (
-                          <p className="text-[11px] font-normal text-ink-soft">{formatearUf(l.cantidad * l.precio_uf)} UF</p>
+                          <p className="text-xs font-normal text-ink-soft">{formatearUf(l.cantidad * l.precio_uf)} UF</p>
                         )}
                       </td>
                       <td data-acciones className="py-2 text-right">
@@ -1153,7 +1154,7 @@ const claseCelda =
 function Seccion({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
     <section className="border-t border-mist px-6 pb-6 pt-5">
-      <h3 className="mb-4 text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-soft">
+      <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.16em] text-ink-soft">
         {titulo}
       </h3>
       <div className="grid gap-5 sm:grid-cols-2">{children}</div>

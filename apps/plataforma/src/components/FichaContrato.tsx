@@ -44,14 +44,14 @@ const enMoneda = (n: number, moneda: Moneda) => (moneda === "UF" ? `${formatearU
 function Dato({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-soft">{etiqueta}</dt>
+      <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">{etiqueta}</dt>
       <dd className="mt-0.5 text-sm text-ink">{children}</dd>
     </div>
   );
 }
 
 function Subtitulo({ children }: { children: React.ReactNode }) {
-  return <h4 className="mt-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-soft">{children}</h4>;
+  return <h4 className="mt-4 text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft">{children}</h4>;
 }
 
 /* ── Lo propio de la forma de contratación (contrato o anexo) ─────────────── */
@@ -237,7 +237,7 @@ function ResultadoPorAnexo({ c }: { c: Contrato }) {
       <Subtitulo>Resultado por anexo · todo el período, neto</Subtitulo>
       <table className="mt-1 w-full text-sm">
         <thead>
-          <tr className="text-left text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
+          <tr className="text-left text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">
             <th className="py-1 pr-2" />
             <th className="py-1 pr-2 text-right">Venta</th>
             <th className="py-1 pr-2 text-right">Costo</th>

@@ -167,7 +167,7 @@ export function Campana() {
           <path d="M13.7 21a2 2 0 0 1-3.4 0" />
         </svg>
         {sinLeer > 0 && (
-          <span className="absolute -right-1 -top-1 grid min-w-5 place-items-center rounded-full bg-peligro px-1 text-[11px] font-bold leading-5 text-white">
+          <span className="absolute -right-1 -top-1 grid min-w-5 place-items-center rounded-full bg-peligro px-1 text-xs font-bold leading-5 text-white">
             {sinLeer > 9 ? "9+" : sinLeer}
           </span>
         )}
@@ -203,7 +203,7 @@ export function Campana() {
                       <span className="min-w-0">
                         <span className="block text-sm font-semibold text-ink">{a.titulo}</span>
                         {a.cuerpo && <span className="mt-0.5 block text-xs text-ink-soft">{a.cuerpo}</span>}
-                        <span className="mt-1 block text-[11px] text-ink-soft/80">{hace(a.creado_en)}</span>
+                        <span className="mt-1 block text-xs text-ink-soft/80">{hace(a.creado_en)}</span>
                       </span>
                     </button>
                   </li>

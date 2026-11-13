@@ -145,7 +145,7 @@ export function VistaOficinaCentral() {
               </div>
               {centrosVisibles.length > 1 && (
                 <section aria-label="Por centro de costo" className="mb-6">
-                  <h2 className="mb-2 text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-ink-soft">Por centro de costo</h2>
+                  <h2 className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft">Por centro de costo</h2>
                   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     {centrosVisibles.map(({ id, nombre }) => (
                       <button key={id} type="button" onClick={() => setCentro(centro === id ? "todos" : id)}

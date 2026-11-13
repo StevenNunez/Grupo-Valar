@@ -154,7 +154,7 @@ export function CondicionesContrato({
         <Ancho>
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
+              <tr className="text-left text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">
                 <th className="pb-1 pr-2">Tipo de equipo</th>
                 <th className="w-24 pb-1 pr-2 text-right">Cantidad</th>
                 <th className="w-32 pb-1 pr-2 text-right">Tarifa mensual ({unidad})</th>
@@ -221,7 +221,7 @@ export function CondicionesContrato({
           </div>
           <table className="mt-4 w-full text-sm">
             <thead>
-              <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
+              <tr className="text-left text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">
                 <th className="pb-1 pr-2">Cargo o partida</th>
                 <th className="w-24 pb-1 pr-2">Unidad</th>
                 <th className="w-36 pb-1 pr-2 text-right">Precio neto ({unidad})</th>
@@ -264,7 +264,7 @@ export function CondicionesContrato({
           </div>
           <table className="mt-4 w-full text-sm">
             <thead>
-              <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
+              <tr className="text-left text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">
                 <th className="pb-1 pr-2">Hito</th>
                 <th className="w-24 pb-1 pr-2 text-right">%</th>
                 <th className="w-40 pb-1 pr-2">Fecha estimada</th>
@@ -338,7 +338,7 @@ export function SelectorCamposEdp({ seleccion, alCambiar }: { seleccion: string[
         <div className="mt-3 grid gap-4 sm:grid-cols-2">
           {catalogoCamposEdp.map((g) => (
             <fieldset key={g.grupo}>
-              <legend className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-soft">{g.grupo}</legend>
+              <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">{g.grupo}</legend>
               {g.campos.map((c) => (
                 <label key={c.clave} className="mt-1.5 flex items-center gap-2 text-sm text-ink">
                   <input type="checkbox" checked={marcadas.has(c.clave)} onChange={() => alternar(c.clave)} className="h-4 w-4 accent-cyan" />

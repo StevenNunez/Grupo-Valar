@@ -314,7 +314,7 @@ function Contenido({
                   >
                     <span
                       aria-hidden="true"
-                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold text-white ${icono.color}`}
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white ${icono.color}`}
                     >
                       {icono.etiqueta}
                     </span>
@@ -463,7 +463,7 @@ function ClipDeRespaldos({ cuantos, onClick }: { cuantos?: number; onClick: () =
         />
       </svg>
       {!!cuantos && (
-        <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-cyan-deep px-1 text-[10px] font-bold text-white">
+        <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-cyan-deep px-1 text-xs font-bold text-white">
           {cuantos}
         </span>
       )}

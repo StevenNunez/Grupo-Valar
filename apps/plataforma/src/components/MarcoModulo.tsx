@@ -89,7 +89,7 @@ export function MarcoModulo({
         </div>
 
         <nav className="flex-1 overflow-y-auto px-4 py-6" aria-label={titulo}>
-          <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/35">
+          <p className="px-3 text-xs font-semibold uppercase tracking-[0.18em] text-white/35">
             {titulo}
           </p>
 

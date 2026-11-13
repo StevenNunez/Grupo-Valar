@@ -5,6 +5,7 @@ import { avisar } from "@/lib/avisos";
 import { eliminar } from "@/lib/crud";
 import { ErrorDeCampo, mensajeParaPersona } from "@/lib/errores";
 import { formatearPesos } from "@/lib/formato";
+import { ivaDe } from "@/lib/iva";
 import { Boton } from "./Boton";
 
 /**
@@ -525,11 +526,8 @@ export function Ancho({ children }: { children: React.ReactNode }) {
 
 /* ── IVA ──────────────────────────────────────────────────────────────────── */
 
-/** El IVA en Chile. */
-export const TASA_IVA = 0.19;
-
-/** El IVA de un neto: el 19%, redondeado al peso. Exento, cero. */
-export const ivaDe = (neto: number, afecto = true) => (afecto ? Math.round(neto * TASA_IVA) : 0);
+/* La tasa y el cálculo viven en lib/iva; se reexportan para quien ya los importaba de acá. */
+export { TASA_IVA, ivaDe } from "@/lib/iva";
 
 /**
  * El IVA y el total de un neto. No se escribe: basta con el neto. La casilla

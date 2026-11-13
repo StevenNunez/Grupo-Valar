@@ -265,7 +265,7 @@ function Contenidos({
           columnas={columnas(edicion, de, anexoDe)}
           filas={visibles}
           claveDe={(f) => f.id}
-          vacio={todas.length === 0 ? "Todavía no hay órdenes de compra cargadas." : "Ninguna orden de compra con estos filtros."}
+          vacio={todas.length === 0 ? "Todavía no hay órdenes de compra del mandante. Se cargan en Ingresos → Estado de Pago, sobre un estado de pago presentado o aprobado." : "Ninguna orden de compra con estos filtros."}
           pie={
             <>
               <Total colSpan={3}>Total</Total>

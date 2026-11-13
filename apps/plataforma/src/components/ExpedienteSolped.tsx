@@ -178,7 +178,7 @@ function Cuerpo({ datos, exp }: { datos: Datos; exp: Expediente }) {
         <div className="mt-4 overflow-x-auto">
           <table className="w-full min-w-[40rem] border-collapse text-sm">
             <thead>
-              <tr className="border-b border-mist text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
+              <tr className="border-b border-mist text-left text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">
                 <th className="w-8 py-2 pr-3">N°</th>
                 <th className="py-2 pr-3">Descripción</th>
                 <th className="w-24 py-2 pr-3 text-right">Pedido</th>
@@ -242,7 +242,7 @@ function Cuerpo({ datos, exp }: { datos: Datos; exp: Expediente }) {
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[40rem] border-collapse text-sm">
               <thead>
-                <tr className="border-b border-mist text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
+                <tr className="border-b border-mist text-left text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">
                   <th className="py-2 pr-3">Proveedor</th>
                   <th className="w-28 py-2 pr-3 text-right">Ítems</th>
                   <th className="w-24 py-2 pr-3 text-right">Flete</th>
@@ -372,7 +372,7 @@ function Etapa({
             </svg>
           )}
         </span>
-        <h4 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-soft">
+        <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">
           {titulo}
         </h4>
       </div>

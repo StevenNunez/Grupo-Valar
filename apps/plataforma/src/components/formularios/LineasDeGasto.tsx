@@ -1,4 +1,5 @@
 "use client";
+import { ivaDe } from "@/lib/iva";
 
 import { useState } from "react";
 import { Etiqueta } from "../ui/Chip";
@@ -95,7 +96,7 @@ export function LineasDeGasto({
   }
 
   const neto = lineas.reduce((t, l) => t + netoLinea(l), 0);
-  const iva = lineas.reduce((t, l) => t + (afectaIva(l.categoria_id) ? Math.round(netoLinea(l) * 0.19) : 0), 0);
+  const iva = lineas.reduce((t, l) => t + (afectaIva(l.categoria_id) ? ivaDe(netoLinea(l)) : 0), 0);
   const reembolsable = lineas.filter((l) => l.tipo === "reembolsable").reduce((t, l) => t + netoLinea(l), 0);
 
   return (
@@ -165,7 +166,7 @@ export function LineasDeGasto({
       <div className="overflow-x-auto">
         <table className="lineas-movil w-full md:min-w-[52rem] border-collapse text-sm">
           <thead>
-            <tr className="border-b border-mist text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
+            <tr className="border-b border-mist text-left text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">
               <th className="py-2 pr-3">Descripción</th>
               <th className="w-40 py-2 pr-3">Categoría</th>
               <th className="w-20 py-2 pr-3">UM</th>

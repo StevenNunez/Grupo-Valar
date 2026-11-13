@@ -264,7 +264,7 @@ function Cifras({ d }: { d: DatosCierre }) {
     <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
       {items.map((i) => (
         <div key={i.etiqueta} className="rounded-2xl border border-mist-deep bg-white p-4">
-          <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-soft">{i.etiqueta}</dt>
+          <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft">{i.etiqueta}</dt>
           <dd className={`mt-2 font-display text-xl font-semibold tabular-nums ${i.clase ?? "text-ink"}`}>{i.valor}</dd>
           {i.nota && <dd className="mt-1 text-xs text-ink-soft">{i.nota}</dd>}
         </div>

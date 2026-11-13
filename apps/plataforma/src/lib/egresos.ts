@@ -1,4 +1,5 @@
 "use client";
+import { netoDesdeTotal } from "./iva";
 
 import type { Datos } from "./campos";
 import { detalleDeOtrosHaberes, motivosHhExtra, type MontoHh, type OtroHaber } from "./haberes";
@@ -177,7 +178,7 @@ export const tiposDocumentoRendicion: { id: TipoDocumentoRendicion; titulo: stri
  * comprobante no se recupera: el costo es todo lo pagado.
  */
 export function costoRendido(pagado: number, tipo: TipoDocumentoRendicion) {
-  const neto = tipo === "factura" ? Math.round(pagado / 1.19) : pagado;
+  const neto = tipo === "factura" ? netoDesdeTotal(pagado) : pagado;
   return { neto, iva: pagado - neto };
 }
 

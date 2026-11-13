@@ -119,7 +119,7 @@ export function PanelPagnolDeOrden({ ordenId, anuncio, puedeEscribir, alCambiar,
 
   return (
     <section className="rounded-xl border border-mist-deep p-4">
-      <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-soft">Recepción en Pagnol</h3>
+      <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-soft">Recepción en Pagnol</h3>
       <p className={`mt-2 text-sm ${anuncio.estado === "error" ? "text-peligro" : "text-ink"}`}>{estadoTexto}</p>
 
       {hayAbiertas && !cancelada && (
@@ -140,7 +140,7 @@ export function PanelPagnolDeOrden({ ordenId, anuncio, puedeEscribir, alCambiar,
                 <li key={l.id} className="grid gap-2 px-3 py-2 sm:grid-cols-[1fr_minmax(0,16rem)] sm:items-start">
                   <div className="min-w-0">
                     <span className="block truncate text-sm text-ink">{l.descripcion}</span>
-                    <span className="block text-[11px] tabular-nums text-ink-soft">
+                    <span className="block text-xs tabular-nums text-ink-soft">
                       {l.pedida.toLocaleString("es-CL")} {l.unidad}
                       {l.recibida > 0 ? ` · ya recibidas en Valar: ${l.recibida.toLocaleString("es-CL")}` : ""}
                     </span>
@@ -161,7 +161,7 @@ export function PanelPagnolDeOrden({ ordenId, anuncio, puedeEscribir, alCambiar,
                           type="button"
                           disabled={enlazando === l.id}
                           onClick={() => void enlazar(l, null)}
-                          className="mt-1 text-[11px] font-semibold text-peligro hover:underline disabled:opacity-60"
+                          className="mt-1 text-xs font-semibold text-peligro hover:underline disabled:opacity-60"
                         >
                           Quitar enlace
                         </button>

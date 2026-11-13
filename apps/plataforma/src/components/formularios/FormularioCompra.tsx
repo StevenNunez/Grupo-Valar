@@ -1,4 +1,5 @@
 "use client";
+import { ivaDe } from "@/lib/iva";
 
 import { mensajeParaPersona } from "@/lib/errores";
 
@@ -175,7 +176,7 @@ export function FormularioCompra({
   const propias = categoriasDe(categorias, f.datos.contrato_id, "compras");
   const afectaIva = (id: string) => categorias.find((c) => c.id === id)?.afectaIva ?? true;
   const neto = lineas.reduce((t, l) => t + netoLinea(l), 0);
-  const ivaCalculado = lineas.reduce((t, l) => t + (afectaIva(l.categoria_id) ? Math.round(netoLinea(l) * 0.19) : 0), 0);
+  const ivaCalculado = lineas.reduce((t, l) => t + (afectaIva(l.categoria_id) ? ivaDe(netoLinea(l)) : 0), 0);
   const iva = exento ? 0 : ivaTocado ? f.datos.iva : ivaCalculado;
 
   /* El presupuesto de cada categoría del documento, con lo que ya lleva en el

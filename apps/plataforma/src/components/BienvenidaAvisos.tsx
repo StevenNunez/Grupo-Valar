@@ -110,20 +110,20 @@ export function BienvenidaAvisos() {
 
         <ul className="mt-4 space-y-3 text-sm text-ink">
           <li className="flex gap-3">
-            <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-ink text-[11px] font-bold text-white">1</span>
+            <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-ink text-xs font-bold text-white">1</span>
             <span>
               <strong>La campana</strong> de arriba guarda todos tus avisos. Los que no has leído llevan un número rojo.
             </span>
           </li>
           <li className="flex gap-3">
-            <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-ink text-[11px] font-bold text-white">2</span>
+            <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-ink text-xs font-bold text-white">2</span>
             <span>
               <strong>Las notificaciones</strong> llegan al teléfono o al computador. Si algo es urgente o vence hoy, te lo
               vuelve a recordar cada pocas horas, solo de 8:00 a 20:00.
             </span>
           </li>
           <li className="flex gap-3">
-            <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-ink text-[11px] font-bold text-white">3</span>
+            <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-ink text-xs font-bold text-white">3</span>
             <span>
               <strong>Instala la app</strong> para tenerla como una aplicación más, con su ícono.
               {ios && !instalada && (

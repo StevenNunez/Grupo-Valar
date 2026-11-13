@@ -1,4 +1,5 @@
 "use client";
+import { ivaDe } from "@/lib/iva";
 
 import { SelectorAnexo } from "../ui/SelectorAnexo";
 import { DialogoAdjuntos } from "../ui/Adjuntos";
@@ -353,8 +354,8 @@ export function FormularioEstadoPago({
                 {netoVisible === null
                   ? "Al ingresar el monto del EDP se mostrarán el IVA y el total con IVA."
                   : <>Neto: <strong className="text-ink">{formatearPesos(netoVisible)}</strong>
-                    {" · "}IVA referencial (19%): <strong className="text-ink">{formatearPesos(Math.round(netoVisible * 0.19))}</strong>
-                    {" · "}Total con IVA: <strong className="text-ink">{formatearPesos(netoVisible + Math.round(netoVisible * 0.19))}</strong></>}
+                    {" · "}IVA referencial (19%): <strong className="text-ink">{formatearPesos(ivaDe(netoVisible))}</strong>
+                    {" · "}Total con IVA: <strong className="text-ink">{formatearPesos(netoVisible + ivaDe(netoVisible))}</strong></>}
               </p>
             </Ancho>}
 

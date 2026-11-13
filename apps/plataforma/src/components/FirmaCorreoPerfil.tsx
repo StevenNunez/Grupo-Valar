@@ -93,7 +93,7 @@ export function FirmaCorreoPerfil() {
             {empresa.nombreEnOrdenes}
           </p>
           {telefono.trim() && <p className="mt-0.5 text-sm font-bold text-cyan-deep">{telefono.trim()}</p>}
-          <p className="mt-0.5 text-[11px] text-ink-soft">{direccionCompleta(empresa)}</p>
+          <p className="mt-0.5 text-xs text-ink-soft">{direccionCompleta(empresa)}</p>
           <p className="mt-0.5 text-[13px] text-ink-soft">www.GrupoValar.cl</p>
         </div>
       </div>

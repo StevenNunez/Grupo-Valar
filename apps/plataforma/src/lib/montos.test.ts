@@ -1,6 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { conIva, honorarioEstimado, montoMensualArriendo, sumaHitos } from "./condiciones";
 import { semaforo, sumar, type FilaMes } from "./dashboard";
+import { ivaDe, netoDesdeTotal } from "./iva";
+
+describe("lib/iva", () => {
+  it("el IVA de un neto, al peso; exento es cero", () => {
+    expect(ivaDe(100_000)).toBe(19_000);
+    expect(ivaDe(329_100)).toBe(62_529);
+    expect(ivaDe(100_000, false)).toBe(0);
+  });
+
+  it("el neto dentro de un total con IVA", () => {
+    expect(netoDesdeTotal(119_000)).toBe(100_000);
+    expect(netoDesdeTotal(50_800)).toBe(42_689);
+  });
+});
 
 describe("IVA y condiciones del contrato", () => {
   it("IVA del 19 % redondeado al peso", () => {

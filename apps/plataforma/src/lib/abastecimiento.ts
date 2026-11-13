@@ -1,4 +1,5 @@
 "use client";
+import { ivaDe } from "./iva";
 
 import { traerTodo } from "./paginar";
 import { supabase } from "./supabase";
@@ -1025,11 +1026,6 @@ export async function cargarNombresDeProveedor(
   return new Map((data ?? []).map((f) => [f.articulo_id as string, f.nombre_proveedor as string]));
 }
 
-/** Correlativo de la cotización dentro de su solicitud: COT-<solped>-01. */
-export function siguienteIdCotizacion(solpedId: string, cuantas: number) {
-  return `COT-${solpedId}-${String(cuantas + 1).padStart(2, "0")}`;
-}
-
 /* ── Pedir cotización ─────────────────────────────────────────────────────── */
 
 /**
@@ -1111,54 +1107,23 @@ export async function pedirCotizacion({
   /* Todo en una transacción y con el código decidido por la base (0120). */
   const { data, error: falloRpc } = await supabase.rpc("pedir_cotizacion", { p_cotizacion: cabecera, p_items: lineas });
   if (!falloRpc) return data as string;
-  if (!faltaFuncion(falloRpc)) throw new Error(falloRpc.message);
+  throw new Error(falloRpc.message);
+}
 
-  /* Sin la 0120 todavía: el camino de antes, paso a paso. Se puede borrar después de aplicarla. */
-  const { count } = await supabase
-    .from("cotizaciones")
-    .select("id", { count: "exact", head: true })
-    .eq("solped_id", solped.id);
-
-  const id = siguienteIdCotizacion(solped.id, count ?? 0);
-
-  const { error } = await supabase.from("cotizaciones").insert({
-    id,
-    numero,
-    solped_id: solped.id,
-    proveedor_id: proveedorId,
-    solicitada_en: new Date().toISOString().slice(0, 10),
-    // Sin respuesta todavía: es exactamente lo que la deja "esperando".
-    recibida_en: null,
-    validez_hasta: validezHasta,
-    estado: "solicitada",
-    observaciones,
-  });
-
-  if (error) {
-    if (/duplicate key|already exists/i.test(error.message)) {
-      throw new Error("Ya se le pidió cotización a este proveedor para esta solicitud.");
-    }
-    throw new Error(error.message);
-  }
-
-  let n = 0;
-  for (const i of items) {
-    n += 1;
-    const { error: fallo } = await supabase.from("cotizacion_items").insert({
-      id: `${id}-${String(n).padStart(3, "0")}`,
-      cotizacion_id: id,
-      solped_item_id: i.solpedItemId,
-      cantidad: i.cantidad,
-      // Solo si se corrigió (y así nada se rompe antes de aplicar la 0108): la solicitud de faena no se toca.
-      ...(i.nombrePedido?.trim() ? { nombre_pedido: i.nombrePedido.trim() } : {}),
-      // Nace sin precio: el proveedor todavía no responde.
-      precio_unitario: 0,
-      disponible: true,
-    });
-    if (fallo) throw new Error(fallo.message);
-  }
-
-  return id;
+/**
+ * Registra una cotización que llegó por fuera de la plataforma (correo, papel),
+ * con sus ítems, en una transacción y con el código decidido por la base (0121).
+ */
+export async function registrarCotizacion({
+  cabecera,
+  items,
+}: {
+  cabecera: Record<string, unknown>;
+  items: Record<string, unknown>[];
+}): Promise<string> {
+  const { data, error } = await supabase.rpc("registrar_cotizacion", { p_cotizacion: cabecera, p_items: items });
+  if (!error) return data as string;
+  throw new Error(error.message);
 }
 
 /**
@@ -1681,7 +1646,7 @@ export async function generarOrdenDesdeCotizacion({
       unidad: pedido?.unidad ?? "un",
       cantidad,
       precio_unitario: i.precioUnitario,
-      iva: Math.round(neto * 0.19),
+      iva: ivaDe(neto),
       // El tipo de gasto viene de la solicitud: es lo que decide si castiga el
       // margen, y no debería volver a decidirse acá.
       tipo: solped.tipoGasto,
@@ -1705,7 +1670,7 @@ export async function generarOrdenDesdeCotizacion({
       unidad: "gl",
       cantidad: 1,
       precio_unitario: cotizacion.flete,
-      iva: Math.round(cotizacion.flete * 0.19),
+      iva: ivaDe(cotizacion.flete),
       tipo: solped.tipoGasto,
     });
   }
@@ -1717,46 +1682,5 @@ export async function generarOrdenDesdeCotizacion({
     p_solped: solped.id,
   });
   if (!error) return data as string;
-  if (!faltaFuncion(error)) throw new Error(error.message);
-
-  return crearOrdenPasoAPaso(cabecera, lineas, solped.id);
-}
-
-/** PostgREST no encuentra la función: la migración todavía no se aplicó. */
-const faltaFuncion = (e: { code?: string; message: string }) =>
-  e.code === "PGRST202" || /could not find the function/i.test(e.message);
-
-/**
- * Lo mismo que `crear_orden_desde_cotizacion`, desde el navegador y en varios
- * pasos. Solo mientras la 0120 no esté aplicada en la base: después de
- * aplicarla, se puede borrar.
- */
-async function crearOrdenPasoAPaso(cabecera: Record<string, unknown>, lineas: Record<string, unknown>[], solpedId: string) {
-  const baseId = cabecera.id as string;
-  const numero = cabecera.numero as string;
-  const { data: ocupados, error: falloBusqueda } = await supabase
-    .from("ordenes_compra_proveedor")
-    .select("id, numero")
-    .or(`id.eq.${baseId},id.like.${baseId}-%`);
-  if (falloBusqueda) throw new Error(falloBusqueda.message);
-  const filasOcupadas = (ocupados ?? []) as { id: string; numero: string }[];
-  const repetida = filasOcupadas.find((o) => o.numero === numero);
-  if (repetida) {
-    throw new Error(`Ya existe la orden ${numero} (${repetida.id}). Si quedó a medias de un intento anterior, ábrela en Órdenes de compra; si no, usa otro número.`);
-  }
-  let ordenId = baseId;
-  for (let sufijo = 2; filasOcupadas.some((o) => o.id === ordenId); sufijo += 1) ordenId = `${baseId}-${sufijo}`;
-
-  const { error: falloOrden } = await supabase.from("ordenes_compra_proveedor").insert({ ...cabecera, id: ordenId });
-  if (falloOrden) throw new Error(falloOrden.message);
-
-  let n = 0;
-  for (const { es_flete, ...linea } of lineas) {
-    const id = es_flete ? `IT-${ordenId}-FLETE` : `IT-${ordenId}-${String(++n).padStart(3, "0")}`;
-    const { error } = await supabase.from("items_compra").insert({ ...linea, id, orden_id: ordenId });
-    if (error) throw new Error(error.message);
-  }
-
-  await supabase.from("solped").update({ estado: "en-compra" }).eq("id", solpedId);
-  return ordenId;
+  throw new Error(error.message);
 }

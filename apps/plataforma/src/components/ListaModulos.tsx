@@ -84,7 +84,7 @@ export function ListaModulos() {
                 </span>
                 <h2 className="mt-5 flex items-center gap-2 font-display text-xl font-semibold text-ink-soft/70">
                   {m.titulo}
-                  <span className="rounded-full border border-mist-deep px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-ink-soft/70">
+                  <span className="rounded-full border border-mist-deep px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-ink-soft/70">
                     Pronto
                   </span>
                 </h2>

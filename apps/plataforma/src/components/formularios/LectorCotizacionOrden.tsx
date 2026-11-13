@@ -207,7 +207,7 @@ export function LectorCotizacionOrden({
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[40rem] border-collapse text-xs">
               <thead>
-                <tr className="border-b border-mist text-left text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
+                <tr className="border-b border-mist text-left text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">
                   <th className="w-8 py-1.5" />
                   <th className="py-1.5 pr-2">Nombre</th>
                   <th className="w-20 py-1.5 pr-2 text-right">Cant.</th>

@@ -121,7 +121,7 @@ export function LineasDeServicio({
           <div className="overflow-x-auto">
             <table className="lineas-movil w-full md:min-w-[64rem] border-collapse text-sm">
               <thead>
-                <tr className="border-b border-mist text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
+                <tr className="border-b border-mist text-left text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">
                   <th className="py-2 pr-3">Equipo</th>
                   <th className="w-32 py-2 pr-3">Concepto</th>
                   <th className="w-36 py-2 pr-3">Faena</th>

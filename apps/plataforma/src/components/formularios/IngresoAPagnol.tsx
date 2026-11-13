@@ -231,7 +231,7 @@ export function IngresoAPagnol({
             {filas.length > 0 && (
               <table className="w-full min-w-[40rem] border-collapse text-sm">
                 <thead>
-                  <tr className="border-b border-mist text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
+                  <tr className="border-b border-mist text-left text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">
                     <th className="py-2 pr-3">Material en Pagnol</th>
                     <th className="w-24 py-2 pr-3">Cantidad</th>
                     <th className="w-32 py-2 pr-3">Neto c/u</th>
@@ -259,7 +259,7 @@ export function IngresoAPagnol({
                       <td className="py-2 pr-3">
                         <input type="number" min={0} aria-label="Neto por unidad" value={f.valor_unitario}
                           onChange={(e) => cambiarFila(f.clave, { valor_unitario: Number(e.target.value) })} className={claseCelda} />
-                        {f.valor_unitario > 0 && <span className="mt-0.5 block text-[11px] text-ink-soft">{formatearPesos(f.valor_unitario)}</span>}
+                        {f.valor_unitario > 0 && <span className="mt-0.5 block text-xs text-ink-soft">{formatearPesos(f.valor_unitario)}</span>}
                       </td>
                       <td className="py-2">
                         <button type="button" aria-label="Quitar fila" onClick={() => setFilas((fs) => fs.filter((x) => x.clave !== f.clave))}

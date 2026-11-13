@@ -199,7 +199,7 @@ export function PagosDeFactura({ linea, fechas, umbral, puedeProgramar, puedeMar
 function Dato({ etiqueta, valor, tono }: { etiqueta: string; valor: string; tono?: "bueno" | "aviso" }) {
   return (
     <div className="rounded-xl border border-mist-deep px-4 py-3">
-      <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-soft">{etiqueta}</dt>
+      <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft">{etiqueta}</dt>
       <dd className={`mt-1 font-display text-lg font-semibold ${tono === "bueno" ? "text-exito" : tono === "aviso" ? "text-alerta" : "text-ink"}`}>{valor}</dd>
     </div>
   );

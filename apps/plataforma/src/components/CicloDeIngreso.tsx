@@ -1,4 +1,5 @@
 "use client";
+import { ivaDe } from "@/lib/iva";
 
 import { mensajeParaPersona } from "@/lib/errores";
 
@@ -202,7 +203,7 @@ function Paso({
     >
       <div className="flex items-start gap-3">
         <span
-          className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-bold text-white ${marca.fondo}`}
+          className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold text-white ${marca.fondo}`}
         >
           <span aria-hidden="true">{estado === "activo" ? n : marca.simbolo}</span>
         </span>
@@ -553,7 +554,7 @@ function FormularioOrdenMandante({
 
       {otros.length > 0 && (
         <fieldset className="mt-3">
-          <legend className="text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
+          <legend className="text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">
             Esta orden también cubre
           </legend>
           <ListaEdps ciclos={otros} marcados={incluidos} alCambiar={setIncluidos} />
@@ -743,7 +744,7 @@ function FormularioFacturaDesdeOrden({
   const ordenes = [...new Map(elegidos.map((c) => [c.ordenId, c.montoAutorizado ?? 0])).values()];
   const tope = ordenes.reduce((t, m) => t + m, 0);
   const neto = netoEscrito ?? Math.min(sumaElegidos, tope || sumaElegidos);
-  const iva = Math.round(neto * 0.19);
+  const iva = ivaDe(neto);
   const exceso = tope > 0 && neto > tope ? neto - tope : 0;
 
   async function guardar() {
@@ -813,7 +814,7 @@ function FormularioFacturaDesdeOrden({
 
       {otros.length > 0 && (
         <fieldset className="mt-3">
-          <legend className="text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
+          <legend className="text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">
             Esta factura también incluye
           </legend>
           <ListaEdps ciclos={otros} marcados={incluidos} alCambiar={setIncluidos} />
@@ -857,13 +858,13 @@ function Campo({
 }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
+      <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">
         {etiqueta}
         {requerido && <span className="text-cyan-deep"> *</span>}
       </span>
       {children}
       {ayuda && (
-        <span className="mt-1 block text-[11px] leading-relaxed text-ink-soft">{ayuda}</span>
+        <span className="mt-1 block text-xs leading-relaxed text-ink-soft">{ayuda}</span>
       )}
     </label>
   );

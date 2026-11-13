@@ -20,7 +20,7 @@ function OtrosHaberes({ lista, alCambiar }: { lista: OtroHaber[]; alCambiar: (v:
   return (
     <Ancho>
       <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-soft">Otros haberes</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft">Otros haberes</p>
         <p className="mt-1 text-xs text-ink-soft">Aguinaldos, bonos y asignaciones que no son HH extra ni no imponible. Se suman al costo. Uno por línea, con qué es.</p>
         <datalist id={sugerencias}>
           {conceptosOtrosHaberes.map((c) => <option key={c} value={c} />)}

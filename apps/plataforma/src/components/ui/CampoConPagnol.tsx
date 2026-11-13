@@ -119,11 +119,11 @@ export function CampoConPagnol({
         onKeyDown={(e) => e.key === "Escape" && setAbierto(false)}
         className={className}
       />
-      {enlazado && <span className="mt-1 block text-[11px] text-cyan-deep">Pagnol · {enlazado}</span>}
+      {enlazado && <span className="mt-1 block text-xs text-cyan-deep">Pagnol · {enlazado}</span>}
 
       {mostrar && (
         <div className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-mist-deep bg-white shadow-lg">
-          <p className="border-b border-mist px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-soft">
+          <p className="border-b border-mist px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft">
             Catálogo Pagnol{buscando ? " · buscando…" : ""}
           </p>
           {error ? (
@@ -144,13 +144,13 @@ export function CampoConPagnol({
                   >
                     <span className="min-w-0">
                       <span className="block truncate text-sm text-ink">{m.nombre}</span>
-                      <span className="block text-[11px] text-ink-soft">
+                      <span className="block text-xs text-ink-soft">
                         {m.codigo} · {m.unidad_medida}
                         {m.categoria ? ` · ${m.categoria}` : ""}
                       </span>
                     </span>
                     {m.stock_actual !== null && (
-                      <span className="shrink-0 text-[11px] tabular-nums text-ink-soft">stock {m.stock_actual.toLocaleString("es-CL")}</span>
+                      <span className="shrink-0 text-xs tabular-nums text-ink-soft">stock {m.stock_actual.toLocaleString("es-CL")}</span>
                     )}
                   </button>
                 </li>

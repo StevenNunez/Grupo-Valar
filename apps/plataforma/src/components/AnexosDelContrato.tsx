@@ -249,7 +249,7 @@ function Dato({
 }) {
   return (
     <div>
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-soft">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">
         {etiqueta}
       </p>
       <p

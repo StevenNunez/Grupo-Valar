@@ -125,7 +125,7 @@ export function ReposicionPagnol() {
       <div className="grid gap-6 px-6 py-5 lg:grid-cols-2 lg:px-8">
         <div className="min-w-0">
           <div className="flex min-h-9 items-center">
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-soft">Cada pañol, a su contrato</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-soft">Cada pañol, a su contrato</h3>
           </div>
           {datos.errorPanoles ? (
             <p className="mt-2 text-sm text-alerta">{datos.errorPanoles}</p>
@@ -172,7 +172,7 @@ export function ReposicionPagnol() {
 
         <div className="min-w-0">
           <div className="flex min-h-9 items-center justify-between gap-3">
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-soft">Avisos sin solicitud</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-soft">Avisos sin solicitud</h3>
             {procesa && datos.pendientes.length > 0 && (
               <button type="button" onClick={procesar} disabled={trabajando}
                 className="rounded-full border border-cyan px-3 py-1.5 text-xs font-semibold text-cyan-deep hover:bg-cyan/5 disabled:opacity-50">

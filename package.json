@@ -23,7 +23,8 @@
     "revisar-sql": "node scripts/revisar-sql.mjs",
     "equipo-demo": "node --env-file=.env.local scripts/sembrar-equipo-demo.mjs",
     "verificar-accesos": "node --env-file=.env.local scripts/verificar-accesos.mjs",
-    "tipos-supabase": "node scripts/generar-tipos-supabase.mjs"
+    "tipos-supabase": "node scripts/generar-tipos-supabase.mjs",
+    "sembrar-ciclo": "node --env-file=.env.local scripts/sembrar-ciclo-demo.mjs"
   },
   "devDependencies": {
     "@supabase/supabase-js": "^2.115.0"

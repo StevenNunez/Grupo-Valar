@@ -140,7 +140,7 @@ export function VistaEmpresa() {
         <form onSubmit={guardar} className="mt-8 flex flex-col gap-6">
           {GRUPOS.map((g) => (
             <section key={g.titulo} className="rounded-2xl border border-mist-deep bg-white">
-              <h2 className="border-b border-mist px-6 py-4 text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-soft">{g.titulo}</h2>
+              <h2 className="border-b border-mist px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-ink-soft">{g.titulo}</h2>
               <div className="grid gap-5 px-6 py-5 sm:grid-cols-2">
                 {g.campos.map((c) => (
                   <label key={c.clave} className={`flex flex-col gap-1.5 ${c.ayuda && c.ayuda.length > 60 ? "sm:col-span-2" : ""}`}>
@@ -160,7 +160,7 @@ export function VistaEmpresa() {
           ))}
 
           <section className="rounded-2xl border border-mist-deep bg-white">
-            <h2 className="border-b border-mist px-6 py-4 text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-soft">Firma en las órdenes de compra</h2>
+            <h2 className="border-b border-mist px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em] text-ink-soft">Firma en las órdenes de compra</h2>
             <div className="px-6 py-5">
               <label className="flex flex-col gap-1.5">
                 <span className="text-sm font-semibold text-ink">Quién autoriza las órdenes</span>

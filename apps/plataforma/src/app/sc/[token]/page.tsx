@@ -78,7 +78,7 @@ export default async function PaginaSolicitudProveedor({ params }: Props) {
         <div className="overflow-x-auto px-6 py-4">
           <table className="w-full min-w-[26rem] text-sm">
             <thead>
-              <tr className="border-b border-mist text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
+              <tr className="border-b border-mist text-left text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">
                 <th className="py-2 pr-3">#</th>
                 <th className="py-2 pr-3">Descripción</th>
                 <th className="py-2 text-right">Cantidad</th>
@@ -98,7 +98,7 @@ export default async function PaginaSolicitudProveedor({ params }: Props) {
           </table>
           {c.observaciones && (
             <p className="mt-4 whitespace-pre-line rounded-xl bg-mist/40 px-4 py-3 text-sm text-ink">
-              <span className="block text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">Observaciones</span>
+              <span className="block text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">Observaciones</span>
               {c.observaciones}
             </p>
           )}
@@ -144,7 +144,7 @@ function Marco({ children, empresa = DATOS_POR_DEFECTO }: { children: React.Reac
 function Dato({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
   return (
     <div>
-      <dt className="text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">{etiqueta}</dt>
+      <dt className="text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">{etiqueta}</dt>
       <dd className="mt-1 font-semibold text-ink">{children}</dd>
     </div>
   );

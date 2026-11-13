@@ -31,7 +31,7 @@ export function BarraSuperior({ izquierda }: { izquierda?: React.ReactNode }) {
       <div className="flex shrink-0 items-center gap-4">
         {usuario.general === "soporte" && <SelectorEmpresa actual={usuario.empresa} />}
         {usuario.empresa === "demo" && (
-          <span className="rounded-full border border-cyan/30 bg-cyan/10 px-2.5 py-1 text-[10px] font-bold tracking-[0.14em] text-cyan-deep" title="Entorno de demostración">
+          <span className="rounded-full border border-cyan/30 bg-cyan/10 px-2.5 py-1 text-xs font-bold tracking-[0.14em] text-cyan-deep" title="Entorno de demostración">
             DEMO
           </span>
         )}

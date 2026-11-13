@@ -234,7 +234,7 @@ function Resumen({ orden, ciclo, alModo, alCorregir, alAdjuntos, puedeRecibir, p
       <div className="mt-5 overflow-x-auto px-6">
         <table className="w-full min-w-[46rem] border-collapse text-sm">
           <thead>
-            <tr className="border-b border-mist text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
+            <tr className="border-b border-mist text-left text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">
               <th className="py-2 pr-3">Línea</th>
               <th className="py-2 pr-3 text-right">Pedido</th>
               <th className="py-2 pr-3 text-right">Recibido</th>
@@ -265,7 +265,7 @@ function Resumen({ orden, ciclo, alModo, alCorregir, alAdjuntos, puedeRecibir, p
 
       <div className="mt-6 grid gap-6 border-t border-mist px-6 py-5 md:grid-cols-2">
         <section>
-          <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-soft">Recepciones</h3>
+          <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-soft">Recepciones</h3>
           {ciclo.recepciones.length === 0 ? (
             <p className="mt-2 text-sm text-ink-soft">Todavía no llega nada.</p>
           ) : (
@@ -302,7 +302,7 @@ function Resumen({ orden, ciclo, alModo, alCorregir, alAdjuntos, puedeRecibir, p
         </section>
 
         <section>
-          <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-soft">Facturas y notas de crédito</h3>
+          <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-ink-soft">Facturas y notas de crédito</h3>
           {ciclo.facturas.length === 0 ? (
             <p className="mt-2 text-sm text-ink-soft">El proveedor todavía no factura.</p>
           ) : (
@@ -402,7 +402,7 @@ function avisoDeResumen(r: Awaited<ReturnType<typeof informarRecepcionAPagnol>>)
 function Cifra({ etiqueta, valor, nota }: { etiqueta: string; valor: number; nota?: string }) {
   return (
     <div className="rounded-xl border border-mist-deep p-3">
-      <dt className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-soft">{etiqueta}</dt>
+      <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">{etiqueta}</dt>
       <dd className="mt-1 font-display text-lg font-semibold tabular-nums text-ink">{formatearPesos(valor)}</dd>
       {nota && <dd className="mt-0.5 text-xs text-ink-soft">{nota}</dd>}
     </div>
@@ -460,7 +460,7 @@ function CantidadesPorLinea({ lineas, cantidades, alCambiar, maximo, columna }: 
       <div className="overflow-x-auto">
         <table className="w-full min-w-[34rem] border-collapse text-sm">
           <thead>
-            <tr className="border-b border-mist text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
+            <tr className="border-b border-mist text-left text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">
               <th className="w-8 py-2 pr-2"><span className="sr-only">Incluir</span></th>
               <th className="py-2 pr-3">Línea</th>
               <th className="py-2 pr-3 text-right">Hasta</th>
@@ -600,7 +600,7 @@ function FormFactura({ orden, ciclo, factura, sugerida, alVolver, alHecho }: { o
     ? { documento: factura.documento, fechaFactura: factura.fechaFactura ?? hoy(), vencimiento: factura.vencimiento ?? "", neto: factura.neto, iva: factura.iva }
     : sugerida
       ? { documento: sugerida.documento, fechaFactura: fechaSugerida, vencimiento: sugerida.vencimiento ?? sumarDias(fechaSugerida, plazo), neto: sugerida.neto, iva: sugerida.iva }
-      : { documento: "", fechaFactura: hoy(), vencimiento: sumarDias(hoy(), plazo), neto: sugerido, iva: Math.round(sugerido * 0.19) });
+      : { documento: "", fechaFactura: hoy(), vencimiento: sumarDias(hoy(), plazo), neto: sugerido, iva: ivaDe(sugerido) });
   // Una factura que se corrige conserva su monto hasta que se toque una línea: ahí sigue a las líneas, salvo que se escriba otro.
   // La que viene del SII también: su monto es el que dice el documento.
   const [netoTocado, setNetoTocado] = useState(!!sugerida);
@@ -615,7 +615,7 @@ function FormFactura({ orden, ciclo, factura, sugerida, alVolver, alHecho }: { o
     // Mientras no se escriba el neto a mano, sigue a las líneas.
     if (!netoTocado) {
       const neto = netoDe(ciclo.lineas, c);
-      f.setDatos((d) => ({ ...d, neto, iva: Math.round(neto * 0.19) }));
+      f.setDatos((d) => ({ ...d, neto, iva: ivaDe(neto) }));
     }
   }
 
@@ -654,7 +654,7 @@ function FormFactura({ orden, ciclo, factura, sugerida, alVolver, alHecho }: { o
         )}
         <CampoDinero etiqueta="Neto de la factura" requerido
           ayuda={f.datos.neto !== netoLineas ? `Según la orden serían ${formatearPesos(netoLineas)}. Se guarda lo que dice la factura.` : "Como dice la factura."}
-          valor={f.datos.neto} alCambiar={(v) => { setNetoTocado(true); f.setDatos((d) => ({ ...d, neto: v, iva: Math.round(v * 0.19) })); }} />
+          valor={f.datos.neto} alCambiar={(v) => { setNetoTocado(true); f.setDatos((d) => ({ ...d, neto: v, iva: ivaDe(v) })); }} />
         <ResumenIva neto={f.datos.neto} afecto={!exento} alCambiarAfecto={(v) => setExento(!v)} />
       </Campos>
       <Pie error={f.error} guardando={f.guardando} alCancelar={alVolver} textoGuardar={factura ? "Guardar cambios" : "Registrar factura"} />
@@ -693,7 +693,7 @@ function FormNotaCredito({ ciclo, alVolver, alHecho }: { ciclo: Ciclo; alVolver:
       if (r.error) return f.setError(r.error);
       f.enviar(() => registrarNotaCredito({
         compraId: factura.id, numero: f.datos.numero, fecha: f.datos.fecha,
-        neto, iva: Math.round(neto * 0.19), observaciones: f.datos.observaciones, lineas: r.filas!,
+        neto, iva: ivaDe(neto), observaciones: f.datos.observaciones, lineas: r.filas!,
       }).then(() => undefined), alHecho);
     }}>
       <Campos>

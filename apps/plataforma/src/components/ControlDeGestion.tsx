@@ -658,7 +658,7 @@ function IndicadoresParalelos({
 
   const mini = (etiqueta: string, valor: string, nota: string, oscuro: boolean, rojo = false) => (
     <div key={etiqueta} className="min-w-[9.5rem] flex-1">
-      <dt className={`text-[0.65rem] font-semibold uppercase tracking-[0.14em] ${oscuro ? "text-white/60" : "text-realce"}`}>{etiqueta}</dt>
+      <dt className={`text-xs font-semibold uppercase tracking-[0.14em] ${oscuro ? "text-white/60" : "text-realce"}`}>{etiqueta}</dt>
       <dd className={`mt-1.5 font-display text-lg font-semibold leading-none ${rojo ? (oscuro ? "text-peligro-claro" : "text-peligro") : oscuro ? "text-white" : "text-realce"}`}>{valor}</dd>
       <dd className={`mt-1 text-xs ${oscuro ? "text-white/60" : "text-ink-soft"}`}>{nota}</dd>
     </div>
@@ -797,7 +797,7 @@ function TarjetaContrato({ contrato }: { contrato: Contrato }) {
         </div>
         <div className="relative mt-1 h-4">
           <span
-            className="absolute -translate-x-1/2 text-[11px] text-ink-soft"
+            className="absolute -translate-x-1/2 text-xs text-ink-soft"
             style={{ left: `${Math.min(meta, 100)}%` }}
           >
             ▲ meta {meta}%

@@ -92,7 +92,7 @@ export function SolicitudesPagnol() {
 
       <div className="grid gap-6 px-6 py-5 lg:grid-cols-2 lg:px-8">
         <div className="min-w-0">
-          <h3 className="flex min-h-9 items-center text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-soft">Esperando contrato</h3>
+          <h3 className="flex min-h-9 items-center text-xs font-semibold uppercase tracking-[0.16em] text-ink-soft">Esperando contrato</h3>
           {datos.pendientes.length === 0 ? (
             <p className="mt-2 text-sm text-ink-soft">No hay solicitudes pendientes.</p>
           ) : (
@@ -140,7 +140,7 @@ export function SolicitudesPagnol() {
         </div>
 
         <div className="min-w-0">
-          <h3 className="flex min-h-9 items-center text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-soft">Borradores por revisar</h3>
+          <h3 className="flex min-h-9 items-center text-xs font-semibold uppercase tracking-[0.16em] text-ink-soft">Borradores por revisar</h3>
           {datos.borradores.length === 0 ? (
             <p className="mt-2 text-sm text-ink-soft">No hay borradores abiertos.</p>
           ) : (

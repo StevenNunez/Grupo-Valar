@@ -244,7 +244,7 @@ function Contenidos({
           columnas={columnas(edicion, anexoDe)}
           filas={visibles}
           claveDe={(f) => f.id}
-          vacio={todas.length === 0 ? "Todavía no hay facturas emitidas." : "Ninguna factura con estos filtros."}
+          vacio={todas.length === 0 ? "Todavía no hay facturas emitidas. Se emiten en Ingresos → Estado de Pago, desde la orden de compra de un estado de pago aprobado." : "Ninguna factura con estos filtros."}
           pie={
             <>
               <Total colSpan={3}>Total</Total>

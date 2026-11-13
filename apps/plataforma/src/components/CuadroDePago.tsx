@@ -100,7 +100,7 @@ export function CuadroDePago({
                 <tr key={l.id} className="border-t border-mist">
                   <td className="py-2 font-mono">
                     {l.documento ?? "SIN FACTURA"}
-                    {l.cuotas > 0 && l.cuotaNumero !== null && <span className="block font-sans text-[10px] text-ink-soft">Cuota {l.cuotaNumero} de {l.cuotas}</span>}
+                    {l.cuotas > 0 && l.cuotaNumero !== null && <span className="block font-sans text-xs text-ink-soft">Cuota {l.cuotaNumero} de {l.cuotas}</span>}
                   </td>
                   <td className="py-2">{l.ordenNumero ?? "—"}</td>
                   <td className="py-2">{l.contrato}</td>

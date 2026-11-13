@@ -1,4 +1,5 @@
 "use client";
+import { ivaDe } from "@/lib/iva";
 
 import { LogoMark } from "./Logo";
 import { camposDe, mostrarValor, type CampoContrato } from "@/lib/campos";
@@ -102,7 +103,7 @@ export function EstadoPagoImprimible({ ciclo, campos }: { ciclo: Ciclo; campos: 
       {/* La planilla del contrato: es lo que este contrato presenta y otro no. */}
       {(particulares.length > 0 || propios.length > 0) && (
         <section className="mt-6">
-          <h2 className="mb-2 border-b-2 border-ink pb-1 text-[11px] font-semibold uppercase tracking-[0.12em]">
+          <h2 className="mb-2 border-b-2 border-ink pb-1 text-xs font-semibold uppercase tracking-[0.12em]">
             Detalle del período
           </h2>
           <table className="w-full border-collapse text-sm">
@@ -155,8 +156,8 @@ export function EstadoPagoImprimible({ ciclo, campos }: { ciclo: Ciclo; campos: 
         <dl className="w-full max-w-xs text-sm">
           <Linea etiqueta="Monto neto del período" valor={formatearPesos(ciclo.montoNeto)} />
           {plantilla !== "general" && <>
-            <Linea etiqueta="IVA referencial (19%)" valor={formatearPesos(Math.round(ciclo.montoNeto * 0.19))} />
-            <Linea etiqueta="Total con IVA" valor={formatearPesos(ciclo.montoNeto + Math.round(ciclo.montoNeto * 0.19))} />
+            <Linea etiqueta="IVA referencial (19%)" valor={formatearPesos(ivaDe(ciclo.montoNeto))} />
+            <Linea etiqueta="Total con IVA" valor={formatearPesos(ciclo.montoNeto + ivaDe(ciclo.montoNeto))} />
           </>}
           <Linea
             etiqueta="Retención de garantía"
@@ -226,7 +227,7 @@ export function OrdenDelMandanteImprimible({ ciclo, cubiertos = [ciclo] }: { cic
       </div>
 
       <section className="mt-6">
-        <h2 className="mb-2 border-b-2 border-ink pb-1 text-[11px] font-semibold uppercase tracking-[0.12em]">
+        <h2 className="mb-2 border-b-2 border-ink pb-1 text-xs font-semibold uppercase tracking-[0.12em]">
           {cubiertos.length > 1 ? "Qué estados de pago cubre" : "De qué estado de pago sale"}
         </h2>
         <table className="w-full border-collapse text-sm">
@@ -319,7 +320,7 @@ export function FacturaImprimible({ ciclo, incluidos = [ciclo] }: { ciclo: Ciclo
       </div>
 
       <section className="mt-6">
-        <h2 className="mb-2 border-b-2 border-ink pb-1 text-[11px] font-semibold uppercase tracking-[0.12em]">
+        <h2 className="mb-2 border-b-2 border-ink pb-1 text-xs font-semibold uppercase tracking-[0.12em]">
           De dónde viene
         </h2>
         <table className="w-full border-collapse text-sm">
@@ -403,7 +404,7 @@ function Hoja({
 function Bloque({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
     <section>
-      <h2 className="mb-2 border-b border-mist-deep pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-soft">
+      <h2 className="mb-2 border-b border-mist-deep pb-1 text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">
         {titulo}
       </h2>
       <dl className="flex flex-col gap-1">{children}</dl>
@@ -425,7 +426,7 @@ function Dato({
       <dt
         className={
           destacado
-            ? "text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-soft"
+            ? "text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft"
             : "w-24 shrink-0 text-ink-soft"
         }
       >

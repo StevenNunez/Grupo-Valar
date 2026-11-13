@@ -695,7 +695,7 @@ function EditorAcceso({
                     >
                       <div className="min-w-0">
                         <p className="text-sm text-ink">{p.titulo}</p>
-                        {incluido && <p className="text-[11px] text-ink-soft">Viene con {tituloNivel(nivel)}</p>}
+                        {incluido && <p className="text-xs text-ink-soft">Viene con {tituloNivel(nivel)}</p>}
                       </div>
                       <Switch
                         marcado={marcado}

@@ -14,7 +14,10 @@ import type { PlantillaEdp } from "./plantillas-edp";
  *   administracion_delegada  costo estimado, honorario y tope
  */
 
-export const IVA = 0.19;
+import { TASA_IVA } from "./iva";
+
+/** La misma tasa de lib/iva, con el nombre que ya usaban los contratos. */
+export const IVA = TASA_IVA;
 export const conIva = (neto: number) => ({ iva: Math.round(neto * IVA), total: Math.round(neto * (1 + IVA)) });
 /** En UF se redondea a dos decimales; en pesos, al peso. */
 export const conIvaUf = (neto: number) => ({ iva: Math.round(neto * IVA * 100) / 100, total: Math.round(neto * (1 + IVA) * 100) / 100 });

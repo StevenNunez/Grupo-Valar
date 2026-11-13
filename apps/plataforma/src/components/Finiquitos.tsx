@@ -67,7 +67,7 @@ export function PanelFiniquitos({
             {f.conReserva && (
               <span
                 title={f.reservaDetalle ? `Reservó: ${f.reservaDetalle}` : "Firmó con reserva de derechos"}
-                className="ml-2 inline-block rounded-full bg-alerta-suave px-2 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-[0.08em] text-alerta"
+                className="ml-2 inline-block rounded-full bg-alerta-suave px-2 py-0.5 align-middle text-xs font-semibold uppercase tracking-[0.08em] text-alerta"
               >
                 Con reserva
               </span>

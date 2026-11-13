@@ -112,7 +112,7 @@ export function Panel({
 export function CampoFiltro({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
   return (
     <div className="flex min-w-0 max-w-full flex-col gap-1.5">
-      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-soft">{etiqueta}</span>
+      <span className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft">{etiqueta}</span>
       {children}
     </div>
   );
@@ -142,7 +142,7 @@ export function Filtro<T extends string>({
           type="button"
           onClick={() => alCambiar(o.id)}
           aria-pressed={valor === o.id}
-          className={`whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-semibold transition-colors ${
+          className={`min-h-9 whitespace-nowrap rounded-full px-4 py-1.5 text-xs font-semibold transition-colors ${
             valor === o.id ? "bg-ink text-white" : "text-ink-soft hover:text-ink"
           }`}
         >

@@ -420,7 +420,7 @@ export function FormularioSolped({
             <div className="overflow-x-auto">
               <table className="lineas-movil w-full md:min-w-[46rem] border-collapse text-sm">
                 <thead>
-                  <tr className="border-b border-mist text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-soft">
+                  <tr className="border-b border-mist text-left text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">
                     <th className="w-8 py-2 pr-3">N°</th>
                     <th className="py-2 pr-3">Descripción</th>
                     <th className="w-40 py-2 pr-3">Categoría</th>
@@ -461,7 +461,7 @@ export function FormularioSolped({
                           className={claseCelda}
                         />
                         {l.articulo_id && (
-                          <span className="mt-1 block text-[11px] text-ink-soft">
+                          <span className="mt-1 block text-xs text-ink-soft">
                             {l.articulo_id}
                             {articulosPorId.get(l.articulo_id)?.nombreTecnico
                               ? ` · se pide como «${articulosPorId.get(l.articulo_id)?.nombreTecnico}»`

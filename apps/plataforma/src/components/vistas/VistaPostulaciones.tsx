@@ -209,7 +209,7 @@ function DetallePostulacion({ p, alCerrar, alCambiar }: { p: Postulacion; alCerr
 
   const dato = (etiqueta: string, valor: React.ReactNode) => (
     <div>
-      <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-soft">{etiqueta}</dt>
+      <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft">{etiqueta}</dt>
       <dd className="mt-1 text-sm text-ink">{valor}</dd>
     </div>
   );
@@ -232,7 +232,7 @@ function DetallePostulacion({ p, alCerrar, alCambiar }: { p: Postulacion; alCerr
           {dato("Experiencia", p.experiencia)}
           {p.mensaje && <div className="sm:col-span-2">{dato("Mensaje", <span className="whitespace-pre-wrap">{p.mensaje}</span>)}</div>}
           <div className="sm:col-span-2">
-            <dt className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-soft">Currículum</dt>
+            <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft">Currículum</dt>
             <dd className="mt-2 flex flex-wrap items-center gap-3">
               <button
                 type="button"

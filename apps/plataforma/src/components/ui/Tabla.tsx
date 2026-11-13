@@ -121,7 +121,7 @@ const FIJA_CELDA =
 const TARJETA_TITULO = "max-md:block max-md:border-b max-md:border-mist max-md:px-0 max-md:pb-2 max-md:pt-0 max-md:text-left max-md:font-semibold";
 /* …y las demás, una línea «etiqueta · valor». Sin etiqueta (acciones), el valor va solo, a la derecha. */
 const TARJETA_CAMPO =
-  "max-md:flex max-md:items-start max-md:justify-between max-md:gap-4 max-md:px-0 max-md:py-1.5 max-md:text-right before:max-md:content-[attr(data-label)] before:max-md:shrink-0 before:max-md:pt-0.5 before:max-md:text-left before:max-md:text-[11px] before:max-md:font-semibold before:max-md:uppercase before:max-md:tracking-[0.1em] before:max-md:text-ink-soft";
+  "max-md:flex max-md:items-start max-md:justify-between max-md:gap-4 max-md:px-0 max-md:py-1.5 max-md:text-right before:max-md:content-[attr(data-label)] before:max-md:shrink-0 before:max-md:pt-0.5 before:max-md:text-left before:max-md:text-xs before:max-md:font-semibold before:max-md:uppercase before:max-md:tracking-[0.1em] before:max-md:text-ink-soft";
 
 function orillas(i: number, total: number, fija?: boolean) {
   if (i === 0) return "pl-6 pr-4 lg:pl-8";

@@ -96,7 +96,7 @@ export function BuscadorProveedorPagnol({
                 <li key={p.id} className="border-b border-mist last:border-0">
                   <button type="button" onClick={() => alElegir(p)} className="w-full px-3 py-2 text-left hover:bg-mist/50">
                     <span className="block text-sm text-ink">{p.razon_social}</span>
-                    <span className="text-[11px] text-ink-soft">
+                    <span className="text-xs text-ink-soft">
                       {[p.rut ?? "Sin RUT", p.email, p.telefono].filter(Boolean).join(" · ")}
                     </span>
                   </button>

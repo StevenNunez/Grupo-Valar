@@ -1,4 +1,5 @@
 "use client";
+import { ivaDe } from "./iva";
 
 import { anexoRaiz, cargarAnexos, etiquetaAnexo } from "./anexos";
 import type { Datos } from "./campos";
@@ -520,7 +521,7 @@ export async function facturarEdps(
       id: folio,
       contrato_id: contratoId,
       neto: datos.neto,
-      iva: Math.round(datos.neto * 0.19),
+      iva: ivaDe(datos.neto),
       fecha_emision: datos.fechaEmision,
       vencimiento: datos.vencimiento || null,
       estado_cobro: "emitida",

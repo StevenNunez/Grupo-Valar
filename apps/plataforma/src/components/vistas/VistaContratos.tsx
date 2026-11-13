@@ -306,7 +306,7 @@ function BotonCerrar({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="rounded-full border border-mist-deep px-3 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink"
+      className="min-h-9 rounded-full border border-mist-deep px-3 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink"
     >
       Cerrar contrato
     </button>
@@ -440,7 +440,7 @@ function Desplegar({ abierto, onClick, children }: { abierto: boolean; onClick: 
       type="button"
       onClick={onClick}
       aria-expanded={abierto}
-      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+      className={`inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
         abierto ? "border-cyan bg-cyan/5 text-cyan-deep" : "border-mist-deep text-ink-soft hover:border-ink hover:text-ink"
       }`}
     >
@@ -456,9 +456,9 @@ function Desplegar({ abierto, onClick, children }: { abierto: boolean; onClick: 
 function Cifra({ etiqueta, valor, nota }: { etiqueta: string; valor: string; nota?: string }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-soft">{etiqueta}</dt>
+      <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">{etiqueta}</dt>
       <dd className="mt-0.5 font-display text-base font-semibold tabular-nums text-ink">{valor}</dd>
-      {nota && <dd className="mt-0.5 text-[11px] leading-snug text-ink-soft">{nota}</dd>}
+      {nota && <dd className="mt-0.5 text-xs leading-snug text-ink-soft">{nota}</dd>}
     </div>
   );
 }
