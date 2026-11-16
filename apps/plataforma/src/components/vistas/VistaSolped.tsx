@@ -3,7 +3,8 @@
 import { mensajeParaPersona } from "@/lib/errores";
 
 import { useFiltro } from "@/lib/vista-guardada";
-import { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { CotizacionesDeSolped } from "../CotizacionesDeSolped";
 import { ExpedienteSolped } from "../ExpedienteSolped";
 import { FormularioSolped } from "../formularios/FormularioSolped";
@@ -21,6 +22,7 @@ import {
   cargarPaginaSolped,
   cargarPendientesPorSolped,
   cargarResumenSolped,
+  cargarSolpedPorId,
   firmar,
   nombreEstadoSolped,
   type Aprobacion,
@@ -115,6 +117,41 @@ async function cargar(): Promise<Datos> {
   return { contratos, categorias: dashboard.categorias, articulos, pendientes, numeros, resumen };
 }
 
+/**
+ * Abre el expediente de la solicitud que viene en la dirección (`?solped=SP-…`).
+ *
+ * Así llegan los avisos de la campana y del teléfono (0123): antes llevaban a la
+ * lista y había que buscar la solicitud a mano. La solicitud se pide por su
+ * código, porque puede no estar en la página de la lista que se ve. Después se
+ * limpia la dirección, para que el mismo aviso se pueda volver a abrir.
+ *
+ * Va en su propio componente y dentro de `Suspense` porque lee la dirección.
+ */
+function AbrirDesdeAviso({ alAbrir }: { alAbrir: (s: Solped) => void }) {
+  const router = useRouter();
+  const id = useSearchParams().get("solped");
+
+  useEffect(() => {
+    if (!id) return;
+    let vigente = true;
+    cargarSolpedPorId(id)
+      .then((s) => {
+        if (vigente && s) alAbrir(s);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (vigente) router.replace("/abastecimiento/solped/");
+      });
+    return () => {
+      vigente = false;
+    };
+    // `alAbrir` es un setState: no cambia entre renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  return null;
+}
+
 /** En compra a medias: ya salió alguna orden y todavía faltan ítems por cubrir. */
 const enCompraIncompleta = (s: Solped, pendientes: Record<string, number>) =>
   !CERRADAS.includes(s.estado) && s.cantidadComprada > 0 && (pendientes[s.id] ?? 0) > 0;
@@ -174,6 +211,11 @@ export function VistaSolped() {
         acciones={<BotonNuevo permiso="solped.crear" onClick={edicion.abrirNuevo}>Nueva solicitud</BotonNuevo>}
       />
 
+      {/* Un aviso trae la solicitud en la dirección (`?solped=…`): se abre su expediente. */}
+      <Suspense fallback={null}>
+        <AbrirDesdeAviso alAbrir={setExpediente} />
+      </Suspense>
+
       <Contenido consulta={estado}>
         {(datos) => (
           <>
@@ -214,6 +256,7 @@ export function VistaSolped() {
                 solpedId={expediente.id}
                 titulo={`${expediente.numero} · ${expediente.contrato}`}
                 alCerrar={() => setExpediente(null)}
+                alCambiar={recargar}
               />
             )}
 

@@ -224,6 +224,29 @@ export async function cargarNumerosSolped(): Promise<NumeroDeSolped[]> {
   return filas.map((f) => ({ numero: f.numero, contratoId: f.contrato_id }));
 }
 
+/** Una solicitud por su código, esté o no en la página de la lista que se ve (para abrirla desde un aviso). */
+export async function cargarSolpedPorId(id: string): Promise<Solped | null> {
+  const { data, error } = await supabase.from("solped_resumen").select("*").eq("id", id).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapearSolped(data as FilaSolped) : null;
+}
+
+/**
+ * Da por terminada una solicitud a mano, con su motivo.
+ *
+ * Es para lo que la plataforma no puede deducir sola: se compró por fuera (una
+ * orden hecha directo, sin pasar por la cotización), ya no se necesita, o lo
+ * que falta no se va a comprar. Con todo comprado y recibido por sus órdenes, se
+ * cierra sola (0123) y esto no hace falta. El motivo queda en la solicitud: es
+ * lo que distingue un cierre a mano de uno automático.
+ */
+export async function darPorTerminadaSolped(id: string, motivo: string) {
+  const texto = motivo.trim();
+  if (!texto) throw new Error("Escribe por qué se da por terminada.");
+  const { error } = await supabase.from("solped").update({ estado: "cerrada", motivo_cierre: texto }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
 function mapearSolped(f: FilaSolped): Solped {
   return {
     anexoId: (f.anexo_id as string | null | undefined) ?? null,

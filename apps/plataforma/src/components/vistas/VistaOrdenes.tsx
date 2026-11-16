@@ -122,6 +122,9 @@ export function VistaOrdenes() {
   const edicion = useEdicion<Orden>("ordenes_compra_proveedor");
   const [imprimiendo, setImprimiendo] = useState<Orden | null>(null);
   const [recepcion, setRecepcion] = useState<Orden | null>(null);
+  /* «Recibir» desde la lista abre el ciclo directo en la recepción: es lo que
+     más se hace con una orden emitida y estaba a dos clics, detrás de un ícono. */
+  const [recibirDirecto, setRecibirDirecto] = useState(false);
   const [enviando, setEnviando] = useState<Orden | null>(null);
 
   const [filtro, setFiltro] = useFiltro<Filtrado>("ordenes:estado", "todas");
@@ -203,7 +206,14 @@ export function VistaOrdenes() {
               alOrdenar={setOrden}
               edicion={edicion}
               alImprimir={setImprimiendo}
-              alRecepcionar={setRecepcion}
+              alRecepcionar={(o) => {
+                setRecibirDirecto(false);
+                setRecepcion(o);
+              }}
+              alRecibir={(o) => {
+                setRecibirDirecto(true);
+                setRecepcion(o);
+              }}
               alEnviar={setEnviando}
               envios={datos.envios}
             />
@@ -241,7 +251,9 @@ export function VistaOrdenes() {
         /* Recepción con guía, facturas parciales, NC y cierre: el ciclo
            entero de la orden (0051). Antes era solo la cantidad recibida. */
         <CicloOrden
+          key={`${recepcion.id}:${recibirDirecto}`}
           orden={recepcion}
+          modoInicial={recibirDirecto ? "recibir" : "ver"}
           alCerrar={() => setRecepcion(null)}
           alCambiar={recargar}
         />
@@ -290,6 +302,7 @@ function Contenidos({
   edicion,
   alImprimir,
   alRecepcionar,
+  alRecibir,
   alEnviar,
   envios,
 }: {
@@ -311,10 +324,15 @@ function Contenidos({
   edicion: ReturnType<typeof useEdicion<Orden>>;
   alImprimir: (o: Orden) => void;
   alRecepcionar: (o: Orden) => void;
+  alRecibir: (o: Orden) => void;
   alEnviar: (o: Orden) => void;
   envios: Record<string, Envio[]>;
 }) {
   const puedeEmitir = usePuede("ordenes.emitir");
+  // Los mismos permisos con que el ciclo de la orden deja registrar una recepción.
+  const registraRecepcion = usePuede("recepcion.registrar");
+  const cargaGestion = usePuede("gestion.editar");
+  const puedeRecibir = registraRecepcion || cargaGestion;
 
   // Los totales de abajo son de lo que se está mostrando.
   const neto = lista.filas.reduce((t, o) => t + o.neto, 0);
@@ -419,7 +437,7 @@ function Contenidos({
           <p className="px-6 py-14 text-center text-sm text-ink-soft lg:px-8">Cargando órdenes…</p>
         ) : (
           <Tabla
-            columnas={columnas(edicion, alImprimir, alRecepcionar, puedeEmitir, alEnviar, envios)}
+            columnas={columnas(edicion, alImprimir, alRecepcionar, puedeEmitir, alEnviar, envios, puedeRecibir ? alRecibir : null)}
             filas={lista.filas}
             claveDe={(o) => o.id}
             vacio="Ninguna orden con este filtro."
@@ -458,6 +476,8 @@ const columnas = (
   puedeEmitir: boolean,
   alEnviar: (o: Orden) => void,
   envios: Record<string, Envio[]>,
+  /** Abre la recepción de la orden; nulo si la persona no puede registrarla. */
+  alRecibir: ((o: Orden) => void) | null,
 ): Columna<Orden>[] => [
   {
     clave: "numero",
@@ -493,7 +513,10 @@ const columnas = (
     ancho: "w-36",
     celda: (o) => {
       const pct = o.items > 0 ? (o.itemsRecibidos / o.items) * 100 : 0;
+      // Lo que llegó a faena o se retiró del proveedor se anota acá: es lo que termina la orden.
+      const faltaRecibir = o.estado === "emitida" || o.estado === "parcial";
       return (
+        <>
         <div className="flex items-center gap-2.5">
           <span aria-hidden="true" className="h-1.5 flex-1 overflow-hidden rounded-full bg-mist">
             <span
@@ -505,6 +528,17 @@ const columnas = (
             {o.itemsRecibidos}/{o.items}
           </span>
         </div>
+        {alRecibir && faltaRecibir && (
+          <button
+            type="button"
+            onClick={() => alRecibir(o)}
+            title="Anotar lo que ya llegó a faena o se retiró del proveedor"
+            className="mt-1.5 rounded-full border border-cyan px-3 py-1 text-xs font-semibold text-cyan-deep transition-colors hover:bg-cyan/5"
+          >
+            {o.estado === "parcial" ? "Recibir el resto" : "Registrar recepción"}
+          </button>
+        )}
+        </>
       );
     },
   },

@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useState } from "react";
 import { Chip, type Tono } from "./ui/Chip";
 import { Dialogo } from "./ui/Formulario";
 import { useConsulta } from "@/lib/consulta";
@@ -8,13 +10,17 @@ import {
   cargarAvanceDeSolped,
   cargarComparativo,
   cargarExpediente,
+  darPorTerminadaSolped,
   nombreEstadoItem,
   nombreEstadoSolped,
   type Aprobacion,
   type AvanceItem,
   type Cotizacion,
+  type EstadoSolped,
   type Expediente,
 } from "@/lib/abastecimiento";
+import { mensajeParaPersona } from "@/lib/errores";
+import { usePuede } from "@/lib/sesion";
 import { formatearFecha, formatearNumero, formatearPesos } from "@/lib/formato";
 
 /**
@@ -45,16 +51,39 @@ const tonoItem: Record<string, Tono> = {
   recibido: "bueno",
 };
 
+/**
+ * Qué falta para que la solicitud avance, dicho en una línea. Es lo que tiene
+ * que leer quien llega desde un aviso: no en qué estado está, sino qué hacer.
+ */
+const queFalta: Record<EstadoSolped, string> = {
+  borrador: "Falta enviarla a aprobación (botón «Enviar» en la lista de solicitudes).",
+  "en-aprobacion": "Falta que la aprueben. Quien puede aprobar la firma desde la lista de solicitudes.",
+  aprobada: "Falta cotizar: pide la cotización a uno o más proveedores (botón «Cotizar» en la lista).",
+  "en-cotizacion": "Falta la respuesta del proveedor: carga sus precios y elige a quién comprarle (botón «Cotizar»).",
+  cotizada: "Falta generar la orden de compra desde la cotización elegida (botón «Cotizar»).",
+  "en-compra": "Falta registrar la recepción: en Órdenes de compra, «Registrar recepción» en cada orden cuando llegue a faena o se retire del proveedor. Con todas recibidas, la solicitud se cierra sola.",
+  parcial: "Llegó una parte. Falta registrar la recepción del resto en Órdenes de compra; con todo recibido, la solicitud se cierra sola.",
+  cerrada: "Terminada: no queda nada por hacer.",
+  rechazada: "Fue rechazada: no sigue.",
+  anulada: "Fue anulada: no sigue.",
+};
+
+/** Desde que está aprobada y mientras no termine, una persona puede darla por terminada. */
+const SE_PUEDE_TERMINAR: EstadoSolped[] = ["aprobada", "en-cotizacion", "cotizada", "en-compra", "parcial"];
+
 export function ExpedienteSolped({
   solpedId,
   titulo,
   alCerrar,
+  alCambiar,
 }: {
   solpedId: string;
   titulo: string;
   alCerrar: () => void;
+  /** La solicitud cambió de estado (se dio por terminada): la lista de afuera se relee. */
+  alCambiar?: () => void;
 }) {
-  const { estado } = useConsulta<Datos>(async () => {
+  const { estado, recargar } = useConsulta<Datos>(async () => {
     const [expediente, items, cotizaciones, firmas] = await Promise.all([
       cargarExpediente(solpedId),
       cargarAvanceDeSolped(solpedId),
@@ -83,14 +112,44 @@ export function ExpedienteSolped({
       )}
 
       {estado.estado === "listo" && estado.datos.expediente && (
-        <Cuerpo datos={estado.datos} exp={estado.datos.expediente} />
+        <Cuerpo
+          datos={estado.datos}
+          exp={estado.datos.expediente}
+          alTerminada={() => {
+            recargar();
+            alCambiar?.();
+          }}
+        />
       )}
     </Dialogo>
   );
 }
 
-function Cuerpo({ datos, exp }: { datos: Datos; exp: Expediente }) {
+function Cuerpo({ datos, exp, alTerminada }: { datos: Datos; exp: Expediente; alTerminada: () => void }) {
   const elegida = datos.cotizaciones.find((c) => c.seleccionada);
+
+  // Los dos siempre, en el mismo orden: son hooks y no se pueden cortar con ||.
+  const gestionaCotizacion = usePuede("cotizacion.gestionar");
+  const emiteOrdenes = usePuede("ordenes.emitir");
+  const puedeTerminar = (gestionaCotizacion || emiteOrdenes) && SE_PUEDE_TERMINAR.includes(exp.estado);
+  const [terminando, setTerminando] = useState(false);
+  const [motivo, setMotivo] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function terminar() {
+    setGuardando(true);
+    setError(null);
+    try {
+      await darPorTerminadaSolped(exp.id, motivo);
+      setTerminando(false);
+      alTerminada();
+    } catch (e) {
+      setError(mensajeParaPersona(e, "ExpedienteSolped"));
+    } finally {
+      setGuardando(false);
+    }
+  }
 
   return (
     <div className="px-6 py-6">
@@ -120,6 +179,74 @@ function Cuerpo({ datos, exp }: { datos: Datos; exp: Expediente }) {
             {exp.fechaRequerida ? ` · para ${formatearFecha(exp.fechaRequerida)}` : ""}
           </p>
         </div>
+      </div>
+
+      {/* Qué falta: lo primero que necesita leer quien llega desde un aviso */}
+      <div className="mt-5 rounded-xl border border-mist-deep bg-mist/30 p-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">Qué falta</p>
+        <p className="mt-1 text-sm text-ink">{queFalta[exp.estado]}</p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          {(exp.estado === "en-compra" || exp.estado === "parcial") && (
+            <Link
+              href="/abastecimiento/ordenes/"
+              className="rounded-full bg-cyan-deep px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo"
+            >
+              Ir a Órdenes de compra
+            </Link>
+          )}
+          {puedeTerminar && !terminando && (
+            <button
+              type="button"
+              onClick={() => setTerminando(true)}
+              className="rounded-full border border-mist-deep px-4 py-2 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink"
+            >
+              Dar por terminada
+            </button>
+          )}
+        </div>
+
+        {terminando && (
+          <div className="mt-4 border-t border-mist pt-4">
+            <label htmlFor="motivo-termino" className="block text-sm font-semibold text-ink">
+              ¿Por qué se da por terminada?
+            </label>
+            <p className="mt-1 text-xs text-ink-soft">
+              Para cuando ya se compró y se entregó por fuera de este flujo, ya no se necesita, o lo que falta no se va a
+              comprar. Queda cerrada, deja de generar avisos y el motivo queda en su historial.
+            </p>
+            <textarea
+              id="motivo-termino"
+              rows={2}
+              value={motivo}
+              onChange={(e) => setMotivo(e.target.value)}
+              placeholder="Se compró con la OC22-001140 y ya se entregó en faena"
+              className="mt-2 w-full rounded-lg border border-mist-deep bg-white px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-cyan focus:ring-2 focus:ring-cyan/20"
+            />
+            {error && (
+              <p role="alert" className="mt-2 text-sm font-medium text-peligro">
+                {error}
+              </p>
+            )}
+            <div className="mt-3 flex gap-3">
+              <button
+                type="button"
+                disabled={guardando || !motivo.trim()}
+                onClick={() => void terminar()}
+                className="rounded-full bg-cyan-deep px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {guardando ? "Guardando…" : "Terminar la solicitud"}
+              </button>
+              <button
+                type="button"
+                disabled={guardando}
+                onClick={() => setTerminando(false)}
+                className="rounded-full border border-mist-deep px-4 py-2 text-sm font-semibold text-ink-soft transition-colors hover:border-ink hover:text-ink"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Las cinco etapas del ciclo */}
