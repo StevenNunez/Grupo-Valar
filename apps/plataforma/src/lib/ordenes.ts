@@ -660,6 +660,28 @@ export async function cargarDescuentoDeOrden(ordenId: string): Promise<Descuento
   };
 }
 
+/* ── Orden de Oficina Central (0122) ──────────────────────────────────────── */
+
+/**
+ * El centro de costo de una orden de Oficina Central y la categoría de oficina
+ * de cada línea (por id del ítem). Solo se pide para esas órdenes; si la
+ * consulta falla, centro «general» y sin categorías.
+ */
+export async function cargarOficinaDeOrden(ordenId: string): Promise<{ centro: string; categorias: Map<string, string> }> {
+  const [orden, items] = await Promise.all([
+    supabase.from("ordenes_compra_proveedor").select("centro_costo").eq("id", ordenId).maybeSingle(),
+    supabase.from("items_compra").select("id, categoria_oficina").eq("orden_id", ordenId),
+  ]);
+  const categorias = new Map<string, string>();
+  if (!items.error) {
+    for (const i of (items.data ?? []) as { id: string; categoria_oficina: string | null }[]) {
+      if (i.categoria_oficina) categorias.set(i.id, i.categoria_oficina);
+    }
+  }
+  const centro = orden.error ? null : (orden.data as { centro_costo?: string | null } | null)?.centro_costo;
+  return { centro: centro ?? "general", categorias };
+}
+
 /* ── Orden cotizada en UF (0114) ──────────────────────────────────────────── */
 
 export type OrdenEnUf = {

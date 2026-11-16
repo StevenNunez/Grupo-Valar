@@ -2,6 +2,7 @@
 
 import { SeccionRespaldos, useRespaldos } from "@/components/ui/Respaldos";
 import { useFiltro } from "@/lib/vista-guardada";
+import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { actualizar, crearConId, eliminar } from "@/lib/crud";
 import { supabase } from "@/lib/supabase";
@@ -205,11 +206,11 @@ function columnas(editar: ((fila: EgresoOficina) => void) | null, verHistorial: 
     { clave: "fecha", titulo: "Fecha", encabezado: true, celda: (f) => formatearFecha(f.fecha) },
     { clave: "categoria", titulo: "Categoría", celda: (f) => f.categoriaTitulo },
     { clave: "centro", titulo: "Centro de costo", celda: (f) => f.centro_costo === CENTRO_GENERAL ? <span className="text-ink-soft">{f.centroNombre}</span> : <span className="font-semibold text-realce">{f.centroNombre}</span> },
-    { clave: "detalle", titulo: "Detalle", celda: (f) => <><span className="block font-semibold text-ink">{f.descripcion}</span><span className="text-xs text-ink-soft">{f.proveedor}{f.documento ? ` · ${f.documento}` : ""}</span></> },
+    { clave: "detalle", titulo: "Detalle", celda: (f) => <><span className="block font-semibold text-ink">{f.descripcion}</span><span className="text-xs text-ink-soft">{f.proveedor}{f.documento ? ` · ${f.ordenId ? "Orden " : ""}${f.documento}` : ""}</span></> },
     { clave: "estado", titulo: "Pago", celda: (f) => <span className={f.estado === "pagado" ? "text-exito" : "text-alerta"}>{f.estado === "pagado" ? "Pagado" : "Pendiente"}</span> },
     { clave: "neto", titulo: "Neto", derecha: true, celda: (f) => formatearPesos(f.neto) },
     { clave: "iva", titulo: "IVA", derecha: true, celda: (f) => formatearPesos(f.iva) },
-    { clave: "acciones", titulo: "Acciones", celda: (f) => <div className="flex gap-3 whitespace-nowrap">{editar && <button type="button" onClick={() => editar(f)} className="font-semibold text-cyan-deep hover:underline">Editar</button>}<button type="button" onClick={() => verHistorial(f)} className="text-ink-soft hover:underline">Historial</button></div> },
+    { clave: "acciones", titulo: "Acciones", celda: (f) => f.ordenId ? <Link href="/abastecimiento/ordenes/" title="Este egreso sale de una orden de compra: se corrige en la orden." className="whitespace-nowrap font-semibold text-cyan-deep hover:underline">Ver en Órdenes</Link> : <div className="flex gap-3 whitespace-nowrap">{editar && <button type="button" onClick={() => editar(f)} className="font-semibold text-cyan-deep hover:underline">Editar</button>}<button type="button" onClick={() => verHistorial(f)} className="text-ink-soft hover:underline">Historial</button></div> },
   ];
 }
 

@@ -61,7 +61,7 @@ type Datos = {
 async function cargar(): Promise<Datos> {
   const [resumen, contratos, categorias, proveedores, envios] = await Promise.all([
     cargarResumenOrdenes(),
-    cargarContratosBreve(),
+    cargarContratosBreve({ conOficina: true }),
     supabase.from("categorias_costo").select("id, nombre, contrato_id").order("orden"),
     cargarProveedores(),
     cargarEnvios(),

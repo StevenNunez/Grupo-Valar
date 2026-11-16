@@ -17,8 +17,10 @@ import {
 } from "../ui/Formulario";
 import { etiquetaDe, type Articulo } from "@/lib/articulos";
 import { actualizar, crear, eliminar } from "@/lib/crud";
-import { opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
+import { esOficina, opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
+import { cargarCatalogoOficina, CENTRO_GENERAL } from "@/lib/oficina-central";
 import {
+  cargarCentroDeSolped,
   cargarItemsDeSolped,
   prioridades,
   siguienteNumeroSolped,
@@ -46,6 +48,10 @@ import { CampoConPagnol, unidadDesdePagnol } from "../ui/CampoConPagnol";
  *
  * Sí lleva el tipo de gasto, que es el campo que decide si lo que se compre va a
  * castigar el margen o se le va a recuperar al mandante.
+ *
+ * OFICINA CENTRAL (0122) se elige donde va el contrato. Ahí la solicitud no
+ * lleva anexo ni tipo de gasto —no hay mandante a quien cobrarle—: lleva UN
+ * centro de costo para toda la solicitud y cada ítem su categoría de oficina.
  */
 
 const claseCelda =
@@ -167,6 +173,30 @@ export function FormularioSolped({
   const [lineas, setLineas] = useState<Linea[]>(editando ? [] : [lineaVacia(0)]);
   const [eliminadas, setEliminadas] = useState<string[]>([]);
 
+  /* Oficina Central: el centro de costo de toda la solicitud y, para los ítems,
+     las categorías de oficina. El catálogo se pide recién cuando se elige. */
+  const oficina = esOficina(f.datos.contrato_id);
+  const eraOficina = esOficina(solped?.contratoId);
+  const [centro, setCentro] = useState(CENTRO_GENERAL);
+  const [catalogoOficina, setCatalogoOficina] = useState<Awaited<ReturnType<typeof cargarCatalogoOficina>> | null>(null);
+  useEffect(() => {
+    if (!oficina || catalogoOficina) return;
+    let vigente = true;
+    cargarCatalogoOficina()
+      .then((c) => vigente && setCatalogoOficina(c))
+      .catch(() => vigente && setCatalogoOficina({ categorias: [], centros: [] }));
+    return () => {
+      vigente = false;
+    };
+  }, [oficina, catalogoOficina]);
+
+  /* Las categorías de un contrato no son las de Oficina Central: al pasar de uno
+     a la otra, las ya elegidas en los ítems dejan de valer. */
+  function cambiarContrato(id: string) {
+    if (esOficina(id) !== oficina) setLineas((ls) => ls.map((l) => ({ ...l, categoria_id: "" })));
+    f.cambiar("contrato_id", id);
+  }
+
   const borrado = useBorrado("solped", solped?.id, () => {
     alGuardado();
     alCerrar();
@@ -175,6 +205,8 @@ export function FormularioSolped({
   useEffect(() => {
     if (!solped) return;
     let vigente = true;
+
+    if (eraOficina) void cargarCentroDeSolped(solped.id).then((c) => vigente && setCentro(c));
 
     cargarItemsDeSolped(solped.id).then((items) => {
       if (!vigente) return;
@@ -185,7 +217,7 @@ export function FormularioSolped({
           descripcion: i.descripcion,
           unidad: i.unidad,
           cantidad: i.cantidad,
-          categoria_id: i.categoriaId ?? "",
+          categoria_id: (eraOficina ? i.categoriaOficina : i.categoriaId) ?? "",
           observacion: i.observacion ?? "",
           pagnol_material_id: i.pagnolMaterialId ?? "",
           pagnol_codigo: "",
@@ -202,14 +234,25 @@ export function FormularioSolped({
   }, []);
 
   const delContrato = categorias.filter((c) => c.contratoId === f.datos.contrato_id);
-  const opcionesCategoria = [
-    { id: "", titulo: "— Sin categoría —" },
-    // Una categoría aparece una vez, aunque la vista traiga una fila por mes.
-    ...[...new Map(delContrato.map((c) => [c.categoriaId, c])).values()].map((c) => ({
-      id: c.categoriaId,
-      titulo: c.categoria,
-    })),
-  ];
+  const opcionesCategoria = oficina
+    ? [
+        { id: "", titulo: "— Sin categoría —" },
+        // Las apagadas no se ofrecen, salvo la que el ítem ya tenía.
+        ...(catalogoOficina?.categorias ?? [])
+          .filter((c) => c.activa || lineas.some((l) => l.categoria_id === c.id))
+          .map((c) => ({ id: c.id, titulo: c.titulo })),
+      ]
+    : [
+        { id: "", titulo: "— Sin categoría —" },
+        // Una categoría aparece una vez, aunque la vista traiga una fila por mes.
+        ...[...new Map(delContrato.map((c) => [c.categoriaId, c])).values()].map((c) => ({
+          id: c.categoriaId,
+          titulo: c.categoria,
+        })),
+      ];
+  const opcionesCentro = (catalogoOficina?.centros ?? [])
+    .filter((c) => c.activo || c.id === centro)
+    .map((c) => ({ id: c.id, titulo: c.nombre }));
 
   const sinCategoria = lineas.filter((l) => l.descripcion.trim() && !l.categoria_id).length;
 
@@ -238,7 +281,8 @@ export function FormularioSolped({
                 articulo_id: articulo.id,
                 descripcion: articulo.nombre,
                 unidad: articulo.unidad,
-                categoria_id: articulo.categoriaSugeridaId ?? l.categoria_id,
+                // La categoría sugerida del catálogo es de contrato: en Oficina Central no aplica.
+                categoria_id: oficina ? l.categoria_id : articulo.categoriaSugeridaId ?? l.categoria_id,
               }
             : { ...l, descripcion: texto, articulo_id: "" },
       ),
@@ -263,10 +307,18 @@ export function FormularioSolped({
       ...campos,
       solicitante_cargo: campos.solicitante_cargo.trim() || null,
       area: campos.area.trim() || null,
-      anexo_id: campos.anexo_id || null,
+      anexo_id: oficina ? null : campos.anexo_id || null,
       fecha_requerida: campos.fecha_requerida || null,
       observaciones: campos.observaciones.trim() || null,
       ...(editando ? {} : { solicitante_id: usuario.id }),
+      /* Oficina Central: un centro para toda la solicitud, sin anexo ni mandante.
+         En un contrato la columna no se manda (así guardar no depende de la 0122),
+         salvo para vaciarla si la solicitud era de Oficina Central. */
+      ...(oficina
+        ? { centro_costo: centro, tipo_gasto: "ordinario" as const }
+        : eraOficina
+          ? { centro_costo: null }
+          : {}),
     };
 
     const solpedId = editando
@@ -292,7 +344,8 @@ export function FormularioSolped({
             descripcion: l.descripcion.trim(),
             unidad: l.unidad.trim() || "un",
             cantidad: l.cantidad || 1,
-            categoria_id: l.categoria_id || null,
+            categoria_id: oficina ? null : l.categoria_id || null,
+            ...(oficina ? { categoria_oficina: l.categoria_id || null } : eraOficina ? { categoria_oficina: null } : {}),
             observacion: l.observacion.trim() || null,
           };
 
@@ -338,12 +391,24 @@ export function FormularioSolped({
             />
 
             <CampoSeleccion
-              etiqueta="Contrato"
+              etiqueta="Contrato u Oficina Central"
               requerido
               opciones={opcionesDeContrato(contratos)}
               {...f.campo("contrato_id")}
+              alCambiar={cambiarContrato}
             />
-            <SelectorAnexo contratoId={f.datos.contrato_id} valor={f.datos.anexo_id} alCambiar={(v) => f.cambiar("anexo_id", v)} />
+            {oficina ? (
+              <CampoSeleccion
+                etiqueta="Centro de costo"
+                requerido
+                ayuda="Toda la solicitud va a un solo centro. Se administran en Oficina Central → Categorías y centros."
+                opciones={opcionesCentro.length > 0 ? opcionesCentro : [{ id: centro, titulo: "General" }]}
+                valor={centro}
+                alCambiar={setCentro}
+              />
+            ) : (
+              <SelectorAnexo contratoId={f.datos.contrato_id} valor={f.datos.anexo_id} alCambiar={(v) => f.cambiar("anexo_id", v)} />
+            )}
 
             <CampoTexto
               etiqueta="Solicita"
@@ -374,15 +439,17 @@ export function FormularioSolped({
               {...f.campo("fecha_requerida")}
             />
 
-            <Ancho>
-              <CampoSeleccion
-                etiqueta="Tipo de gasto"
-                requerido
-                opciones={tiposGasto}
-                ayuda="Reembolsable = se le cobra al mandante y no descuenta margen. Es el mismo campo que decide la rentabilidad del contrato."
-                {...f.campo("tipo_gasto")}
-              />
-            </Ancho>
+            {!oficina && (
+              <Ancho>
+                <CampoSeleccion
+                  etiqueta="Tipo de gasto"
+                  requerido
+                  opciones={tiposGasto}
+                  ayuda="Reembolsable = se le cobra al mandante y no descuenta margen. Es el mismo campo que decide la rentabilidad del contrato."
+                  {...f.campo("tipo_gasto")}
+                />
+              </Ancho>
+            )}
 
             <Ancho>
               <CampoTexto
@@ -400,8 +467,10 @@ export function FormularioSolped({
                 <h3 className="font-display text-base font-semibold text-ink">Lo que se pide</h3>
                 {sinCategoria > 0 && (
                   <p className="mt-1 text-xs text-alerta">
-                    {sinCategoria} {sinCategoria === 1 ? "ítem" : "ítems"} sin categoría: ese
-                    gasto no va a aparecer en el análisis de rentabilidad.
+                    {sinCategoria} {sinCategoria === 1 ? "ítem" : "ítems"} sin categoría:{" "}
+                    {oficina
+                      ? "ese gasto va a quedar en «Compras» de Oficina Central."
+                      : "ese gasto no va a aparecer en el análisis de rentabilidad."}
                   </p>
                 )}
               </div>

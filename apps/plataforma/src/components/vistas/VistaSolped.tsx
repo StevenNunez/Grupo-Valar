@@ -102,7 +102,7 @@ type Datos = {
 
 async function cargar(): Promise<Datos> {
   const [contratos, dashboard, articulos, pendientes, numeros, resumen] = await Promise.all([
-    cargarContratosBreve(),
+    cargarContratosBreve({ conOficina: true }),
     cargarDashboard(),
     /* El catálogo no puede tumbar la pantalla: si la 0027 todavía no está
        aplicada, la solicitud se sigue armando escribiendo a mano. */

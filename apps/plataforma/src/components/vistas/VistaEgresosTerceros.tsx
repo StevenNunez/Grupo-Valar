@@ -19,7 +19,7 @@ import { useConsulta } from "@/lib/consulta";
 import { usePuede, useUsuario } from "@/lib/sesion";
 import { cargarOrdenes, type Orden } from "@/lib/ordenes";
 import { cargarAnexos, type Anexo } from "@/lib/anexos";
-import { cargarContratosBreve, type ContratoBreve } from "@/lib/contratos";
+import { cargarContratosBreve, esOficina, type ContratoBreve } from "@/lib/contratos";
 import { opcionesDeUnidad, unidadDe, unidades } from "@/lib/unidades";
 import {
   cargarCompras,
@@ -158,7 +158,12 @@ type Apoyo = {
 
 async function cargarLista(): Promise<Lista> {
   const [egresos, ordenes, anexos] = await Promise.all([cargarEgresosTerceros(), cargarOrdenes(), cargarAnexos().catch(() => [] as Anexo[])]);
-  return { egresos, ordenes, anexos };
+  // Lo de Oficina Central (0122) no es egreso de un contrato: se ve en su pantalla.
+  return {
+    egresos: egresos.filter((e) => !esOficina(e.contratoId)),
+    ordenes: ordenes.filter((o) => !esOficina(o.contratoId)),
+    anexos,
+  };
 }
 
 async function cargarApoyo(): Promise<Apoyo> {
@@ -170,7 +175,7 @@ async function cargarApoyo(): Promise<Apoyo> {
     cargarProveedores(),
     cargarCategorias(),
   ]);
-  return { compras, servicios, contratos, campos, proveedores, categorias };
+  return { compras: compras.filter((c) => !esOficina(c.contratoId)), servicios, contratos, campos, proveedores, categorias };
 }
 
 /** "todos" o un mes como "2026-08-01". */

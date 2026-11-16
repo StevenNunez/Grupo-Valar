@@ -31,7 +31,7 @@ type Datos = { contratos: ContratoBreve[]; pendientes: Aviso[]; borradores: Borr
 
 async function cargar(): Promise<Datos> {
   const [contratos, pendientes, borradores] = await Promise.all([
-    cargarContratosBreve(),
+    cargarContratosBreve({ conOficina: true }),
     supabase
       .from("pagnol_webhooks_recibidos")
       .select("webhook_id, recibido_en, error, payload")

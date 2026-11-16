@@ -39,7 +39,7 @@ async function cargar(): Promise<Datos> {
   const [panoles, asociaciones, contratos, pendientes, borradores] = await Promise.all([
     listarPanolesDePagnol(),
     supabase.from("pagnol_panoles_contratos").select("panol_id, contrato_id"),
-    cargarContratosBreve(),
+    cargarContratosBreve({ conOficina: true }),
     supabase
       .from("pagnol_webhooks_recibidos")
       .select("webhook_id, recibido_en, error, payload")

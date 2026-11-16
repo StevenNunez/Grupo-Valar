@@ -24,6 +24,18 @@ export const estadosContrato: { id: EstadoContrato; titulo: string }[] = [
   { id: "cerrado", titulo: "Cerrado" },
 ];
 
+/**
+ * Oficina Central dentro de Abastecimiento (0122). No es un contrato: es el
+ * centro de costo interno contra el que se piden y se compran las cosas de la
+ * casa matriz. Vive en `contratos` con este id fijo para que la cadena de
+ * compra —solicitud, cotización, orden, recepción, factura, pago— funcione
+ * igual, pero Control de Gestión no lo trata como contrato: sus órdenes caen
+ * en los egresos de Oficina Central.
+ */
+export const CONTRATO_OFICINA = "OFICINA";
+
+export const esOficina = (contratoId: string | null | undefined) => contratoId === CONTRATO_OFICINA;
+
 /** Lo mínimo para llenar un selector de contrato en los formularios. */
 export type ContratoBreve = {
   id: string;
@@ -38,14 +50,22 @@ export type ContratoBreve = {
   camposEdp: string[];
 };
 
-export async function cargarContratosBreve(): Promise<ContratoBreve[]> {
+/**
+ * Los contratos para un selector. Oficina Central (0122) solo entra si se
+ * pide: Abastecimiento compra para ella; Control de Gestión no la lista.
+ */
+export async function cargarContratosBreve({ conOficina = false } = {}): Promise<ContratoBreve[]> {
   const { data, error } = await supabase
     .from("contratos")
     .select("id, nombre, nombre_corto, cliente, faena, plantilla_edp, edp_campos")
     .order("id");
 
   if (error) throw new Error(error.message);
-  return (data ?? []).map((fila) => ({
+  /* Los contratos primero y Oficina Central al final: un formulario que parte
+     con el primero de la lista sigue partiendo con un contrato. */
+  const filas = (data ?? []).filter((fila) => conOficina || !esOficina(fila.id));
+  filas.sort((a, b) => Number(esOficina(a.id)) - Number(esOficina(b.id)));
+  return filas.map((fila) => ({
     id: fila.id,
     nombre: fila.nombre,
     nombreCorto: (fila.nombre_corto as string | null) ?? "",
@@ -93,7 +113,7 @@ export function opcionesDeContrato(contratos: ContratoBreve[]) {
   return contratos.map((c) => ({
     id: c.id,
     // Con alias se elige por el alias; sin él, como siempre.
-    titulo: c.nombreCorto || `${c.id} · ${c.nombre}`,
+    titulo: esOficina(c.id) ? c.nombre : c.nombreCorto || `${c.id} · ${c.nombre}`,
   }));
 }
 
@@ -132,7 +152,8 @@ export async function cargarContratos(): Promise<Contrato[]> {
     cerrado_en: string | null; cierre_observaciones: string | null;
   };
 
-  return ((detalle.data ?? []) as Fila[]).map((c) => ({
+  // Oficina Central (0122) no es un contrato: no va en la lista ni en sus cifras.
+  return ((detalle.data ?? []) as Fila[]).filter((c) => !esOficina(c.id)).map((c) => ({
     id: c.id,
     plantillaEdp: plantillas.get(c.id) ?? "general",
     camposEdp: (config.get(c.id)?.edp_campos as string[] | null) ?? [],

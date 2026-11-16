@@ -16,41 +16,48 @@ import {
   useFormulario,
 } from "../ui/Formulario";
 import { Etiqueta } from "../ui/Chip";
-import { Combo } from "../ui/Combo";
-import {
-  condicionDeProveedor,
-  formatearRut,
-  opcionesCondicionPago,
-  type Proveedor,
-} from "@/lib/abastecimiento";
+import { condicionDeProveedor, opcionesCondicionPago, type Proveedor } from "@/lib/abastecimiento";
 import { cargarAnexos, proyectoDeAnexo, type Anexo } from "@/lib/anexos";
 import { SelectorAnexo } from "../ui/SelectorAnexo";
-import { actualizar, crear, eliminar } from "@/lib/crud";
-import { supabase } from "@/lib/supabase";
-import { cancelarOrdenEnPagnol } from "@/lib/pagnol/navegador";
-import { opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
+import { esOficina, opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
+import { cargarCatalogoOficina, CENTRO_GENERAL } from "@/lib/oficina-central";
 import { tiposCompra } from "@/lib/egresos";
-import { emisorOC } from "@/lib/empresa";
-import { formatearPesos, formatearPesosUnitario, formatearUf } from "@/lib/formato";
+import { formatearPesosUnitario } from "@/lib/formato";
 import { useUfHoy } from "@/lib/uf";
 import {
   cargarLineasDeOrden,
   eliminarOrdenCompleta,
   cargarDescuentoDeOrden,
   cargarOrdenEnUf,
+  cargarOficinaDeOrden,
   ufAPrecio,
   eliminarOrdenConItems,
   estadosOrden,
   precioConDescuento,
   siguienteNumero,
   ultimoTelefonoDeEmisor,
-  type EstadoOrden,
   type Orden,
 } from "@/lib/ordenes";
 import { leerPegado, type FilaPegada } from "@/lib/pegado";
-import { CampoConPagnol, unidadDesdePagnol } from "../ui/CampoConPagnol";
 import { CampoPrecio } from "../ui/CampoPrecio";
 import { LectorCotizacionOrden, type ResultadoLectura } from "./LectorCotizacionOrden";
+import {
+  borradorDe,
+  estadoManual,
+  leerGuardado,
+  lineaPegada,
+  lineaVacia,
+  olvidarGuardado,
+  tieneAlgo,
+  type BorradorOrden,
+  type Guardado,
+  type Linea,
+} from "./orden/borrador";
+import { guardarOrden } from "./orden/guardar";
+import { PanelPegado } from "./orden/PanelPegado";
+import { AvisoPendiente, DatoCopiado, Seccion, SeccionProveedor } from "./orden/piezas";
+import { TablaLineas } from "./orden/TablaLineas";
+import { TotalesOrden } from "./orden/TotalesOrden";
 import type { Usuario } from "@/lib/sesion";
 
 /**
@@ -59,179 +66,6 @@ import type { Usuario } from "@/lib/sesion";
  * Los ítems se editan acá y no en un diálogo aparte porque una OC sin sus
  * líneas no significa nada: el monto, el IVA y el total salen de ellas.
  */
-
-const hoy = () => new Date().toISOString().slice(0, 10);
-
-type BorradorOrden = {
-  id: string;
-  contrato_id: string;
-  numero: string;
-  proyecto: string;
-  /** Contra qué anexo se compra (0059); vacío = contrato base. */
-  anexo_id: string;
-  proveedor_id: string;
-  proveedor: string;
-  rut_proveedor: string;
-  direccion_proveedor: string;
-  ciudad_proveedor: string;
-  comuna_proveedor: string;
-  contacto: string;
-  correo_contacto: string;
-  telefono_contacto: string;
-  emisor_nombre: string;
-  emisor_correo: string;
-  emisor_telefono: string;
-  fecha_emision: string;
-  fecha_requerida: string;
-  lugar_entrega: string;
-  condiciones_pago: string;
-  solicitado_por: string;
-  retira: string;
-  estado: EstadoOrden;
-  observaciones: string;
-};
-
-/** Línea en edición. Vive en memoria hasta que se guarda la orden. */
-type Linea = {
-  id: string;
-  descripcion: string;
-  unidad: string;
-  cantidad: number;
-  precio_unitario: number;
-  /** Precio unitario cotizado en UF (solo si la orden es en UF). */
-  precio_uf: number;
-  tipo: "ordinario" | "reembolsable";
-  categoria_id: string;
-  /** El material en Pagnol, si se eligió de su catálogo. Solo la referencia. */
-  pagnol_material_id: string;
-  /** Su código, para mostrarlo bajo la descripción mientras se edita. */
-  pagnol_codigo: string;
-  /** Los que ya existen en la base se actualizan; los nuevos se insertan. */
-  nuevo: boolean;
-};
-
-/* ── Lo que se estaba armando ─────────────────────────────────────────────────
-   Una OC nueva se guarda en el navegador mientras se escribe. Si el diálogo se
-   cierra sin guardar —un clic de más, la pestaña que se cae—, al volver a abrir
-   "Nueva orden" se ofrece recuperarla. Se borra al crear la orden. */
-
-type Guardado = { datos: BorradorOrden; lineas: Linea[]; cuando: string; enUf?: boolean; valorUf?: number };
-
-function leerGuardado(clave: string | null): Guardado | null {
-  if (!clave) return null;
-  try {
-    const texto = localStorage.getItem(clave);
-    return texto ? (JSON.parse(texto) as Guardado) : null;
-  } catch {
-    return null;
-  }
-}
-
-function olvidarGuardado(clave: string | null) {
-  if (!clave) return;
-  try {
-    localStorage.removeItem(clave);
-  } catch {
-    // Sin almacenamiento no hay nada que borrar.
-  }
-}
-
-/** Vale la pena guardarla si ya tiene proveedor o algún ítem escrito. */
-const tieneAlgo = (d: BorradorOrden, lineas: Linea[]) =>
-  !!d.proveedor_id || lineas.some((l) => l.descripcion.trim() || l.precio_unitario > 0 || l.precio_uf > 0);
-
-function borradorDe(
-  orden: Orden | null,
-  contratos: ContratoBreve[],
-  usuario: Usuario,
-): BorradorOrden {
-  if (!orden) {
-    return {
-      id: "",
-      contrato_id: contratos[0]?.id ?? "",
-      numero: "",
-      proyecto: "",
-      anexo_id: "",
-      proveedor_id: "",
-      proveedor: "",
-      rut_proveedor: "",
-      direccion_proveedor: "",
-      ciudad_proveedor: "",
-      comuna_proveedor: "",
-      contacto: "",
-      correo_contacto: "",
-      telefono_contacto: "",
-      // Quien emite es quien tiene la sesión abierta: crear una OC ya exige el
-      // permiso, así que no hay nada que elegir. Solo el teléfono se escribe.
-      emisor_nombre: usuario.nombre,
-      emisor_correo: usuario.correo,
-      emisor_telefono: "",
-      fecha_emision: hoy(),
-      fecha_requerida: "",
-      lugar_entrega: "",
-      condiciones_pago: emisorOC.condicionesPagoPorDefecto,
-      solicitado_por: "",
-      retira: "",
-      estado: "borrador",
-      observaciones: "",
-    };
-  }
-  return {
-    id: orden.id,
-    contrato_id: orden.contratoId,
-    numero: orden.numero,
-    proyecto: orden.proyecto ?? "",
-    anexo_id: orden.anexoId ?? "",
-    proveedor_id: orden.proveedorId ?? "",
-    proveedor: orden.proveedor,
-    rut_proveedor: orden.rutProveedor ?? "",
-    direccion_proveedor: orden.direccionProveedor ?? "",
-    ciudad_proveedor: orden.ciudadProveedor ?? "",
-    comuna_proveedor: orden.comunaProveedor ?? "",
-    contacto: orden.contacto ?? "",
-    correo_contacto: orden.correoContacto ?? "",
-    telefono_contacto: orden.telefonoContacto ?? "",
-    // Una orden ya emitida conserva a quien la emitió. Las anteriores a este
-    // campo, que lo tienen vacío, lo toman de quien la está corrigiendo.
-    emisor_nombre: orden.emisorNombre || usuario.nombre,
-    emisor_correo: orden.emisorNombre ? orden.emisorCorreo ?? "" : usuario.correo,
-    emisor_telefono: orden.emisorTelefono ?? "",
-    fecha_emision: orden.fechaEmision,
-    fecha_requerida: orden.fechaRequerida ?? "",
-    lugar_entrega: orden.lugarEntrega ?? "",
-    condiciones_pago: orden.condicionesPago ?? "",
-    solicitado_por: orden.solicitadoPor ?? "",
-    retira: orden.retira ?? "",
-    estado: orden.estado,
-    observaciones: orden.observaciones ?? "",
-  };
-}
-
-function lineaVacia(n: number): Linea {
-  return {
-    id: `nueva-${n}-${Date.now()}`,
-    descripcion: "",
-    unidad: "UN",
-    cantidad: 1,
-    precio_unitario: 0,
-    precio_uf: 0,
-    tipo: "ordinario",
-    categoria_id: "",
-    pagnol_material_id: "",
-    pagnol_codigo: "",
-    nuevo: true,
-  };
-}
-
-function lineaPegada(fila: FilaPegada, n: number): Linea {
-  return {
-    ...lineaVacia(n),
-    descripcion: fila.descripcion,
-    unidad: fila.unidad,
-    cantidad: fila.cantidad,
-    precio_unitario: fila.precioUnitario,
-  };
-}
 
 export function FormularioOrden({
   orden,
@@ -285,6 +119,29 @@ export function FormularioOrden({
     if (uf && valorUf === 0 && ufHoy) setValorUf(ufHoy.valorHoy);
   }
 
+  /* Oficina Central (0122): la orden va a UN centro de costo y cada línea lleva
+     su categoría de oficina. El catálogo se pide recién cuando se elige. */
+  const oficina = esOficina(f.datos.contrato_id);
+  const eraOficina = esOficina(orden?.contratoId);
+  const [centro, setCentro] = useState(CENTRO_GENERAL);
+  const [catalogoOficina, setCatalogoOficina] = useState<Awaited<ReturnType<typeof cargarCatalogoOficina>> | null>(null);
+  useEffect(() => {
+    if (!oficina || catalogoOficina) return;
+    let vigente = true;
+    cargarCatalogoOficina()
+      .then((c) => vigente && setCatalogoOficina(c))
+      .catch(() => vigente && setCatalogoOficina({ categorias: [], centros: [] }));
+    return () => {
+      vigente = false;
+    };
+  }, [oficina, catalogoOficina]);
+  /* Las categorías de un contrato no son las de Oficina Central: al pasar de uno
+     a la otra, las ya elegidas en las líneas dejan de valer. */
+  function cambiarContrato(id: string) {
+    if (esOficina(id) !== oficina) setLineas((ls) => ls.map((l) => ({ ...l, categoria_id: "" })));
+    f.setDatos((d) => ({ ...d, contrato_id: id, anexo_id: esOficina(id) ? "" : d.anexo_id }));
+  }
+
   const claveGuardado = editando ? null : `oc-borrador:${usuario.id}:nueva`;
   /* La que quedó de antes, mientras no se decida qué hacer con ella. Hasta
      entonces no se pisa: lo nuevo se guarda recién cuando se recupera o se
@@ -335,8 +192,14 @@ export function FormularioOrden({
     let vigente = true;
 
     if (orden) {
-      Promise.all([cargarLineasDeOrden(orden.id), cargarDescuentoDeOrden(orden.id), cargarOrdenEnUf(orden.id)]).then(([items, desc, uf]) => {
+      Promise.all([
+        cargarLineasDeOrden(orden.id),
+        cargarDescuentoDeOrden(orden.id),
+        cargarOrdenEnUf(orden.id),
+        eraOficina ? cargarOficinaDeOrden(orden.id) : null,
+      ]).then(([items, desc, uf, deOficina]) => {
         if (!vigente) return;
+        if (deOficina) setCentro(deOficina.centro);
         setEnUf(uf.moneda === "UF");
         setEnUfInicial(uf.moneda === "UF");
         setValorUf(uf.valorUf);
@@ -355,7 +218,7 @@ export function FormularioOrden({
             precio_unitario: desc.listas.get(i.id) ?? i.precioUnitario,
             precio_uf: uf.preciosUf.get(i.id) ?? 0,
             tipo: i.tipo,
-            categoria_id: i.categoriaId ?? "",
+            categoria_id: (deOficina ? deOficina.categorias.get(i.id) : i.categoriaId) ?? "",
             pagnol_material_id: i.pagnolMaterialId ?? "",
             pagnol_codigo: "",
             nuevo: false,
@@ -428,11 +291,19 @@ export function FormularioOrden({
     }));
   }
 
-  const delContrato = categorias.filter((c) => c.contratoId === f.datos.contrato_id);
+  // Las categorías que se ofrecen: las del contrato o, en Oficina Central, las de oficina que están activas.
+  const delContrato = oficina
+    ? (catalogoOficina?.categorias ?? [])
+        .filter((c) => c.activa || lineas.some((l) => l.categoria_id === c.id))
+        .map((c) => ({ id: c.id, nombre: c.titulo }))
+    : categorias.filter((c) => c.contratoId === f.datos.contrato_id);
   const opcionesCategoria = [
     { id: "", titulo: "— Sin categoría —" },
     ...delContrato.map((c) => ({ id: c.id, titulo: c.nombre })),
   ];
+  const opcionesCentro = (catalogoOficina?.centros ?? [])
+    .filter((c) => c.activo || c.id === centro)
+    .map((c) => ({ id: c.id, titulo: c.nombre }));
 
   // Lo que se paga por línea: la lista menos el descuento. Es lo mismo que se guarda.
   // El precio de lista en pesos: el escrito, o el de UF convertido con la UF de la orden.
@@ -525,7 +396,10 @@ export function FormularioOrden({
       id: ordenId,
       fecha_requerida: f.datos.fecha_requerida || null,
       // Lo impreso en «Proyecto» sale del anexo elegido; sin anexo, la base.
-      anexo_id: f.datos.anexo_id || null,
+      anexo_id: oficina ? null : f.datos.anexo_id || null,
+      // Oficina Central: un centro para toda la orden. En un contrato la columna no se
+      // manda (así guardar no depende de la 0122), salvo para vaciarla si lo era.
+      ...(oficina ? { centro_costo: centro } : eraOficina ? { centro_costo: null } : {}),
       proyecto: (() => {
         const anexo = anexos.lista.find((a) => a.id === f.datos.anexo_id);
         return anexo ? proyectoDeAnexo(anexo) : null;
@@ -539,66 +413,30 @@ export function FormularioOrden({
       ...(cotizacion.trim() || cotizacionInicial ? { numero_cotizacion: cotizacion.trim() || null } : {}),
     };
 
-    f.enviar(async () => {
-      if (editando) {
-        await actualizar("ordenes_compra_proveedor", orden.id, cabecera);
-        // Fase 5: una orden anulada deja de esperarse en Pagnol (sin efecto si nunca se anunció).
-        if (cabecera.estado === "anulada" && orden.estado !== "anulada") void cancelarOrdenEnPagnol(orden.id);
-      } else {
-        await crear("ordenes_compra_proveedor", cabecera);
-        void respaldos.subirA(cabecera.id);
-      }
-
-      for (const borrada of eliminadas) await eliminar("items_compra", borrada);
-
-      /* El código de un ítem nuevo sigue al mayor correlativo que ya existe en la
-         orden (o que se acaba de borrar), no a su posición en pantalla: si se
-         quitó un ítem o la orden vino de una cotización, contar posiciones
-         repite un código ya usado y la base rechaza el guardado. */
-      const { data: enBase } = await supabase
-        .from("items_compra")
-        .select("id")
-        .like("id", `IT-${ordenId}-%`);
-      const usados = [
-        ...lineas.filter((l) => !l.nuevo).map((l) => l.id),
-        ...eliminadas,
-        ...((enBase ?? []) as { id: string }[]).map((i) => i.id),
-      ];
-      let n = usados.reduce((mayor, id) => Math.max(mayor, Number(/-(\d+)$/.exec(id)?.[1] ?? 0)), 0);
-      for (const l of lineas) {
-        if (!l.descripcion.trim()) continue;
-        if (l.nuevo) n += 1;
-        const fila = {
-          contrato_id: cabecera.contrato_id,
-          orden_id: ordenId,
-          categoria_id: l.categoria_id || null,
-          pagnol_material_id: l.pagnol_material_id || null,
-          descripcion: l.descripcion.trim(),
-          unidad: l.unidad || "UN",
-          cantidad: l.cantidad || 1,
-          // Con descuento, el precio que se paga es el de lista menos el descuento; la lista queda aparte.
-          precio_unitario: precioConDescuento(listaEnPesos(l), descuento),
-          ...(descuento > 0 || descuentoInicial > 0 ? { precio_lista: descuento > 0 ? listaEnPesos(l) : null } : {}),
-          // El IVA de la línea sigue la regla general, salvo en la orden exenta.
-          iva: exenta ? 0 : ivaDe(l.cantidad * precioConDescuento(listaEnPesos(l), descuento)),
-          ...(enUf || enUfInicial ? { precio_uf: enUf ? l.precio_uf : null } : {}),
-          tipo: l.tipo,
-        };
-
-        if (l.nuevo) {
-          await crear("items_compra", {
-            ...fila,
-            id: `IT-${ordenId}-${String(n).padStart(3, "0")}`,
-          });
-        } else {
-          await actualizar("items_compra", l.id, fila);
-        }
-      }
-    }, () => {
-      olvidarGuardado(claveGuardado);
-      alGuardado(ordenId);
-      alCerrar();
-    });
+    f.enviar(
+      () =>
+        guardarOrden({
+          orden,
+          ordenId,
+          cabecera,
+          lineas,
+          eliminadas,
+          exenta,
+          descuento,
+          descuentoInicial,
+          enUf,
+          enUfInicial,
+          oficina,
+          eraOficina,
+          listaEnPesos,
+          alCrear: (id) => void respaldos.subirA(id),
+        }),
+      () => {
+        olvidarGuardado(claveGuardado);
+        alGuardado(ordenId);
+        alCerrar();
+      },
+    );
   }
 
   return (
@@ -616,30 +454,7 @@ export function FormularioOrden({
       >
         <form onSubmit={onSubmit}>
           {pendiente && (
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-mist bg-cyan/5 px-6 py-3">
-              <p className="text-sm text-ink">
-                Tienes una orden sin terminar
-                {pendiente.datos.proveedor ? <> para <strong>{pendiente.datos.proveedor}</strong></> : null}
-                {" "}({pendiente.lineas.filter((l) => l.descripcion.trim()).length} ítems), del{" "}
-                {new Date(pendiente.cuando).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" })}.
-              </p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={recuperar}
-                  className="rounded-full bg-cyan-deep px-4 py-1.5 text-xs font-semibold text-white hover:bg-cyan-hondo"
-                >
-                  Recuperarla
-                </button>
-                <button
-                  type="button"
-                  onClick={descartarPendiente}
-                  className="rounded-full border border-mist-deep px-4 py-1.5 text-xs font-semibold text-ink-soft hover:border-ink hover:text-ink"
-                >
-                  Empezar de cero
-                </button>
-              </div>
-            </div>
+            <AvisoPendiente pendiente={pendiente} alRecuperar={recuperar} alDescartar={descartarPendiente} />
           )}
           <Campos>
             <CampoTexto
@@ -655,12 +470,24 @@ export function FormularioOrden({
             />
 
             <CampoSeleccion
-              etiqueta="Contrato"
+              etiqueta="Contrato u Oficina Central"
               requerido
               ayuda="El centro de costo de la compra. De acá sale lo que se imprime como proyecto."
               opciones={opcionesDeContrato(contratos)}
               {...f.campo("contrato_id")}
+              alCambiar={cambiarContrato}
             />
+
+            {oficina && (
+              <CampoSeleccion
+                etiqueta="Centro de costo"
+                requerido
+                ayuda="Toda la orden va a un solo centro de Oficina Central."
+                opciones={opcionesCentro.length > 0 ? opcionesCentro : [{ id: centro, titulo: "General" }]}
+                valor={centro}
+                alCambiar={setCentro}
+              />
+            )}
 
             {/* El proyecto impreso NO se pregunta: el CECO es el contrato. Solo
                 aparece cuando el contrato tiene anexos vigentes, porque ahí sí
@@ -674,53 +501,7 @@ export function FormularioOrden({
             />
           </Campos>
 
-          {/* El proveedor se elige del maestro y sus datos se copian solos.
-              Se copian y no se dejan apuntando: la OC es un documento que se
-              imprime y tiene que seguir diciendo lo mismo dentro de dos años,
-              aunque el proveedor se cambie de oficina. Corregirlos acá sería
-              corregir una copia; se corrigen en Proveedores. */}
-          <Seccion titulo="Proveedor">
-            <Ancho>
-              <Combo
-                etiqueta="Proveedor"
-                requerido
-                opciones={proveedores
-                  .filter((p) => p.estado === "activo" || p.estado === "por_completar")
-                  .map((p) => ({
-                    id: p.id,
-                    titulo: p.razonSocial,
-                    nota: [formatearRut(p.rut), ...p.rubros.slice(0, 2)]
-                      .filter(Boolean)
-                      .join(" · "),
-                  }))}
-                marcador="Escribe para buscar entre los proveedores…"
-                ayuda="Los datos se completan solos. Si algo está mal o falta, se arregla en Proveedores y vale para todas las órdenes."
-                valor={f.datos.proveedor_id}
-                alCambiar={(v) => elegirProveedor(v)}
-              />
-            </Ancho>
-
-            {f.datos.proveedor && (
-              <Ancho>
-                <dl className="grid gap-x-6 gap-y-2 rounded-xl border border-mist-deep bg-mist/30 p-4 text-sm sm:grid-cols-2">
-                  <DatoCopiado etiqueta="Razón social">{f.datos.proveedor}</DatoCopiado>
-                  <DatoCopiado etiqueta="RUT">
-                    {f.datos.rut_proveedor ? formatearRut(f.datos.rut_proveedor) : "Sin RUT"}
-                  </DatoCopiado>
-                  <DatoCopiado etiqueta="Dirección">
-                    {[f.datos.direccion_proveedor, f.datos.comuna_proveedor, f.datos.ciudad_proveedor]
-                      .filter(Boolean)
-                      .join(", ") || "—"}
-                  </DatoCopiado>
-                  <DatoCopiado etiqueta="Contacto">
-                    {[f.datos.contacto, f.datos.correo_contacto, f.datos.telefono_contacto]
-                      .filter(Boolean)
-                      .join(" · ") || "—"}
-                  </DatoCopiado>
-                </dl>
-              </Ancho>
-            )}
-          </Seccion>
+          <SeccionProveedor proveedores={proveedores} datos={f.datos} alElegir={elegirProveedor} />
 
           {/* Quien emite no se elige: es quien tiene la sesión, y solo llega
               hasta acá quien tiene permiso para crear órdenes. Se muestra para
@@ -869,51 +650,12 @@ export function FormularioOrden({
             )}
 
             {pegando && (
-              <div className="mb-5 rounded-xl border border-mist-deep bg-mist/30 p-4">
-                <label className="block text-sm font-semibold text-ink" htmlFor="pegado-oc">
-                  Pega las filas de la OC
-                </label>
-                <p className="mt-1 text-xs leading-relaxed text-ink-soft">
-                  En la planilla, selecciona las filas de ítems (de la columna ÍTEM a TOTALES) y cópialas. Las filas vacías y el
-                  encabezado se ignoran. Revisa abajo cómo quedó antes de agregarlas.
-                </p>
-                <textarea
-                  id="pegado-oc"
-                  rows={4}
-                  value={textoPegado}
-                  onChange={(e) => setTextoPegado(e.target.value)}
-                  placeholder={"1\tBOTIN MAXWORK TRAIL. AISL. P, CAFÉ, 40\tUN\t1\t$ 29,900\t$ 29,900"}
-                  className={`${claseCelda} mt-3 font-mono text-xs`}
-                />
-                {filasPegadas.length > 0 && (
-                  <div className="mt-3">
-                    <ul className="max-h-48 overflow-y-auto rounded-lg border border-mist bg-white text-xs">
-                      {filasPegadas.map((fila, i) => (
-                        <li key={i} className="flex justify-between gap-4 border-b border-mist px-3 py-1.5 last:border-0">
-                          <span className="truncate text-ink">{fila.descripcion}</span>
-                          <span className="shrink-0 tabular-nums text-ink-soft">
-                            {fila.cantidad.toLocaleString("es-CL")} {fila.unidad} × {formatearPesosUnitario(fila.precioUnitario)} ={" "}
-                            <strong className="text-ink">{formatearPesos(Math.round(fila.cantidad * fila.precioUnitario))}</strong>
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                    <div className="mt-3 flex items-center justify-between gap-3">
-                      <span className="text-xs text-ink-soft">
-                        {filasPegadas.length} ítems · neto{" "}
-                        {formatearPesos(filasPegadas.reduce((t, x) => t + Math.round(x.cantidad * x.precioUnitario), 0))}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => agregarPegadas(filasPegadas)}
-                        className="rounded-full bg-cyan-deep px-4 py-2 text-xs font-semibold text-white hover:bg-cyan-hondo"
-                      >
-                        Agregar {filasPegadas.length} ítems
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <PanelPegado
+                textoPegado={textoPegado}
+                setTextoPegado={setTextoPegado}
+                filasPegadas={filasPegadas}
+                agregarPegadas={agregarPegadas}
+              />
             )}
 
             {lineas.length > 1 && (
@@ -946,175 +688,28 @@ export function FormularioOrden({
               </div>
             )}
 
-            <div className="overflow-x-auto">
-              <table className="lineas-movil w-full md:min-w-[52rem] border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-mist text-left text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">
-                    <th className="py-2 pr-3">Descripción</th>
-                    <th className="w-40 py-2 pr-3">Categoría</th>
-                    <th className="w-20 py-2 pr-3">UM</th>
-                    <th className="w-24 py-2 pr-3 text-right">Cant.</th>
-                    <th className="w-32 py-2 pr-3 text-right">{enUf ? "P. unitario (UF)" : "P. unitario"}</th>
-                    <th className="w-36 py-2 pr-3">Tipo</th>
-                    <th className="w-28 py-2 text-right">Total</th>
-                    <th className="w-10 py-2" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {lineas.map((l) => (
-                    <tr key={l.id} className="border-b border-mist last:border-0">
-                      <td data-label="Descripción" data-ancho className="py-2 pr-3">
-                        <CampoConPagnol
-                          ariaLabel="Descripción"
-                          valor={l.descripcion}
-                          // Escribir a mano suelta la referencia: ya no es ese material.
-                          alCambiar={(v) =>
-                            setLineas((ls) => ls.map((x) => (x.id === l.id ? { ...x, descripcion: v, pagnol_material_id: "", pagnol_codigo: "" } : x)))
-                          }
-                          alElegir={(m) =>
-                            setLineas((ls) =>
-                              ls.map((x) =>
-                                x.id === l.id
-                                  ? { ...x, descripcion: m.nombre, unidad: unidadDesdePagnol(m.unidad_medida), pagnol_material_id: m.id, pagnol_codigo: m.codigo }
-                                  : x,
-                              ),
-                            )
-                          }
-                          enlazado={l.pagnol_material_id ? l.pagnol_codigo || "enlazado" : null}
-                          onPaste={alPegarEnCelda}
-                          placeholder="Disco de corte 4½″"
-                          className={claseCelda}
-                        />
-                      </td>
-                      <td data-label="Categoría" className="py-2 pr-3">
-                        <select
-                          value={l.categoria_id}
-                          onChange={(e) => cambiar(l.id, "categoria_id", e.target.value)}
-                          className={claseCelda}
-                        >
-                          {opcionesCategoria.map((o) => (
-                            <option key={o.id} value={o.id}>
-                              {o.titulo}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td data-label="UM" className="py-2 pr-3">
-                        <input
-                          value={l.unidad}
-                          onChange={(e) => cambiar(l.id, "unidad", e.target.value)}
-                          className={claseCelda}
-                        />
-                      </td>
-                      <td data-label="Cant." className="py-2 pr-3">
-                        <input
-                          type="number"
-                          min="0"
-                          step="any"
-                          value={l.cantidad}
-                          onChange={(e) => cambiar(l.id, "cantidad", Number(e.target.value) || 0)}
-                          className={`${claseCelda} text-right tabular-nums`}
-                        />
-                      </td>
-                      <td data-label={enUf ? "P. unitario (UF)" : "P. unitario"} className="py-2 pr-3">
-                        <CampoPrecio
-                          valor={enUf ? l.precio_uf : l.precio_unitario}
-                          alCambiar={(n) => cambiar(l.id, enUf ? "precio_uf" : "precio_unitario", n)}
-                          className={`${claseCelda} text-right tabular-nums`}
-                        />
-                        {enUf && l.precio_uf > 0 && valorUf > 0 && (
-                          <p className="mt-0.5 text-right text-xs tabular-nums text-ink-soft">
-                            = {formatearPesosUnitario(listaEnPesos(l))}
-                          </p>
-                        )}
-                      </td>
-                      <td data-label="Tipo" className="py-2 pr-3">
-                        <select
-                          value={l.tipo}
-                          onChange={(e) => cambiar(l.id, "tipo", e.target.value)}
-                          className={claseCelda}
-                        >
-                          {tiposCompra.map((t) => (
-                            <option key={t.id} value={t.id}>
-                              {t.titulo}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td data-label="Total" className="py-2 text-right font-semibold tabular-nums text-ink">
-                        {formatearPesos(Math.round(l.cantidad * listaEnPesos(l)))}
-                        {enUf && l.precio_uf > 0 && (
-                          <p className="text-xs font-normal text-ink-soft">{formatearUf(l.cantidad * l.precio_uf)} UF</p>
-                        )}
-                      </td>
-                      <td data-acciones className="py-2 text-right">
-                        <button
-                          type="button"
-                          onClick={() => quitar(l)}
-                          aria-label="Quitar ítem"
-                          className="rounded-lg p-1.5 text-ink-soft transition-colors hover:bg-peligro-suave hover:text-peligro"
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
-                            <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
-                          </svg>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <TablaLineas
+              lineas={lineas}
+              setLineas={setLineas}
+              opcionesCategoria={opcionesCategoria}
+              enUf={enUf}
+              valorUf={valorUf}
+              listaEnPesos={listaEnPesos}
+              cambiar={cambiar}
+              quitar={quitar}
+              alPegarEnCelda={alPegarEnCelda}
+            />
 
-            <div className="mt-5 flex flex-col items-end gap-1 text-sm">
-              <label className="mb-2 flex cursor-pointer items-center gap-2 text-sm font-semibold text-ink">
-                <input
-                  type="checkbox"
-                  checked={exenta}
-                  onChange={(e) => setExenta(e.target.checked)}
-                  className="h-4 w-4 accent-cyan-deep"
-                />
-                Orden exenta de IVA
-                <span className="text-xs font-normal text-ink-soft">(exámenes médicos, capacitación…)</span>
-              </label>
-              <label className="mb-1 flex items-center gap-2 text-sm font-semibold text-ink">
-                Descuento
-                <input
-                  type="number" min={0} max={99.99} step="any" inputMode="decimal"
-                  aria-label="Descuento sobre el subtotal, en porcentaje"
-                  value={descuento === 0 ? "" : descuento}
-                  placeholder="0"
-                  onChange={(e) => setDescuento(Math.min(99.99, Math.max(0, Number(e.target.value) || 0)))}
-                  className="w-20 rounded-lg border border-mist-deep px-2.5 py-1.5 text-right text-sm tabular-nums text-ink focus:border-cyan focus:outline-none focus:ring-2 focus:ring-cyan/20"
-                />
-                <span className="text-xs font-normal text-ink-soft">% del subtotal</span>
-              </label>
-              {descuento > 0 && (
-                <>
-                  <p className="text-ink-soft">
-                    Subtotal <span className="ml-2 tabular-nums">{formatearPesos(subtotal)}</span>
-                  </p>
-                  <p className="text-ink-soft">
-                    Descuento {descuento.toLocaleString("es-CL")}% <span className="ml-2 tabular-nums">−{formatearPesos(subtotal - neto)}</span>
-                  </p>
-                </>
-              )}
-              <p className="text-ink-soft">
-                Neto <span className="ml-2 font-semibold tabular-nums text-ink">{formatearPesos(neto)}</span>
-              </p>
-              <p className="text-ink-soft">
-                {exenta ? "IVA (exento)" : "IVA 19%"} <span className="ml-2 tabular-nums">{formatearPesos(iva)}</span>
-              </p>
-              <p className="font-display text-lg font-semibold text-ink">
-                Total {formatearPesos(neto + iva)}
-              </p>
-              {reembolsable > 0 && (
-                <p className="mt-1">
-                  <Etiqueta destacada>
-                    {formatearPesos(reembolsable)} reembolsables — no descuentan del margen
-                  </Etiqueta>
-                </p>
-              )}
-            </div>
+            <TotalesOrden
+              exenta={exenta}
+              setExenta={setExenta}
+              descuento={descuento}
+              setDescuento={setDescuento}
+              subtotal={subtotal}
+              neto={neto}
+              iva={iva}
+              reembolsable={reembolsable}
+            />
           </section>
 
           <Pie
@@ -1142,40 +737,5 @@ export function FormularioOrden({
         alConfirmar={borrado.confirmar}
       />
     </>
-  );
-}
-
-/** Los estados que se ponen a mano. El resto lo dicen las líneas. */
-const estadoManual = (e: EstadoOrden) => e === "borrador" || e === "emitida" || e === "anulada";
-
-const claseCelda =
-  "w-full rounded-lg border border-mist-deep bg-white px-2.5 py-2 text-sm text-ink outline-none transition-colors placeholder:text-ink-soft/45 focus:border-cyan focus:ring-2 focus:ring-cyan/20";
-
-function Seccion({ titulo, children }: { titulo: string; children: React.ReactNode }) {
-  return (
-    <section className="border-t border-mist px-6 pb-6 pt-5">
-      <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.16em] text-ink-soft">
-        {titulo}
-      </h3>
-      <div className="grid gap-5 sm:grid-cols-2">{children}</div>
-    </section>
-  );
-}
-
-/** Un dato que vino del maestro: se lee acá, se corrige en Proveedores. */
-function DatoCopiado({
-  etiqueta,
-  children,
-}: {
-  etiqueta: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">
-        {etiqueta}
-      </dt>
-      <dd className="mt-0.5 text-ink">{children}</dd>
-    </div>
   );
 }

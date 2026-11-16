@@ -47,6 +47,13 @@ export type EgresoOficina = {
   total: number;
   estado: EstadoEgresoOficina;
   observaciones: string | null;
+  /**
+   * Si el egreso es una línea de una orden de compra de Oficina Central (0122):
+   * la orden de la que sale. No se edita acá —se corrige en la orden— y cuenta
+   * con la regla de costo de siempre: orden emitida, en su mes.
+   */
+  ordenId?: string;
+  ordenNumero?: string;
   /** Resueltos al cargar, para no pasar el catálogo por todas las pantallas. */
   categoriaTitulo: string;
   esActivo: boolean;
@@ -71,8 +78,23 @@ export async function cargarCatalogoOficina(): Promise<{ categorias: CategoriaOf
 
 type Catalogo = Awaited<ReturnType<typeof cargarCatalogoOficina>>;
 
+type FilaDeOrden = {
+  id: string; orden_id: string; orden_numero: string; categoria: string; centro_costo: string; fecha: string;
+  proveedor: string | null; descripcion: string | null; neto: number; iva: number; estado: string;
+};
+
+/**
+ * Las líneas de las órdenes de compra de Oficina Central, como egresos (0122).
+ * Sin la migración aplicada, o si falla, no hay ninguna: los egresos cargados a
+ * mano se siguen viendo igual.
+ */
+async function cargarEgresosDeOrdenes(): Promise<FilaDeOrden[]> {
+  const { data, error } = await supabase.rpc("egresos_oficina_de_ordenes");
+  return error ? [] : ((data ?? []) as FilaDeOrden[]);
+}
+
 export async function cargarEgresosOficina(catalogoDado?: Catalogo): Promise<EgresoOficina[]> {
-  const [egresos, catalogo] = await Promise.all([
+  const [egresos, deOrdenes, catalogo] = await Promise.all([
     // Por tandas: Oficina Central suma decenas de egresos al mes y pasa las 1000 filas.
     todasLasFilas<{
       id: string; categoria: string; centro_costo: string; fecha: string; proveedor: string | null;
@@ -87,16 +109,39 @@ export async function cargarEgresosOficina(catalogoDado?: Catalogo): Promise<Egr
         .order("id")
         .range(d, h),
     ),
+    cargarEgresosDeOrdenes(),
     catalogoDado ?? cargarCatalogoOficina(),
   ]);
   if (egresos.error) throw new Error(egresos.error.message);
   const categorias = new Map(catalogo.categorias.map((c) => [c.id, c]));
   const centros = new Map(catalogo.centros.map((c) => [c.id, c]));
-  return (egresos.data ?? []).map((fila) => ({
+  const aMano = (egresos.data ?? []).map((fila) => ({
     ...fila,
     neto: Number(fila.neto),
     iva: Number(fila.iva),
     total: Number(fila.total),
+  }));
+  const porOrden = deOrdenes.map((fila) => ({
+    id: fila.id,
+    categoria: fila.categoria,
+    centro_costo: fila.centro_costo,
+    fecha: fila.fecha,
+    proveedor: fila.proveedor ?? "",
+    descripcion: fila.descripcion ?? "",
+    // El documento de una compra por orden es la orden misma.
+    documento: fila.orden_numero,
+    neto: Number(fila.neto),
+    iva: Number(fila.iva),
+    total: Number(fila.neto) + Number(fila.iva),
+    estado: fila.estado,
+    observaciones: null,
+    ordenId: fila.orden_id,
+    ordenNumero: fila.orden_numero,
+  }));
+  // Juntos y por fecha, lo más reciente primero, como venían los cargados a mano.
+  const todos = porOrden.length > 0 ? [...aMano, ...porOrden].sort((a, b) => b.fecha.localeCompare(a.fecha)) : aMano;
+  return todos.map((fila) => ({
+    ...fila,
     categoriaTitulo: categorias.get(fila.categoria)?.titulo ?? fila.categoria,
     esActivo: categorias.get(fila.categoria)?.esActivo ?? false,
     centroNombre: centros.get(fila.centro_costo)?.nombre ?? fila.centro_costo,
