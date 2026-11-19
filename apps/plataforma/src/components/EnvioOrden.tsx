@@ -50,7 +50,7 @@ export function EnvioOrden({
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
   /* Si la empresa recibe en Pagnol, lo que pasó al anunciarle la orden. */
-  const [avisoPagnol, setAvisoPagnol] = useState<{ ok: boolean; error?: string } | null>(null);
+  const [avisoPagnol, setAvisoPagnol] = useState<{ ok: boolean; error?: string; avisos?: string[] } | null>(null);
   const [enviada, setEnviada] = useState(false);
 
   const emisor = (orden.emisorCorreo ?? "").toLowerCase();
@@ -101,8 +101,8 @@ export function EnvioOrden({
           {avisoPagnol && (
             <p className={`mt-4 rounded-xl px-4 py-3 ${avisoPagnol.ok ? "bg-exito-suave font-medium text-exito" : "bg-alerta-suave text-alerta"}`}>
               {avisoPagnol.ok
-                ? "Anunciada a Pagnol: el pañolero ya la ve por recibir."
-                : `La orden salió, pero no se pudo anunciar a Pagnol: ${avisoPagnol.error ?? "error desconocido"}. Anúnciala desde el detalle de la orden.`}
+                ? ["Anunciada a Pagnol: el pañolero ya la ve por recibir.", ...(avisoPagnol.avisos ?? [])].join(" ")
+                : `La orden salió, pero no se pudo anunciar a Pagnol: ${avisoPagnol.error ?? "error desconocido"}. Para reintentarlo, en la lista de Órdenes abre el botón «Recepción y facturas» de esta orden: ahí está el recuadro «Recepción en Pagnol» con «Anunciar a Pagnol».`}
             </p>
           )}
           <p className="mt-4 text-ink-soft">

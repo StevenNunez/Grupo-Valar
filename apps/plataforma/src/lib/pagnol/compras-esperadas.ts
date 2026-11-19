@@ -99,9 +99,21 @@ function motivoDeRechazo(estado: number, json: unknown) {
 
 /* ── Que lo comprado exista en el catálogo de Pagnol ──────────────────────── */
 
-const normalizar = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/s+/g, " ").trim();
+const normalizar = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 
 const UNIDAD_PAGNOL: Record<string, string> = { un: "Unidad", u: "Unidad", m: "Metro", kg: "Kilo", lt: "Litro", l: "Litro", par: "Par", cj: "Caja", rollo: "Rollo", set: "Set", gl: "Galón" };
+
+/** Pagnol acepta nombres de hasta 200 caracteres. Una descripción larga (con
+ *  dimensiones, materialidad…) se corta en su primera frase, o en una palabra;
+ *  el texto completo viaja como `descripcion` del material. */
+const LARGO_NOMBRE = 200;
+function nombreDeMaterial(texto: string) {
+  if (texto.length <= LARGO_NOMBRE) return texto;
+  const frase = texto.search(/[.;]\s/);
+  if (frase >= 3 && frase < LARGO_NOMBRE) return texto.slice(0, frase).trim();
+  const corte = texto.lastIndexOf(" ", LARGO_NOMBRE - 1);
+  return `${texto.slice(0, corte > 40 ? corte : LARGO_NOMBRE - 1).trim()}…`;
+}
 
 /**
  * La línea de la OC apunta a un material de Pagnol: se busca uno con el mismo
@@ -109,18 +121,25 @@ const UNIDAD_PAGNOL: Record<string, string> = { un: "Unidad", u: "Unidad", m: "M
  * recibir y no hay que cargar el catálogo a mano antes de comprar.
  */
 async function materialParaLinea(item: ItemOrden): Promise<{ id: string } | { error: string }> {
+  const texto = item.descripcion.replace(/\s+/g, " ").trim();
+  const nombre = nombreDeMaterial(texto);
   try {
-    const busqueda = await llamarPagnol("GET", `/materiales?q=${encodeURIComponent(item.descripcion.trim())}&limit=20`, undefined);
+    const busqueda = await llamarPagnol("GET", `/materiales?q=${encodeURIComponent(nombre)}&limit=20`, undefined);
     if (busqueda.estado === 200) {
       const lista = (busqueda.json as { data?: { id: string; nombre: string; activo: boolean }[] } | undefined)?.data ?? [];
-      const igual = lista.find((m) => m.activo && normalizar(m.nombre) === normalizar(item.descripcion));
+      const igual = lista.find((m) => m.activo && normalizar(m.nombre) === normalizar(nombre));
       if (igual) return { id: igual.id };
     }
     const ref = `valar:linea:${item.id}`;
     const creado = await llamarPagnol(
       "POST",
       "/materiales",
-      { nombre: item.descripcion.trim(), unidad_medida: UNIDAD_PAGNOL[item.unidad.trim().toLowerCase()] ?? (item.unidad.trim() || "Unidad"), external_ref: ref },
+      {
+        nombre,
+        ...(nombre !== texto ? { descripcion: texto.slice(0, 1000) } : {}),
+        unidad_medida: UNIDAD_PAGNOL[item.unidad.trim().toLowerCase()] ?? (item.unidad.trim().slice(0, 40) || "Unidad"),
+        external_ref: ref,
+      },
       crypto.randomUUID(),
     );
     const id = (creado.json as { id?: string } | undefined)?.id;
@@ -181,6 +200,57 @@ async function panolHabitual(sb: SupabaseClient, contratoId: string) {
   return (data?.panol_id as string | null) ?? null;
 }
 
+type PanolDePagnol = { id: string; nombre: string; activo: boolean; contratos?: { id: string; nombre: string }[] };
+
+/**
+ * A qué pañol llega la OC cuando nadie lo eligió. En orden:
+ *   1. el último que se usó en este contrato;
+ *   2. Oficina Central: en Valar todo lo comprado lo recibe logística ahí (lo
+ *      retira o se lo entrega el proveedor) y de ahí sale a las faenas, aunque
+ *      la faena ya tenga pañol (confirmado 18-11-2026);
+ *   3. si la empresa no tiene pañol de Oficina Central, el pañol que atiende
+ *      el contrato de Pagnol asociado a este (`pagnol_contratos`).
+ * Sin esto, un contrato nuevo nunca tenía "pañol habitual" y el anuncio
+ * automático al enviar la OC fallaba siempre.
+ */
+async function panolPropuesto(sb: SupabaseClient, contratoId: string): Promise<{ id: string; aviso: string | null } | null> {
+  const habitual = await panolHabitual(sb, contratoId);
+  if (habitual) return { id: habitual, aviso: null };
+
+  let panoles: PanolDePagnol[] = [];
+  try {
+    const r = await llamarPagnol("GET", "/panoles?limit=100", undefined);
+    if (r.estado === 200) panoles = ((r.json as { data?: PanolDePagnol[] } | undefined)?.data ?? []).filter((p) => p.activo);
+  } catch {
+    return null;
+  }
+
+  const central = panoles.find((p) => /oficina central/i.test(p.nombre));
+  if (central) {
+    return { id: central.id, aviso: `Se anunció a ${central.nombre}, donde logística recibe. Si esta compra llega directo a faena, cámbialo en «Recepción en Pagnol».` };
+  }
+
+  const { data: asociados } = await sb.from("pagnol_contratos").select("pagnol_contrato_id").eq("contrato_id", contratoId);
+  const idsPagnol = new Set((asociados ?? []).map((a) => a.pagnol_contrato_id as string));
+  const delContrato = panoles.find((p) => (p.contratos ?? []).some((c) => idsPagnol.has(c.id)));
+  if (delContrato) return { id: delContrato.id, aviso: `Se anunció al pañol ${delContrato.nombre}, el que atiende este contrato en Pagnol.` };
+  return null;
+}
+
+/**
+ * Deja anotado por qué no se pudo anunciar, para que la orden muestre
+ * «No se pudo anunciar: …» y no quede como si nadie lo hubiera intentado.
+ * No pisa un anuncio que ya está en Pagnol.
+ */
+async function anotarFallo(sb: SupabaseClient, orden: Orden, error: string) {
+  const previa = await filaDe(sb, orden.id);
+  if (!previa) {
+    await sb.from("ordenes_pagnol").insert({ orden_id: orden.id, contrato_id: orden.contrato_id, estado: "error", error });
+  } else if (!previa.pagnol_compra_id && (previa.estado === "error" || previa.estado === "pendiente")) {
+    await sb.from("ordenes_pagnol").update({ estado: "error", error }).eq("orden_id", orden.id);
+  }
+}
+
 async function proveedorEnPagnol(sb: SupabaseClient, proveedorId: string | null) {
   if (!proveedorId) return null;
   const { data } = await sb.from("proveedores").select("pagnol_proveedor_id").eq("id", proveedorId).maybeSingle();
@@ -215,6 +285,12 @@ export async function anunciarOrden(sb: SupabaseClient, ordenId: string, panolPe
   if (orden.estado === "borrador") return { ok: false, error: "Un borrador no se anuncia: primero se envía al proveedor." };
   if (orden.estado === "anulada") return { ok: false, error: "La orden está anulada." };
 
+  const r = await anunciarLeida(sb, orden, items, panolPedido);
+  if (!r.ok) await anotarFallo(sb, orden, r.error).catch(() => undefined);
+  return r;
+}
+
+async function anunciarLeida(sb: SupabaseClient, orden: Orden, items: ItemOrden[], panolPedido: string | null): Promise<ResultadoAnuncio> {
   const avisos: string[] = [];
   /* Las líneas que aún aprovechan algo y no están en el catálogo de Pagnol se
      buscan o se crean allá, y el enlace queda guardado en la línea. */
@@ -242,7 +318,7 @@ export async function anunciarOrden(sb: SupabaseClient, ordenId: string, panolPe
     return { ok: false, error: "Ninguna línea de la orden es del catálogo de Pagnol." };
   }
 
-  const previa = await filaDe(sb, ordenId);
+  const previa = await filaDe(sb, orden.id);
   const yaAnunciada = !!previa?.pagnol_compra_id && previa.estado !== "error";
 
   /* La primera vez, lo que ya se recibió en Valar no se pide de nuevo a Pagnol:
@@ -261,7 +337,14 @@ export async function anunciarOrden(sb: SupabaseClient, ordenId: string, panolPe
   const yaRecibidoEnValar = !yaAnunciada && deLaOrden.some((i) => Number(i.cantidad_recibida) > 0);
   if (yaRecibidoEnValar) avisos.push("Parte de la orden ya se recibió en Valar: a Pagnol solo se anuncia lo que falta.");
 
-  const panolId = panolPedido ?? previa?.panol_id ?? (await panolHabitual(sb, orden.contrato_id));
+  let panolId = panolPedido ?? previa?.panol_id ?? null;
+  if (!panolId) {
+    const propuesto = await panolPropuesto(sb, orden.contrato_id);
+    if (propuesto) {
+      panolId = propuesto.id;
+      if (propuesto.aviso) avisos.push(propuesto.aviso);
+    }
+  }
   if (!panolId) return { ok: false, error: "Elige el pañol de Pagnol donde va a llegar esta orden." };
 
   if (previa?.pagnol_compra_id && previa.estado !== "error") {

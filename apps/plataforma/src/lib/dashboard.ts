@@ -204,7 +204,7 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
      avisar y el Dashboard sumaría de menos. Cada orden termina en la llave de
      la vista para que las tandas no repitan ni salten filas. Con menos de 1000
      filas sigue siendo una sola consulta. */
-  const [resumen, categorias, oficina, nominas, anexos, alias, edpsAnexo, costosAnexo, finiquitos, finiquitosOficina, personal, edpsHh] = await Promise.all([
+  const [resumen, categorias, oficina, nominas, anexos, alias, edpsAnexo, costosAnexo, finiquitos, finiquitosOficina, personal, edpsHh, { data: activosCostos }] = await Promise.all([
     todasLasFilas((d, h) => supabase.from("resumen_mensual").select("*").order("periodo").order("contrato_id").range(d, h)),
     todasLasFilas((d, h) =>
       supabase.from("costos_por_categoria").select("*").order("contrato_id").order("categoria_id").order("periodo").range(d, h),
@@ -239,15 +239,15 @@ export async function cargarDashboard(): Promise<DatosDashboard> {
     todasLasFilas((d, h) =>
       supabase.from("estados_pago").select("contrato_id, anexo_id, periodo, datos").eq("tipo_edp", "extraordinario").order("id").range(d, h),
     ),
+    /* Los activos comprados para un contrato: si falla, el Dashboard sale igual sin ellos.
+       Va con las demás (antes se pedía después y sumaba una vuelta más a la espera). */
+    todasLasFilas<{ contrato_id: string; periodo: string; neto: number }>((d, h) =>
+      supabase.from("costos_unificados").select("contrato_id, periodo, neto").eq("es_activo", true).order("id").order("periodo").range(d, h),
+    ),
   ]);
 
   const fallo = resumen.error ?? categorias.error;
   if (fallo) throw new Error(fallo.message);
-
-  /* Los activos comprados para un contrato: si falla, el Dashboard sale igual sin ellos. */
-  const { data: activosCostos } = await todasLasFilas<{ contrato_id: string; periodo: string; neto: number }>((d, h) =>
-    supabase.from("costos_unificados").select("contrato_id, periodo, neto").eq("es_activo", true).order("id").order("periodo").range(d, h),
-  );
 
   /* Los contratos cerrados (0083) salen del tablero operativo; su historia sigue acá. */
   const cerrados = (alias.error ? [] : alias.data ?? []).filter((f) => f.estado === "cerrado").map((f) => f.id as string);

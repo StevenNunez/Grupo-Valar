@@ -11,6 +11,10 @@ import type { Solped } from "./solped";
  * Va aparte del id interno (`COT-SOLPED-100-01`): el proveedor menciona este
  * número al responder, y un identificador con el número de la solicitud interna
  * adentro le dice cosas de Valar que no le incumben.
+ *
+ * El número definitivo lo asigna la base (`pedir_cotizacion`, 0124): es
+ * correlativo de toda la empresa, no de la SOLPED, y lo que se calcula aquí se
+ * reemplaza. Se sigue mandando solo para que nada falle antes de aplicar la 0124.
  */
 export function siguienteNumeroSolicitud(existentes: { numero: string | null }[]) {
   const usados = existentes

@@ -16,8 +16,9 @@ import { siguienteNumero } from "./reposicion";
  * Cada evento sale a lo más una vez por solicitud, y un reenvío no duplica nada
  * (índice único `solped_pagnol_solicitud_unica`).
  *
- * El contrato de Pagnol se asocia a uno de Valar por su UUID (`pagnol_contratos`).
- * Si no está asociado —o el aviso no trae contrato—, devuelve el motivo y el aviso
+ * El contrato se casa por su CÓDIGO (`contrato.codigo` = `contratos.id`); si no
+ * calza, por la asociación guardada del UUID de Pagnol (`pagnol_contratos`).
+ * Si no hay ninguna de las dos —o el aviso no trae contrato—, devuelve el motivo y el aviso
  * queda en la bandeja hasta que una persona elija el contrato.
  *
  * Corre con la clave de servicio: todo lo que inserta lleva `empresa_id` explícito.
@@ -38,7 +39,7 @@ export type DatosSolicitud = {
   codigo?: string;
   estado?: string;
   solicitante?: { nombre?: string } | null;
-  contrato?: { id?: string; nombre?: string } | null;
+  contrato?: { id?: string; nombre?: string; codigo?: string | null } | null;
   area?: string | null;
   motivo?: string | null;
   prioridad?: "normal" | "urgente";
@@ -164,9 +165,23 @@ async function resolverContrato(
     return elegido;
   }
 
+  /* El código del contrato es la llave común (18-11-2026): en Pagnol `contracts.code`
+     lleva el mismo código que el contrato tiene en Valar (`contratos.id`). */
+  const codigo = d.contrato?.codigo?.trim();
+  if (codigo) {
+    const { data: delCodigo } = await sb.from("contratos").select("id").eq("empresa_id", empresa).ilike("id", codigo.replace(/[%_\\]/g, "\\$&")).maybeSingle();
+    if (delCodigo) return delCodigo.id as string;
+  }
+
   if (!pagnolId) return { motivo: "La solicitud no trae contrato: elige a cuál de Valar corresponde." };
   const { data } = await sb.from("pagnol_contratos").select("contrato_id").eq("empresa_id", empresa).eq("pagnol_contrato_id", pagnolId).maybeSingle();
-  if (!data) return { motivo: `El contrato «${d.contrato?.nombre ?? pagnolId}» de Pagnol aún no está asociado a uno de Valar: elígelo una vez.` };
+  if (!data) {
+    return {
+      motivo: codigo
+        ? `El contrato «${d.contrato?.nombre ?? pagnolId}» de Pagnol tiene el código «${codigo}», que no existe en Valar: corrige el código en uno de los dos lados, o elige el contrato.`
+        : `El contrato «${d.contrato?.nombre ?? pagnolId}» de Pagnol no tiene código: ponle en Pagnol el mismo código que tiene en Valar, o elige el contrato.`,
+    };
+  }
   return data.contrato_id as string;
 }
 
