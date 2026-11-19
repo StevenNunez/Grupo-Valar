@@ -14,6 +14,7 @@ import { Tabla, Total, type Columna } from "../ui/Tabla";
 import { Contenido, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
 import { cargarProveedores, type Proveedor } from "@/lib/abastecimiento";
 import { useConsulta } from "@/lib/consulta";
+import { cargarAnexos, etiquetaAnexo, type Anexo } from "@/lib/anexos";
 import { cargarContratosBreve, opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
 import { formatearFecha, formatearMonto } from "@/lib/formato";
 import {
@@ -32,6 +33,7 @@ import {
   type Orden,
   type OrdenDeLista,
   type ResumenOrdenes,
+  SOLO_CONTRATO_BASE,
 } from "@/lib/ordenes";
 import { useListaServidor, useRetardado } from "@/lib/lista-servidor";
 import { usePuede, useUsuario } from "@/lib/sesion";
@@ -53,18 +55,22 @@ type Datos = {
   resumen: ResumenOrdenes;
   contratos: ContratoBreve[];
   categorias: Categoria[];
+  /** Para filtrar por anexo: las OC de Carpas van contra el Anexo N°2 de Misceláneos. */
+  anexos: Anexo[];
   proveedores: Proveedor[];
   /** Por orden, del más nuevo al más viejo. */
   envios: Record<string, Envio[]>;
 };
 
 async function cargar(): Promise<Datos> {
-  const [resumen, contratos, categorias, proveedores, envios] = await Promise.all([
+  const [resumen, contratos, categorias, proveedores, envios, anexos] = await Promise.all([
     cargarResumenOrdenes(),
     cargarContratosBreve({ conOficina: true }),
     supabase.from("categorias_costo").select("id, nombre, contrato_id").order("orden"),
     cargarProveedores(),
     cargarEnvios(),
+    // Sin anexos la lista igual sirve: el filtro simplemente no aparece.
+    cargarAnexos().catch(() => [] as Anexo[]),
   ]);
   const porOrden: Record<string, Envio[]> = {};
   for (const e of envios) (porOrden[e.ordenId] ??= []).push(e);
@@ -75,6 +81,7 @@ async function cargar(): Promise<Datos> {
     resumen,
     contratos,
     proveedores,
+    anexos: anexos.filter((a) => a.estado !== "anulado"),
     envios: porOrden,
     categorias: ((categorias.data ?? []) as { id: string; nombre: string; contrato_id: string }[])
       .map((c) => ({ id: c.id, nombre: c.nombre, contratoId: c.contrato_id })),
@@ -118,7 +125,7 @@ const nombreMes = (aaaamm: string) => {
 export function VistaOrdenes() {
   const usuario = useUsuario();
   // Con clave, la pantalla abre al tiro con lo último que se vio y se refresca por detrás.
-  const { estado, recargar: recargarBase } = useConsulta<Datos>(cargar, `${usuario.id}:${usuario.empresa}:ordenes-v2`);
+  const { estado, recargar: recargarBase } = useConsulta<Datos>(cargar, `${usuario.id}:${usuario.empresa}:ordenes-v3`);
   const edicion = useEdicion<Orden>("ordenes_compra_proveedor");
   const [imprimiendo, setImprimiendo] = useState<Orden | null>(null);
   const [recepcion, setRecepcion] = useState<Orden | null>(null);
@@ -131,6 +138,7 @@ export function VistaOrdenes() {
   const [pago, setPago] = useFiltro<FiltradoPago>("ordenes:pago", "todas");
   const [mes, setMes] = useFiltro("ordenes:mes", "");
   const [contrato, setContrato] = useFiltro("ordenes:contrato", "");
+  const [anexo, setAnexo] = useFiltro("ordenes:anexo", "");
   const [texto, setTexto] = useState("");
   const [orden, setOrden] = useState<OrdenDeLista>("fecha-desc");
   const buscado = useRetardado(texto);
@@ -149,11 +157,12 @@ export function VistaOrdenes() {
                 ? ["recibida"]
                 : null,
       contrato,
+      anexo,
       mes,
       texto: buscado,
       orden,
     }),
-    [filtro, contrato, mes, buscado, orden],
+    [filtro, contrato, anexo, mes, buscado, orden],
   );
 
   // El pago sale de las facturas, no de la orden: se afina sobre lo cargado, y la
@@ -197,7 +206,15 @@ export function VistaOrdenes() {
               alFiltrarPago={setPago}
               contratos={datos.contratos}
               contrato={contrato}
-              alElegirContrato={setContrato}
+              alElegirContrato={(c) => {
+                setContrato(c);
+                // El anexo elegido es de otro contrato: se suelta. «Solo contrato base» sin contrato no dice nada.
+                const elegido = datos.anexos.find((a) => a.id === anexo);
+                if (anexo === SOLO_CONTRATO_BASE ? !c : elegido && c && elegido.contratoId !== c) setAnexo("");
+              }}
+              anexos={datos.anexos}
+              anexo={anexo}
+              alElegirAnexo={setAnexo}
               mes={mes}
               alElegirMes={setMes}
               texto={texto}
@@ -293,6 +310,9 @@ function Contenidos({
   contratos,
   contrato,
   alElegirContrato,
+  anexos,
+  anexo,
+  alElegirAnexo,
   mes,
   alElegirMes,
   texto,
@@ -315,6 +335,9 @@ function Contenidos({
   contratos: ContratoBreve[];
   contrato: string;
   alElegirContrato: (c: string) => void;
+  anexos: Anexo[];
+  anexo: string;
+  alElegirAnexo: (a: string) => void;
   mes: string;
   alElegirMes: (m: string) => void;
   texto: string;
@@ -333,6 +356,10 @@ function Contenidos({
   const registraRecepcion = usePuede("recepcion.registrar");
   const cargaGestion = usePuede("gestion.editar");
   const puedeRecibir = registraRecepcion || cargaGestion;
+
+  // Con contrato elegido, sus anexos; sin él, todos, con el contrato delante para distinguirlos.
+  const anexosVisibles = contrato ? anexos.filter((a) => a.contratoId === contrato) : anexos;
+  const nombreContrato = new Map(opcionesDeContrato(contratos).map((c) => [c.id, c.titulo]));
 
   // Los totales de abajo son de lo que se está mostrando.
   const neto = lista.filas.reduce((t, o) => t + o.neto, 0);
@@ -399,6 +426,22 @@ function Contenidos({
               </option>
             ))}
           </select>
+          {anexosVisibles.length > 0 && (
+            <select
+              value={anexo}
+              onChange={(e) => alElegirAnexo(e.target.value)}
+              aria-label="Anexo"
+              className="max-w-[16rem] rounded-full border border-mist-deep bg-white px-4 py-2 text-sm font-semibold text-ink-soft"
+            >
+              <option value="">{contrato ? "Todo el contrato" : "Todos los anexos"}</option>
+              {contrato && <option value={SOLO_CONTRATO_BASE}>Solo contrato base (sin anexo)</option>}
+              {anexosVisibles.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {contrato ? etiquetaAnexo(a) : `${nombreContrato.get(a.contratoId) ?? a.contratoId} · ${etiquetaAnexo(a)}`}
+                </option>
+              ))}
+            </select>
+          )}
           <select
             value={mes}
             onChange={(e) => alElegirMes(e.target.value)}

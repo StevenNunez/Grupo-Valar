@@ -293,6 +293,9 @@ export async function cargarOrdenes(): Promise<Orden[]> {
 
 export type OrdenDeLista = "numero-desc" | "numero-asc" | "fecha-desc" | "fecha-asc" | "monto-desc" | "monto-asc" | "proveedor";
 
+/** En el filtro de anexo: lo cargado al contrato base, sin anexo. */
+export const SOLO_CONTRATO_BASE = "__base";
+
 export type FiltrosOrdenes = {
   /** Nulo = todos los estados. */
   estados: EstadoOrden[] | null;
@@ -300,6 +303,8 @@ export type FiltrosOrdenes = {
   mes: string;
   /** Id del contrato, o vacío para todos. */
   contrato: string;
+  /** Id del anexo, `SOLO_CONTRATO_BASE` para lo que no va a ningún anexo, o vacío para todo (0059). */
+  anexo: string;
   texto: string;
   orden: OrdenDeLista;
 };
@@ -318,6 +323,8 @@ export async function cargarPaginaOrdenes(f: FiltrosOrdenes, desde: number, cuan
 
   if (f.estados) q = q.in("estado", f.estados);
   if (f.contrato) q = q.eq("contrato_id", f.contrato);
+  if (f.anexo === SOLO_CONTRATO_BASE) q = q.is("anexo_id", null);
+  else if (f.anexo) q = q.eq("anexo_id", f.anexo);
   if (f.mes) q = q.gte("fecha_emision", `${f.mes}-01`).lt("fecha_emision", mesSiguiente(f.mes));
 
   const texto = limpiarBusqueda(f.texto);

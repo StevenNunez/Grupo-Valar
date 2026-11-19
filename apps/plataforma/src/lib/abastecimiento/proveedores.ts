@@ -1,6 +1,7 @@
 "use client";
 
 import { supabase } from "../supabase";
+import { traerTodo } from "../paginar";
 import { empresaActual } from "../sesion";
 
 /* ── Proveedores ──────────────────────────────────────────────────────────── */
@@ -100,12 +101,116 @@ function mapearProveedor(f: FilaProveedor): Proveedor {
  */
 export async function cargarProveedores(): Promise<Proveedor[]> {
   const empresa = await empresaActual();
-  let consulta = supabase.from("proveedores").select("*");
-  if (empresa) consulta = consulta.eq("empresa_id", empresa);
-  const { data, error } = await consulta.order("razon_social");
+  // De a tandas: PostgREST corta en 1000 sin avisar, y los selectores necesitan a todos.
+  const filas = await traerTodo<FilaProveedor>((desde, hasta) => {
+    let consulta = supabase.from("proveedores").select("*");
+    if (empresa) consulta = consulta.eq("empresa_id", empresa);
+    return consulta.order("razon_social").order("id").range(desde, hasta);
+  });
+  return filas.map(mapearProveedor);
+}
 
+/* ── La pantalla de Proveedores: por partes, buscando en la base ─────────── */
+
+export type FiltradoProveedores = "todos" | "activos" | "por_completar" | "inactivos" | "incompletos";
+
+export type OrdenProveedores = "nombre-asc" | "nombre-desc" | "recientes" | "codigo";
+
+export type FiltrosProveedores = {
+  estado: FiltradoProveedores;
+  /** Un rubro exacto, o vacío. */
+  rubro: string;
+  texto: string;
+  orden: OrdenProveedores;
+};
+
+/** Saca lo que rompería la sintaxis de `.or()` de PostgREST. */
+const limpiar = (t: string) => t.replace(/[,()*%\\"]/g, " ").replace(/\s+/g, " ").trim();
+
+/** Dónde se busca cada palabra: nombre, fantasía, RUT, código, contacto, correo, giro. */
+function dondeBuscar(palabra: string) {
+  const campos = ["razon_social", "nombre_fantasia", "rut", "id", "contacto", "correo", "giro"].map(
+    (c) => `${c}.ilike.*${palabra}*`,
+  );
+  // "76.756.768-5" o "76756768": el RUT se guarda sin puntos.
+  const comoRut = palabra.replace(/\./g, "");
+  if (comoRut !== palabra && comoRut) campos.push(`rut.ilike.*${comoRut}*`);
+  return campos.join(",");
+}
+
+export async function cargarPaginaProveedores(
+  f: FiltrosProveedores,
+  desde: number,
+  cuantos: number,
+): Promise<Proveedor[]> {
+  const empresa = await empresaActual();
+  let q = supabase.from("proveedores").select("*");
+  if (empresa) q = q.eq("empresa_id", empresa);
+
+  if (f.estado === "activos") q = q.eq("estado", "activo");
+  else if (f.estado === "por_completar") q = q.eq("estado", "por_completar");
+  else if (f.estado === "inactivos") q = q.in("estado", ["inactivo", "suspendido"]);
+  // Lo mismo que `faltantes()` en la pantalla: sin RUT, sin correo, sin contacto o sin cuenta.
+  else if (f.estado === "incompletos") {
+    // `.eq.` vacío = texto en blanco, que para la pantalla también es «falta».
+    q = q.or(
+      "rut.is.null,rut.eq.,correo.is.null,correo.eq.,numero_cuenta.is.null,numero_cuenta.eq.," +
+        "and(or(telefono.is.null,telefono.eq.),or(contacto.is.null,contacto.eq.))",
+    );
+  }
+
+  if (f.rubro) q = q.contains("rubros", [f.rubro]);
+
+  // Palabra por palabra, como el buscador del formulario: "max 76" encuentra a Max Service por nombre y RUT.
+  const palabras = limpiar(f.texto).split(" ").filter(Boolean);
+  if (palabras.length === 1) q = q.or(dondeBuscar(palabras[0]));
+  else if (palabras.length > 1) q = q.or(`and(${palabras.map((p) => `or(${dondeBuscar(p)})`).join(",")})`);
+
+  switch (f.orden) {
+    case "nombre-desc": q = q.order("razon_social", { ascending: false }); break;
+    case "recientes": q = q.order("creado_en", { ascending: false }); break;
+    case "codigo": q = q.order("id", { ascending: true }); break;
+    default: q = q.order("razon_social", { ascending: true });
+  }
+  const { data, error } = await q.order("id").range(desde, desde + cuantos - 1);
   if (error) throw new Error(error.message);
   return ((data ?? []) as FilaProveedor[]).map(mapearProveedor);
+}
+
+export type ResumenProveedores = {
+  total: number;
+  activos: number;
+  incompletos: number;
+  conRut: number;
+  conCuenta: number;
+  /** Los rubros en uso, para el filtro. */
+  rubros: string[];
+  /** Solo los códigos, para proponer el siguiente al crear uno. */
+  ids: { id: string }[];
+};
+
+/** Las cifras de arriba, sobre todos los proveedores y con pocas columnas. */
+export async function cargarResumenProveedores(): Promise<ResumenProveedores> {
+  const empresa = await empresaActual();
+  type Fila = Pick<FilaProveedor, "id" | "rut" | "correo" | "telefono" | "contacto" | "numero_cuenta" | "rubros" | "estado">;
+  const filas = await traerTodo<Fila>((desde, hasta) => {
+    let consulta = supabase
+      .from("proveedores")
+      .select("id, rut, correo, telefono, contacto, numero_cuenta, rubros, estado");
+    if (empresa) consulta = consulta.eq("empresa_id", empresa);
+    return consulta.order("id").range(desde, hasta);
+  });
+  const rubros = new Set<string>();
+  for (const f of filas) for (const r of f.rubros ?? []) if (r.trim()) rubros.add(r.trim());
+  return {
+    total: filas.length,
+    activos: filas.filter((f) => f.estado === "activo").length,
+    incompletos: filas.filter((f) => !f.rut || !f.correo || !f.numero_cuenta || (!f.telefono && !f.contacto)).length,
+    conRut: filas.filter((f) => f.rut).length,
+    conCuenta: filas.filter((f) => f.numero_cuenta).length,
+    rubros: [...rubros].sort((a, b) => a.localeCompare(b, "es")),
+    ids: filas.map((f) => ({ id: f.id })),
+  };
 }
 
 /**
@@ -153,7 +258,7 @@ export function formatearRut(rut: string | null) {
 }
 
 /** Correlativo del maestro: PRV-0001, PRV-0002… */
-export function siguienteIdProveedor(proveedores: Proveedor[]) {
+export function siguienteIdProveedor(proveedores: { id: string }[]) {
   const numeros = proveedores
     .map((p) => Number(/^PRV-(\d+)$/.exec(p.id)?.[1] ?? 0))
     .filter((n) => n > 0);
@@ -179,7 +284,7 @@ export async function antesDeCrearProveedor(rut: string | null): Promise<{
   const filas = (data ?? []) as { id: string; rut: string | null; razon_social: string }[];
   const igual = rut ? filas.find((p) => p.rut === rut) : undefined;
   return {
-    id: siguienteIdProveedor(filas as unknown as Proveedor[]),
+    id: siguienteIdProveedor(filas),
     mismoRut: igual ? { id: igual.id, razonSocial: igual.razon_social } : null,
   };
 }

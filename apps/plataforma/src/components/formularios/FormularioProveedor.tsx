@@ -55,7 +55,7 @@ type Borrador = {
   pagnol_proveedor_id: string;
 };
 
-function borradorDe(p: Proveedor | null, todos: Proveedor[]): Borrador {
+function borradorDe(p: Proveedor | null, todos: { id: string }[]): Borrador {
   if (!p) {
     return {
       id: siguienteIdProveedor(todos),
@@ -120,7 +120,8 @@ export function FormularioProveedor({
   alGuardado,
 }: {
   proveedor: Proveedor | null;
-  proveedores: Proveedor[];
+  /** Basta con los códigos: es para proponer el siguiente PRV. */
+  proveedores: { id: string }[];
   alCerrar: () => void;
   /** Con el código con que quedó, para seleccionarlo donde se pidió (una compra). */
   alGuardado: (id?: string) => void;
