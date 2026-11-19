@@ -1,6 +1,7 @@
 "use client";
 
 import { supabase } from "../supabase";
+import { empresaActual } from "../sesion";
 
 /* ── Proveedores ──────────────────────────────────────────────────────────── */
 
@@ -89,11 +90,19 @@ function mapearProveedor(f: FilaProveedor): Proveedor {
   };
 }
 
+/**
+ * Los proveedores de la empresa en la que se trabaja.
+ *
+ * El filtro es obligatorio aunque el RLS ya recorte: el rol `soporte` ve TODAS
+ * las empresas, y los códigos se repiten entre ellas (PRV-0002 es Max Service en
+ * Valar y Ferretería del Loa en el demo). Sin esto, elegir Max Service en una OC
+ * copiaba la ficha del demo, y volver a elegirlo no la cambiaba (19-11-2026).
+ */
 export async function cargarProveedores(): Promise<Proveedor[]> {
-  const { data, error } = await supabase
-    .from("proveedores")
-    .select("*")
-    .order("razon_social");
+  const empresa = await empresaActual();
+  let consulta = supabase.from("proveedores").select("*");
+  if (empresa) consulta = consulta.eq("empresa_id", empresa);
+  const { data, error } = await consulta.order("razon_social");
 
   if (error) throw new Error(error.message);
   return ((data ?? []) as FilaProveedor[]).map(mapearProveedor);
@@ -162,7 +171,10 @@ export async function antesDeCrearProveedor(rut: string | null): Promise<{
   id: string;
   mismoRut: { id: string; razonSocial: string } | null;
 }> {
-  const { data, error } = await supabase.from("proveedores").select("id, rut, razon_social");
+  const empresa = await empresaActual();
+  let consulta = supabase.from("proveedores").select("id, rut, razon_social");
+  if (empresa) consulta = consulta.eq("empresa_id", empresa);
+  const { data, error } = await consulta;
   if (error) throw new Error(error.message);
   const filas = (data ?? []) as { id: string; rut: string | null; razon_social: string }[];
   const igual = rut ? filas.find((p) => p.rut === rut) : undefined;

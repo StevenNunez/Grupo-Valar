@@ -157,9 +157,10 @@ async function leerRecepcion(sb: SupabaseClient, recepcionId: string) {
 }
 
 async function proveedorEnPagnol(sb: SupabaseClient, ordenId: string): Promise<string | null> {
-  const { data } = await sb.from("ordenes_compra_proveedor").select("proveedor_id").eq("id", ordenId).maybeSingle();
+  const { data } = await sb.from("ordenes_compra_proveedor").select("proveedor_id, empresa_id").eq("id", ordenId).maybeSingle();
   if (!data?.proveedor_id) return null;
-  const { data: p } = await sb.from("proveedores").select("pagnol_proveedor_id").eq("id", data.proveedor_id).maybeSingle();
+  // El proveedor de la empresa de la orden: los códigos se repiten entre empresas.
+  const { data: p } = await sb.from("proveedores").select("pagnol_proveedor_id").eq("empresa_id", data.empresa_id).eq("id", data.proveedor_id).maybeSingle();
   return (p?.pagnol_proveedor_id as string | null) ?? null;
 }
 

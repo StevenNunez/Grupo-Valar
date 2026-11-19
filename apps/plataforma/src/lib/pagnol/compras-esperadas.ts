@@ -253,7 +253,11 @@ async function anotarFallo(sb: SupabaseClient, orden: Orden, error: string) {
 
 async function proveedorEnPagnol(sb: SupabaseClient, proveedorId: string | null) {
   if (!proveedorId) return null;
-  const { data } = await sb.from("proveedores").select("pagnol_proveedor_id").eq("id", proveedorId).maybeSingle();
+  // Con la empresa: soporte ve todas y los códigos se repiten (PRV-0002 está en Valar y en el demo).
+  const { data: empresa } = await sb.rpc("empresa_actual");
+  let consulta = sb.from("proveedores").select("pagnol_proveedor_id").eq("id", proveedorId);
+  if (empresa) consulta = consulta.eq("empresa_id", empresa as string);
+  const { data } = await consulta.maybeSingle();
   return (data?.pagnol_proveedor_id as string | null) ?? null;
 }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { supabase } from "./supabase";
+import { empresaActual } from "./sesion";
 import type { CuentaPorPagar } from "./pagos";
 
 /**
@@ -469,7 +470,11 @@ export async function cargarContextoSii(
   docs: FacturaSii[],
 ): Promise<{ cargadas: Set<string>; rendidas: Set<string>; ruts: Set<string> }> {
   const folios = docs.map((d) => d.folio);
-  const { data: provs } = await supabase.from("proveedores").select("id, rut");
+  // Solo los de la empresa: soporte ve todas y los códigos se repiten entre ellas.
+  const empresa = await empresaActual();
+  let consultaProvs = supabase.from("proveedores").select("id, rut");
+  if (empresa) consultaProvs = consultaProvs.eq("empresa_id", empresa);
+  const { data: provs } = await consultaProvs;
   const rutDe = new Map<string, string>();
   const ruts = new Set<string>();
   for (const p of (provs ?? []) as { id: string; rut: string | null }[]) {
