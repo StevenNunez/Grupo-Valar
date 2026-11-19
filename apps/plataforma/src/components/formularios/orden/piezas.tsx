@@ -99,7 +99,8 @@ export function SeccionProveedor({
             .map((p) => ({
               id: p.id,
               titulo: p.razonSocial,
-              nota: [formatearRut(p.rut), ...p.rubros.slice(0, 2)]
+              // El nombre de fantasía también se busca: "Max Service" es como se le dice, no su razón social.
+              nota: [p.nombreFantasia, formatearRut(p.rut), ...p.rubros.slice(0, 2)]
                 .filter(Boolean)
                 .join(" · "),
             }))}

@@ -52,6 +52,14 @@ export function Combo({
   const [abierto, setAbierto] = useState(false);
   const [busqueda, setBusqueda] = useState("");
   const [resaltada, setResaltada] = useState(0);
+  /* Lo que se escribió y no se eligió. Antes, al salir del campo, la búsqueda
+     se borraba callada y quedaba lo anterior: parecía que el cambio no tomaba. */
+  const [sinElegir, setSinElegir] = useState<string | null>(null);
+  // El clic afuera se escucha una vez por apertura: lee lo escrito por acá, no de su cierre.
+  const busquedaActual = useRef("");
+  useEffect(() => {
+    busquedaActual.current = busqueda;
+  }, [busqueda]);
 
   const elegida = opciones.find((o) => o.id === valor);
 
@@ -64,7 +72,12 @@ export function Combo({
   useEffect(() => {
     if (!abierto) return;
     const alClic = (e: MouseEvent) => {
-      if (!caja.current?.contains(e.target as Node)) cerrar();
+      if (caja.current?.contains(e.target as Node)) return;
+      const escrito = busquedaActual.current.trim();
+      if (escrito) setSinElegir(escrito);
+      setAbierto(false);
+      setBusqueda("");
+      setResaltada(0);
     };
     document.addEventListener("mousedown", alClic);
     return () => document.removeEventListener("mousedown", alClic);
@@ -76,8 +89,15 @@ export function Combo({
     setResaltada(0);
   }
 
+  /* Se salió del campo (clic afuera o Tab) con algo escrito y sin elegir. */
+  function cerrarSinElegir() {
+    if (busquedaActual.current.trim()) setSinElegir(busquedaActual.current.trim());
+    cerrar();
+  }
+
   function elegir(opcion: OpcionCombo) {
     alCambiar(opcion.id);
+    setSinElegir(null);
     cerrar();
   }
 
@@ -108,7 +128,10 @@ export function Combo({
     if (e.key === "Escape" && abierto) {
       e.preventDefault();
       cerrar();
+      return;
     }
+
+    if (e.key === "Tab" && abierto) cerrarSinElegir();
   }
 
   return (
@@ -134,6 +157,7 @@ export function Combo({
           value={abierto ? busqueda : (elegida?.titulo ?? "")}
           placeholder={elegida ? elegida.titulo : marcador}
           onChange={(e) => {
+            setSinElegir(null);
             setBusqueda(e.target.value);
             setResaltada(0);
             if (!abierto) setAbierto(true);
@@ -182,7 +206,19 @@ export function Combo({
         )}
       </div>
 
-      {ayuda && <p className="mt-1.5 text-xs text-ink-soft">{ayuda}</p>}
+      {sinElegir ? (
+        <p className="mt-1.5 text-xs font-medium text-amber-700" role="status">
+          No se cambió: «{sinElegir}» no se eligió de la lista
+          {elegida ? (
+            <>
+              , así que sigue <strong>{elegida.titulo}</strong>
+            </>
+          ) : null}
+          . Escribe de nuevo y haz clic en la opción (o Enter).
+        </p>
+      ) : (
+        ayuda && <p className="mt-1.5 text-xs text-ink-soft">{ayuda}</p>
+      )}
     </div>
   );
 }

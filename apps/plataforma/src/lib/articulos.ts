@@ -133,7 +133,14 @@ export function calza(busqueda: string, texto: string) {
   if (palabras.length === 0) return true;
 
   const donde = normalizar(texto);
-  return palabras.every((p) => donde.includes(p));
+  /* También pegado: "maxservice" tiene que encontrar "Max Service", porque así
+     se escribe el nombre de una marca cuando uno no se acuerda del espacio. */
+  const pegado = sinSeparadores(donde);
+  return palabras.every((p) => donde.includes(p) || pegado.includes(sinSeparadores(p)));
+}
+
+function sinSeparadores(t: string) {
+  return t.replace(/[^a-z0-9ñ]/g, "");
 }
 
 function normalizar(t: string) {
