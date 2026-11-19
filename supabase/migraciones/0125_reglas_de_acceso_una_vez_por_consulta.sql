@@ -24,7 +24,7 @@
 --
 --   puede(clave, c)        →  puede_en_todos(clave)  o  c ∈ contratos_con_permiso(clave)
 --   ve_contrato(modulo, c) →  ve_todo_el_modulo(modulo)  o  c ∈ contratos_del_modulo(modulo)
---   ve_empresa(e)          →  e = empresa_actual()  o  cruza_empresas()
+--   ve_empresa(e)          →  e = empresa_actual()   (Soporte ve una empresa a la vez: 0046)
 --   tiene_permiso(clave), entra_a(modulo)  →  las mismas, preguntadas una vez
 --
 -- `puede` y `ve_contrato` siguen existiendo (las usan otras funciones). Las
@@ -165,7 +165,8 @@ begin
 
   expr := regexp_replace(expr,
     '\m' || fn || 've_empresa\(' || col || '\)',
-    '(\1 = (SELECT public.empresa_actual()) OR (SELECT public.cruza_empresas()))', 'g');
+    -- Sin `OR cruza_empresas()`: desde la 0046 Soporte ve una empresa a la vez (lo corrigió la 0126).
+    '(\1 = (SELECT public.empresa_actual()))', 'g');
 
   -- Sin argumento de fila: basta envolverlas (si no lo están ya).
   expr := regexp_replace(expr,
