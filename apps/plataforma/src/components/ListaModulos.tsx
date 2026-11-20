@@ -125,6 +125,17 @@ export function ListaModulos() {
               Datos de la empresa
             </Link>
           )}
+          {puede(usuario, "parametros.editar") && (
+            <Link
+              href="/aprobaciones/"
+              className="inline-flex items-center gap-2 text-sm font-semibold text-ink-soft transition-colors hover:text-ink"
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                <path d="M9 12l2 2 4-4M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3Z" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Aprobaciones
+            </Link>
+          )}
         </div>
       )}
     </>

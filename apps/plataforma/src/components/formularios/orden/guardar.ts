@@ -45,12 +45,19 @@ export async function guardarOrden({
   listaEnPesos: (l: Linea) => number;
   alCrear: (id: string) => void;
 }) {
+  /* Sacarla de borrador va al final, con los ítems ya guardados: la base revisa
+     ahí que la compra tenga sus firmas (0127) y tiene que ver el monto nuevo,
+     no el de antes. Si falta una firma, la orden queda en borrador con todo lo
+     demás guardado. */
+  const emite = cabecera.estado !== "borrador" && cabecera.estado !== "anulada" && (!orden || orden.estado === "borrador");
+  const primero = emite ? { ...cabecera, estado: "borrador" as EstadoOrden } : cabecera;
+
   if (orden) {
-    await actualizar("ordenes_compra_proveedor", orden.id, cabecera);
+    await actualizar("ordenes_compra_proveedor", orden.id, primero);
     // Fase 5: una orden anulada deja de esperarse en Pagnol (sin efecto si nunca se anunció).
     if (cabecera.estado === "anulada" && orden.estado !== "anulada") void cancelarOrdenEnPagnol(orden.id);
   } else {
-    await crear("ordenes_compra_proveedor", cabecera);
+    await crear("ordenes_compra_proveedor", primero);
     alCrear(cabecera.id);
   }
 
@@ -101,4 +108,6 @@ export async function guardarOrden({
       await actualizar("items_compra", l.id, fila);
     }
   }
+
+  if (emite) await actualizar("ordenes_compra_proveedor", ordenId, { estado: cabecera.estado });
 }

@@ -143,6 +143,19 @@ export function MarcoModulo({
             </Link>
           )}
 
+          {puede(usuario, "parametros.editar") && (
+            <Link
+              href="/aprobaciones/"
+              onClick={() => setMenuAbierto(false)}
+              className="mb-3 flex items-center gap-2 text-xs text-white/60 transition-colors hover:text-white"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <path d="M9 12l2 2 4-4M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3Z" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Aprobaciones
+            </Link>
+          )}
+
           {!entraDirecto(usuario) && (
             <Link
               href="/modulos/"

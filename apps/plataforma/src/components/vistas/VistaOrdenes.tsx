@@ -1,7 +1,9 @@
 "use client";
 
 import { useFiltro } from "@/lib/vista-guardada";
-import { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { DialogoAutorizacion } from "../DialogoAutorizacion";
 import { FormularioOrden } from "../formularios/FormularioOrden";
 import { CicloOrden } from "../CicloOrden";
 import { EnvioOrden, EstadoEnvio } from "../EnvioOrden";
@@ -37,6 +39,7 @@ import {
 } from "@/lib/ordenes";
 import { useListaServidor, useRetardado } from "@/lib/lista-servidor";
 import { usePuede, useUsuario } from "@/lib/sesion";
+import { cargarEstadosAutorizacion, type EstadoAutorizacion } from "@/lib/abastecimiento/autorizacion";
 import { supabase } from "@/lib/supabase";
 
 const estados: Record<EstadoOrden, { titulo: string; tono: Tono }> = {
@@ -133,6 +136,9 @@ export function VistaOrdenes() {
      más se hace con una orden emitida y estaba a dos clics, detrás de un ícono. */
   const [recibirDirecto, setRecibirDirecto] = useState(false);
   const [enviando, setEnviando] = useState<Orden | null>(null);
+  /* La autorización de la compra (0127): se abre desde la lista o desde el aviso. */
+  const [autorizando, setAutorizando] = useState<{ id: string; titulo?: string } | null>(null);
+  const [vueltaAutorizacion, setVueltaAutorizacion] = useState(0);
 
   const [filtro, setFiltro] = useFiltro<Filtrado>("ordenes:estado", "todas");
   const [pago, setPago] = useFiltro<FiltradoPago>("ordenes:pago", "todas");
@@ -184,6 +190,7 @@ export function VistaOrdenes() {
   const recargar = () => {
     recargarBase();
     lista.recargar();
+    setVueltaAutorizacion((n) => n + 1);
   };
 
   return (
@@ -194,10 +201,16 @@ export function VistaOrdenes() {
         acciones={<BotonNuevo permiso="ordenes.emitir" onClick={edicion.abrirNuevo}>Nueva orden</BotonNuevo>}
       />
 
+      <Suspense fallback={null}>
+        <AbrirAutorizacionDesdeAviso alAbrir={(id) => setAutorizando({ id })} />
+      </Suspense>
+
       <Contenido consulta={estado}>
         {(datos) => (
           <>
             <Contenidos
+              alAutorizar={(o) => setAutorizando({ id: o.id, titulo: `${o.numero} · ${o.proveedor}` })}
+              vueltaAutorizacion={vueltaAutorizacion}
               resumen={datos.resumen}
               lista={lista}
               filtro={filtro}
@@ -260,6 +273,15 @@ export function VistaOrdenes() {
         )}
       </Contenido>
 
+      {autorizando && (
+        <DialogoAutorizacion
+          ordenId={autorizando.id}
+          titulo={autorizando.titulo}
+          alCerrar={() => setAutorizando(null)}
+          alCambiar={recargar}
+        />
+      )}
+
       {imprimiendo && (
         <VistaImpresion orden={imprimiendo} alCerrar={() => setImprimiendo(null)} />
       )}
@@ -300,7 +322,23 @@ export function VistaOrdenes() {
   );
 }
 
+/** El aviso de la campana trae `?autorizar=<orden>`: abre su autorización y limpia la dirección. */
+function AbrirAutorizacionDesdeAviso({ alAbrir }: { alAbrir: (id: string) => void }) {
+  const router = useRouter();
+  const id = useSearchParams().get("autorizar");
+  useEffect(() => {
+    if (!id) return;
+    alAbrir(id);
+    router.replace("/abastecimiento/ordenes/");
+    // `alAbrir` es un setState: no cambia entre renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+  return null;
+}
+
 function Contenidos({
+  alAutorizar,
+  vueltaAutorizacion,
   resumen,
   lista,
   filtro,
@@ -350,8 +388,22 @@ function Contenidos({
   alRecibir: (o: Orden) => void;
   alEnviar: (o: Orden) => void;
   envios: Record<string, Envio[]>;
+  alAutorizar: (o: Orden) => void;
+  /** Cambia cuando algo pudo mover las firmas: vuelve a preguntar. */
+  vueltaAutorizacion: number;
 }) {
   const puedeEmitir = usePuede("ordenes.emitir");
+
+  // Cómo va la autorización de los borradores que se están mirando.
+  const borradores = lista.filas.filter((o) => o.estado === "borrador").map((o) => o.id).join(",");
+  const [autorizaciones, setAutorizaciones] = useState<Record<string, EstadoAutorizacion>>({});
+  useEffect(() => {
+    let vigente = true;
+    cargarEstadosAutorizacion(borradores ? borradores.split(",") : []).then((r) => vigente && setAutorizaciones(r));
+    return () => {
+      vigente = false;
+    };
+  }, [borradores, vueltaAutorizacion]);
   // Los mismos permisos con que el ciclo de la orden deja registrar una recepción.
   const registraRecepcion = usePuede("recepcion.registrar");
   const cargaGestion = usePuede("gestion.editar");
@@ -480,7 +532,7 @@ function Contenidos({
           <p className="px-6 py-14 text-center text-sm text-ink-soft lg:px-8">Cargando órdenes…</p>
         ) : (
           <Tabla
-            columnas={columnas(edicion, alImprimir, alRecepcionar, puedeEmitir, alEnviar, envios, puedeRecibir ? alRecibir : null)}
+            columnas={columnas(edicion, alImprimir, alRecepcionar, puedeEmitir, alEnviar, envios, puedeRecibir ? alRecibir : null, autorizaciones, alAutorizar)}
             filas={lista.filas}
             claveDe={(o) => o.id}
             vacio="Ninguna orden con este filtro."
@@ -521,6 +573,8 @@ const columnas = (
   envios: Record<string, Envio[]>,
   /** Abre la recepción de la orden; nulo si la persona no puede registrarla. */
   alRecibir: ((o: Orden) => void) | null,
+  autorizaciones: Record<string, EstadoAutorizacion>,
+  alAutorizar: (o: Orden) => void,
 ): Columna<Orden>[] => [
   {
     clave: "numero",
@@ -593,6 +647,7 @@ const columnas = (
       return (
       <div className="flex flex-col items-start gap-1">
         <Chip tono={estados[o.estado].tono}>{estados[o.estado].titulo}</Chip>
+        <ChipAutorizacion estado={autorizaciones[o.id]} alAbrir={() => alAutorizar(o)} />
         {pago?.tipo === "total" && <Chip tono="bueno">Pagada</Chip>}
         {pago?.tipo === "parcial" && <Chip tono="info">Pagada {pago.pct} %</Chip>}
         {/* Lo último que pasó con el envío al proveedor. */}
@@ -650,6 +705,30 @@ const columnas = (
     ),
   },
 ];
+
+/** En un borrador que necesita firmas: cómo va, y el botón para abrirla. */
+function ChipAutorizacion({ estado, alAbrir }: { estado: EstadoAutorizacion | undefined; alAbrir: () => void }) {
+  if (!estado?.requiere) return null;
+  const [texto, clase] = estado.completa
+    ? ["Autorizada · emitir", "border-exito text-exito hover:bg-exito-suave"]
+    : estado.rechazada
+      ? ["Rechazada", "border-peligro text-peligro hover:bg-peligro-suave"]
+      : estado.meToca
+        ? ["Te toca autorizar", "border-cyan bg-cyan/10 text-cyan-deep hover:bg-cyan/20"]
+        : estado.pedida
+          ? ["Esperando firmas", "border-alerta text-alerta hover:bg-alerta-suave"]
+          : ["Pedir autorización", "border-cyan text-cyan-deep hover:bg-cyan/5"];
+  return (
+    <button
+      type="button"
+      onClick={alAbrir}
+      title="Autorización de la compra"
+      className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${clase}`}
+    >
+      {texto}
+    </button>
+  );
+}
 
 function BotonIcono({
   titulo,
