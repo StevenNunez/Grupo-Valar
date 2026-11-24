@@ -33,6 +33,8 @@ import { crearConId, eliminar } from "@/lib/crud";
 import { opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
 import { cargarLineasDeCompra, guardarCompraDirecta, siguienteIdCompra, type Compra, type EstadoPagoCompra } from "@/lib/egresos";
 import { formatearPesos } from "@/lib/formato";
+import { retencionDe } from "@/lib/honorarios";
+import { CasillaHonorarios, ResumenHonorarios } from "../ui/Honorarios";
 
 /**
  * Una compra directa de Control de Gestión: el documento y sus líneas.
@@ -133,6 +135,9 @@ export function FormularioCompra({
   /* Un gasto exento (boleta, honorarios, pasajes) va sin IVA aunque la categoría lo lleve. Una compra
      guardada con neto y sin IVA se abre como exenta. */
   const [exento, setExento] = useState(compra !== null && compra.neto > 0 && compra.iva === 0);
+  /* Boleta de honorarios o de terceros (0129): sin IVA y con retención del año
+     de la boleta. El neto (la suma de las líneas) es el bruto, que es el gasto. */
+  const [honorarios, setHonorarios] = useState(compra?.boletaHonorarios ?? false);
   const [confirmando, setConfirmando] = useState(false);
   const [errorBorrado, setErrorBorrado] = useState<string | null>(null);
   const [borrando, setBorrando] = useState(false);
@@ -177,7 +182,7 @@ export function FormularioCompra({
   const afectaIva = (id: string) => categorias.find((c) => c.id === id)?.afectaIva ?? true;
   const neto = lineas.reduce((t, l) => t + netoLinea(l), 0);
   const ivaCalculado = lineas.reduce((t, l) => t + (afectaIva(l.categoria_id) ? ivaDe(netoLinea(l)) : 0), 0);
-  const iva = exento ? 0 : ivaTocado ? f.datos.iva : ivaCalculado;
+  const iva = exento || honorarios ? 0 : ivaTocado ? f.datos.iva : ivaCalculado;
 
   /* El presupuesto de cada categoría del documento, con lo que ya lleva en el
      mes sin contar esta compra. Es el semáforo de desviación de la planilla. */
@@ -229,6 +234,10 @@ export function FormularioCompra({
           iva,
           estadoPago: f.datos.estado_pago,
           datos: propios,
+          // Solo se toca si hay boleta (o la hubo): así sin la 0129 lo demás sigue guardando.
+          ...(honorarios || compra?.boletaHonorarios
+            ? { honorarios: { retencion: honorarios ? retencionDe(neto, f.datos.fecha) : null, teniaBoleta: Boolean(compra?.boletaHonorarios) } }
+            : {}),
           lineas: conDescripcion.map(({ descripcion, unidad, cantidad, precio_unitario, categoria_id, tipo }) => ({
             descripcion: descripcion.trim(), unidad, cantidad, precio_unitario, categoria_id, tipo,
           })),
@@ -257,6 +266,7 @@ export function FormularioCompra({
         documento: compra.documento,
         neto: compra.neto,
         iva: compra.iva,
+        ...(compra.boletaHonorarios ? { boleta_honorarios: true, retencion: compra.retencion } : {}),
         estado: compra.estadoPago === "pagada" ? "pagado" : "pendiente",
         observaciones: `Pasada desde ${compra.contrato} (${compra.id}).`,
       });
@@ -445,7 +455,10 @@ export function FormularioCompra({
           </section>
 
           <Campos>
-            {exento ? (
+            <CasillaHonorarios marcada={honorarios} alCambiar={setHonorarios} fecha={f.datos.fecha} />
+            {honorarios ? (
+              <ResumenHonorarios bruto={neto} fecha={f.datos.fecha} />
+            ) : exento ? (
               <div className="rounded-xl bg-mist/50 px-4 py-3 text-sm text-ink-soft">
                 <p className="font-semibold text-ink">Sin IVA</p>
                 <p className="mt-0.5 text-xs">Gasto exento: el total es igual al neto.</p>
@@ -465,7 +478,7 @@ export function FormularioCompra({
                 }}
               />
             )}
-            <Ancho>
+            {!honorarios && <Ancho>
               <label className="flex items-center gap-2 text-sm text-ink">
                 <input
                   type="checkbox"
@@ -475,7 +488,7 @@ export function FormularioCompra({
                 />
                 Exento o boleta (sin IVA)
               </label>
-            </Ancho>
+            </Ancho>}
             <div className="flex items-baseline justify-between gap-4 self-end rounded-xl border-2 border-ink bg-white px-4 py-3">
               <span className="font-display text-sm font-semibold uppercase tracking-[0.12em] text-ink">Total</span>
               <span className="font-display text-xl font-semibold tabular-nums text-ink">{formatearPesos(neto + iva)}</span>

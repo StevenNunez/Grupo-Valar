@@ -27,6 +27,8 @@ import {
   Campos, Confirmacion, Dialogo, Pie, ResumenIva, ivaDe, useBorrado, useFormulario,
 } from "../ui/Formulario";
 import { DialogoHistorial } from "../ui/Historial";
+import { CasillaHonorarios, ResumenHonorarios, errorSinMigracionHonorarios } from "../ui/Honorarios";
+import { brutoDesdeLiquido, liquidoDe, retencionDe } from "@/lib/honorarios";
 import { Buscador, coincide } from "../ui/Buscador";
 import { Tabla, Total, type Columna } from "../ui/Tabla";
 import { CampoFiltro, Contenido, Desplegable, Encabezado, Filtro, Panel, Resumen } from "../ui/Vista";
@@ -209,7 +211,9 @@ function columnas(editar: ((fila: EgresoOficina) => void) | null, verHistorial: 
     { clave: "detalle", titulo: "Detalle", celda: (f) => <><span className="block font-semibold text-ink">{f.descripcion}</span><span className="text-xs text-ink-soft">{f.proveedor}{f.documento ? ` · ${f.ordenId ? "Orden " : ""}${f.documento}` : ""}</span></> },
     { clave: "estado", titulo: "Pago", celda: (f) => <span className={f.estado === "pagado" ? "text-exito" : "text-alerta"}>{f.estado === "pagado" ? "Pagado" : "Pendiente"}</span> },
     { clave: "neto", titulo: "Neto", derecha: true, celda: (f) => formatearPesos(f.neto) },
-    { clave: "iva", titulo: "IVA", derecha: true, celda: (f) => formatearPesos(f.iva) },
+    { clave: "iva", titulo: "IVA", derecha: true, celda: (f) => f.boleta_honorarios
+      ? <><span className="block text-ink-soft">Boleta de honorarios</span><span className="text-xs text-ink-soft">retención {formatearPesos(f.retencion)} · líquido {formatearPesos(f.neto - f.retencion)}</span></>
+      : formatearPesos(f.iva) },
     { clave: "acciones", titulo: "Acciones", celda: (f) => f.ordenId ? <Link href="/abastecimiento/ordenes/" title="Este egreso sale de una orden de compra: se corrige en la orden." className="whitespace-nowrap font-semibold text-cyan-deep hover:underline">Ver en Órdenes</Link> : <div className="flex gap-3 whitespace-nowrap">{editar && <button type="button" onClick={() => editar(f)} className="font-semibold text-cyan-deep hover:underline">Editar</button>}<button type="button" onClick={() => verHistorial(f)} className="text-ink-soft hover:underline">Historial</button></div> },
   ];
 }
@@ -233,6 +237,9 @@ function FormularioOficina({ registro, categoriaInicial, centroInicial, catalogo
   const formulario = useFormulario(inicial);
   // El IVA es el 19% del neto. Un egreso guardado con neto y sin IVA se abre como exento.
   const [exento, setExento] = useState(registro !== null && registro.neto > 0 && registro.iva === 0);
+  /* Boleta de honorarios o de terceros (0129): sin IVA y con retención del año de
+     la boleta. El neto es el bruto, que es el gasto de Oficina Central. */
+  const [honorarios, setHonorarios] = useState(registro?.boleta_honorarios ?? false);
   /* Lo que se le informó a Pagnol se deshace primero: si Pagnol no lo acepta (p. ej.
      ya se entregaron esas unidades), el egreso no se borra. Solo se le habla a
      Pagnol si el egreso realmente le informó algo. */
@@ -253,11 +260,22 @@ function FormularioOficina({ registro, categoriaInicial, centroInicial, catalogo
       formulario.setError("Completa fecha, proveedor, detalle y un monto neto mayor que cero.");
       return;
     }
-    const datos = { ...d, iva: ivaDe(d.neto, !exento), proveedor: d.proveedor.trim(), descripcion: d.descripcion.trim(), documento: d.documento?.trim() || null, observaciones: d.observaciones?.trim() || null };
+    const datos = {
+      ...d,
+      iva: ivaDe(d.neto, !exento && !honorarios),
+      // Solo se escriben si hay boleta (o la hubo): así sin la 0129 lo demás sigue guardando.
+      ...(honorarios || registro?.boleta_honorarios
+        ? { boleta_honorarios: honorarios, retencion: honorarios ? retencionDe(d.neto, d.fecha) : 0 }
+        : {}),
+      proveedor: d.proveedor.trim(), descripcion: d.descripcion.trim(), documento: d.documento?.trim() || null, observaciones: d.observaciones?.trim() || null };
     void formulario.enviar(
       async () => {
-        if (registro) await actualizar("egresos_oficina_central", registro.id, datos);
-        else void respaldos.subirA(await crearConId("egresos_oficina_central", datos));
+        try {
+          if (registro) await actualizar("egresos_oficina_central", registro.id, datos);
+          else void respaldos.subirA(await crearConId("egresos_oficina_central", datos));
+        } catch (e) {
+          throw errorSinMigracionHonorarios(e, "0129");
+        }
       },
       () => { alGuardado(); alCerrar(); },
     );
@@ -265,7 +283,7 @@ function FormularioOficina({ registro, categoriaInicial, centroInicial, catalogo
 
   return <>
     <Dialogo titulo={registro ? "Editar egreso de Oficina Central" : "Nuevo egreso de Oficina Central"} abierto alCerrar={alCerrar}
-      descripcion="Basta con el monto neto: el IVA (19%) y el total se calculan solos.">
+      descripcion="Basta con el monto neto: el IVA (19%) y el total se calculan solos. Si es boleta de honorarios, la retención también.">
       <form onSubmit={guardar}>
         <Campos>
           <CampoSeleccion etiqueta="Categoría" ayuda="Qué tipo de gasto es." opciones={opcionesCategoria} requerido {...formulario.campo("categoria")} />
@@ -274,9 +292,26 @@ function FormularioOficina({ registro, categoriaInicial, centroInicial, catalogo
           <CampoTexto etiqueta={formulario.datos.categoria === "reembolsos" ? "Quién rindió (a quién se le devuelve)" : "Proveedor o beneficiario"} requerido {...formulario.campo("proveedor")} />
           <CampoTexto etiqueta="Nº de documento" valor={formulario.datos.documento ?? ""} alCambiar={(v) => formulario.cambiar("documento", v)} ayuda="Factura, boleta o comprobante, si existe." />
           <Ancho><CampoTexto etiqueta="Detalle" requerido {...formulario.campo("descripcion")} /></Ancho>
-          <CampoDinero etiqueta="Neto" requerido {...formulario.campo("neto")} />
+          <CasillaHonorarios marcada={honorarios} alCambiar={setHonorarios} fecha={formulario.datos.fecha} />
+          {honorarios ? (
+            <>
+              <CampoDinero etiqueta="Monto bruto de la boleta" requerido ayuda="El total que dice la boleta, antes de la retención." {...formulario.campo("neto")} />
+              <CampoDinero
+                etiqueta="Líquido a pagar"
+                ayuda="Si pactaste un monto líquido, escríbelo acá y el bruto se calcula solo."
+                valor={liquidoDe(formulario.datos.neto, formulario.datos.fecha)}
+                alCambiar={(v) => formulario.cambiar("neto", brutoDesdeLiquido(v, formulario.datos.fecha))}
+              />
+            </>
+          ) : (
+            <CampoDinero etiqueta="Neto" requerido {...formulario.campo("neto")} />
+          )}
           <CampoSeleccion etiqueta="Estado de pago" opciones={[{ id: "pendiente", titulo: "Pendiente" }, { id: "pagado", titulo: "Pagado" }]} {...formulario.campo("estado")} />
-          <ResumenIva neto={formulario.datos.neto} afecto={!exento} alCambiarAfecto={(v) => setExento(!v)} />
+          {honorarios ? (
+            <ResumenHonorarios bruto={formulario.datos.neto} fecha={formulario.datos.fecha} />
+          ) : (
+            <ResumenIva neto={formulario.datos.neto} afecto={!exento} alCambiarAfecto={(v) => setExento(!v)} />
+          )}
           <Ancho><CampoTexto etiqueta="Observaciones" valor={formulario.datos.observaciones ?? ""} alCambiar={(v) => formulario.cambiar("observaciones", v)} /></Ancho>
         </Campos>
         {registro && !categoriasSinIngresoAPagnol.includes(formulario.datos.categoria) && (

@@ -239,6 +239,7 @@ export function VistaEgresosTerceros() {
                 anexos={anexos}
                 edicion={edicion}
                 contratos={apoyo.estado.estado === "listo" ? apoyo.estado.datos.contratos : []}
+                boletas={boletasDeHonorarios(apoyo.estado.estado === "listo" ? apoyo.estado.datos.servicios : [])}
                 mes={mes}
                 alCambiarMes={setMes}
                 actualizando={lista.actualizando}
@@ -417,6 +418,7 @@ function Contenidos({
   filas: todas,
   anexos,
   contratos,
+  boletas,
   edicion,
   mes,
   alCambiarMes,
@@ -426,6 +428,8 @@ function Contenidos({
   filas: EgresoTercero[];
   anexos: Anexo[];
   contratos: ContratoBreve[];
+  /** Retención de cada servicio con boleta de honorarios, por id. */
+  boletas: Map<string, number>;
   edicion: ReturnType<typeof useEdicion<EgresoTercero>>;
   mes: Mes;
   alCambiarMes: (m: Mes) => void;
@@ -573,7 +577,7 @@ function Contenidos({
       >
         <Buscador valor={texto} alCambiar={setTexto} etiqueta="Buscar egresos" placeholder="Buscar por proveedor, N° de OC, factura, detalle, categoría o contrato…" />
         <Tabla
-          columnas={columnas(edicion, abrirOrden)}
+          columnas={columnas(edicion, abrirOrden, boletas)}
           filas={visibles}
           claveDe={(e) => `${e.id}|${e.periodo}`}
           vacio={texto.trim() ? "Ningún movimiento coincide con la búsqueda." : mes === "todos" || mes === "cerrados" ? "Ningún movimiento en este filtro." : "Ningún movimiento en este mes con este filtro."}
@@ -604,9 +608,14 @@ const tonoOrigen: Record<"compra" | "servicio" | "orden", Tono> = {
 
 const nombreOrigen = { compra: "Compra", servicio: "Servicio", orden: "Orden de compra" } as const;
 
+/** Los servicios con boleta de honorarios (0128), por id: su retención y su líquido se ven en la lista. */
+const boletasDeHonorarios = (servicios: Servicio[]) =>
+  new Map(servicios.filter((s) => s.boletaHonorarios).map((s) => [s.id, s.retencion]));
+
 const columnas = (
   edicion: ReturnType<typeof useEdicion<EgresoTercero>>,
   abrirOrden: (id: string) => void,
+  boletas: Map<string, number>,
 ): Columna<EgresoTercero>[] => [
   {
     clave: "detalle",
@@ -723,6 +732,11 @@ const columnas = (
     celda: (e) => (
       <>
         <span className="font-semibold text-ink">{formatearMonto(e.total)}</span>
+        {e.origen === "servicio" && boletas.has(e.id) && (
+          <span className="mt-0.5 block text-xs text-ink-soft">
+            boleta de honorarios · retención {formatearMonto(boletas.get(e.id)!)} · líquido {formatearMonto(e.total - boletas.get(e.id)!)}
+          </span>
+        )}
         {/* Pagada en parte (cuotas): lo que falta, no el total de la factura. */}
         {debe(e) && !e.rendidoPor && e.totalPagado > 0 && (
           <span className="mt-0.5 block text-xs text-ink-soft">pagado {formatearMonto(e.totalPagado)} · por pagar {formatearMonto(montoPorPagar(e))}</span>

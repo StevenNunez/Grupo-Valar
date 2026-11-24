@@ -47,6 +47,10 @@ export type EgresoOficina = {
   total: number;
   estado: EstadoEgresoOficina;
   observaciones: string | null;
+  /** Boleta de honorarios o de terceros (0129): sin IVA; el neto es el bruto. */
+  boleta_honorarios: boolean;
+  /** Pesos retenidos del bruto y enterados al SII; al prestador se le paga neto − retención. */
+  retencion: number;
   /**
    * Si el egreso es una línea de una orden de compra de Oficina Central (0122):
    * la orden de la que sale. No se edita acá —se corrige en la orden— y cuenta
@@ -93,25 +97,35 @@ async function cargarEgresosDeOrdenes(): Promise<FilaDeOrden[]> {
   return error ? [] : ((data ?? []) as FilaDeOrden[]);
 }
 
+type FilaEgresoOficina = {
+  id: string; categoria: string; centro_costo: string; fecha: string; proveedor: string | null;
+  descripcion: string | null; documento: string | null; neto: number; iva: number; total: number;
+  estado: string | null; observaciones: string | null; boleta_honorarios?: boolean | null; retencion?: number | null;
+};
+
+const COLUMNAS_EGRESO_OFICINA = "id, categoria, centro_costo, fecha, proveedor, descripcion, documento, neto, iva, total, estado, observaciones";
+
+// Por tandas: Oficina Central suma decenas de egresos al mes y pasa las 1000 filas.
+const egresosAMano = (columnas: string) =>
+  todasLasFilas<FilaEgresoOficina>((d, h) =>
+    supabase
+      .from("egresos_oficina_central")
+      .select(columnas)
+      .order("fecha", { ascending: false })
+      .order("creado_en", { ascending: false })
+      .order("id")
+      .range(d, h),
+  );
+
 export async function cargarEgresosOficina(catalogoDado?: Catalogo): Promise<EgresoOficina[]> {
-  const [egresos, deOrdenes, catalogo] = await Promise.all([
-    // Por tandas: Oficina Central suma decenas de egresos al mes y pasa las 1000 filas.
-    todasLasFilas<{
-      id: string; categoria: string; centro_costo: string; fecha: string; proveedor: string | null;
-      descripcion: string | null; documento: string | null; neto: number; iva: number; total: number;
-      estado: string | null; observaciones: string | null;
-    }>((d, h) =>
-      supabase
-        .from("egresos_oficina_central")
-        .select("id, categoria, centro_costo, fecha, proveedor, descripcion, documento, neto, iva, total, estado, observaciones")
-        .order("fecha", { ascending: false })
-        .order("creado_en", { ascending: false })
-        .order("id")
-        .range(d, h),
-    ),
+  const [primera, deOrdenes, catalogo] = await Promise.all([
+    egresosAMano(`${COLUMNAS_EGRESO_OFICINA}, boleta_honorarios, retencion`),
     cargarEgresosDeOrdenes(),
     catalogoDado ?? cargarCatalogoOficina(),
   ]);
+  // Sin la 0129 la lista sigue cargando, sin boletas de honorarios.
+  const egresos =
+    primera.error && /boleta_honorarios|retencion/.test(primera.error.message) ? await egresosAMano(COLUMNAS_EGRESO_OFICINA) : primera;
   if (egresos.error) throw new Error(egresos.error.message);
   const categorias = new Map(catalogo.categorias.map((c) => [c.id, c]));
   const centros = new Map(catalogo.centros.map((c) => [c.id, c]));
@@ -120,6 +134,8 @@ export async function cargarEgresosOficina(catalogoDado?: Catalogo): Promise<Egr
     neto: Number(fila.neto),
     iva: Number(fila.iva),
     total: Number(fila.total),
+    boleta_honorarios: Boolean(fila.boleta_honorarios),
+    retencion: Number(fila.retencion ?? 0),
   }));
   const porOrden = deOrdenes.map((fila) => ({
     id: fila.id,
@@ -135,6 +151,8 @@ export async function cargarEgresosOficina(catalogoDado?: Catalogo): Promise<Egr
     total: Number(fila.neto) + Number(fila.iva),
     estado: fila.estado,
     observaciones: null,
+    boleta_honorarios: false,
+    retencion: 0,
     ordenId: fila.orden_id,
     ordenNumero: fila.orden_numero,
   }));

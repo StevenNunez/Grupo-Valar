@@ -27,6 +27,8 @@ import type { CampoContrato, Datos } from "@/lib/campos";
 import { categoriasDe, opcionesDeCategoria, tipoSegunCategoria, type Categoria } from "@/lib/categorias";
 import { opcionesDeContrato, type ContratoBreve } from "@/lib/contratos";
 import { formatearPesos } from "@/lib/formato";
+import { brutoDesdeLiquido, liquidoDe, retencionDe } from "@/lib/honorarios";
+import { CasillaHonorarios, ResumenHonorarios, errorSinMigracionHonorarios } from "../ui/Honorarios";
 import {
   cargarLineasDeServicio,
   guardarLineasDeServicio,
@@ -193,7 +195,14 @@ export function FormularioServicio({
   const categoria = propias.find((c) => c.id === f.datos.categoria_id);
   const categoriaAfecta = categoria?.afectaIva ?? true;
   const [exento, setExento] = useState(servicio !== null && servicio.neto > 0 && servicio.iva === 0);
-  const afecto = categoriaAfecta && !exento;
+  /* Boleta de honorarios o de prestación de servicios de terceros (0128): sin
+     IVA y con retención. El neto es el BRUTO de la boleta, que es el costo del
+     contrato; al prestador se le paga el líquido y la retención va al SII. La
+     tasa es la del año de la boleta. */
+  const [honorarios, setHonorarios] = useState(servicio?.boletaHonorarios ?? false);
+  const afecto = categoriaAfecta && !exento && !honorarios;
+  const fechaBoleta = f.datos.fecha_factura || f.datos.fecha;
+  const conDetalle = lineas.some((l) => l.equipo.trim());
 
   /* Cambiar de contrato deja seleccionada una categoría que el nuevo no tiene.
      Se limpia. */
@@ -216,6 +225,10 @@ export function FormularioServicio({
     const fila = {
       ...campos,
       iva: ivaDe(campos.neto, afecto),
+      // Solo se escriben si hay boleta (o la hubo): así sin la 0128 lo demás sigue guardando.
+      ...(honorarios || servicio?.boletaHonorarios
+        ? { boleta_honorarios: honorarios, retencion: honorarios ? retencionDe(campos.neto, campos.fecha_factura || campos.fecha) : 0 }
+        : {}),
       datos: propios,
       categoria_id: campos.categoria_id || null,
       anexo_id: campos.anexo_id || null,
@@ -234,11 +247,13 @@ export function FormularioServicio({
       async () => {
         // El código no se teclea: es el siguiente correlativo del contrato.
         const servicioId = editando ? servicio.id : id.trim() || (await siguienteIdServicio(campos.contrato_id));
-        if (editando) await actualizar("servicios", servicio.id, fila);
-        else {
-          await crear("servicios", { ...fila, id: servicioId });
-          void respaldos.subirA(servicioId);
+        try {
+          if (editando) await actualizar("servicios", servicio.id, fila);
+          else await crear("servicios", { ...fila, id: servicioId });
+        } catch (e) {
+          throw errorSinMigracionHonorarios(e, "0128");
         }
+        if (!editando) void respaldos.subirA(servicioId);
         if (lineas.length > 0 || teniaLineas) await guardarLineasDeServicio(servicioId, campos.contrato_id, lineas);
       },
       () => {
@@ -337,19 +352,36 @@ export function FormularioServicio({
               />
             </Ancho>
 
-            {lineas.some((l) => l.equipo.trim()) ? (
+            <CasillaHonorarios marcada={honorarios} alCambiar={setHonorarios} fecha={fechaBoleta} />
+
+            {conDetalle ? (
               <div>
-                <p className="text-sm font-semibold text-ink">Neto</p>
+                <p className="text-sm font-semibold text-ink">{honorarios ? "Monto bruto" : "Neto"}</p>
                 <p className="mt-2 font-display text-lg font-semibold tabular-nums text-ink">
                   {formatearPesos(f.datos.neto)}
                 </p>
                 <p className="mt-1.5 text-xs text-ink-soft">Suma del detalle por equipo, abajo.</p>
               </div>
+            ) : honorarios ? (
+              <CampoDinero
+                etiqueta="Monto bruto de la boleta"
+                ayuda="El total de honorarios que dice la boleta, antes de la retención."
+                {...f.campo("neto")}
+              />
             ) : (
               <CampoDinero
                 etiqueta="Neto"
                 ayuda="Déjalo en 0 si aún no llega el estado de pago: el gasto queda registrado en el mes y lo completas después."
                 {...f.campo("neto")}
+              />
+            )}
+
+            {honorarios && !conDetalle && (
+              <CampoDinero
+                etiqueta="Líquido a pagar"
+                ayuda="Si pactaste un monto líquido, escríbelo acá y el bruto se calcula solo."
+                valor={liquidoDe(f.datos.neto, fechaBoleta)}
+                alCambiar={(v) => f.cambiar("neto", brutoDesdeLiquido(v, fechaBoleta))}
               />
             )}
 
@@ -369,8 +401,12 @@ export function FormularioServicio({
             {/* El gasto ya cuenta en el mes de arriba. Acá se controla el pago: el
                 plazo corre desde la fecha de la factura, que llega después. */}
             <CampoFecha
-              etiqueta="Fecha de la factura"
-              ayuda="Cuando llegue la factura. Mientras no esté, el servicio figura «factura pendiente»."
+              etiqueta={honorarios ? "Fecha de la boleta" : "Fecha de la factura"}
+              ayuda={
+                honorarios
+                  ? "La de emisión de la boleta: fija la tasa de retención del año. Si la dejas vacía se usa la fecha del gasto."
+                  : "Cuando llegue la factura. Mientras no esté, el servicio figura «factura pendiente»."
+              }
               valor={f.datos.fecha_factura}
               alCambiar={(v) =>
                 f.setDatos((d) => ({
@@ -410,12 +446,16 @@ export function FormularioServicio({
 
             <CampoFecha etiqueta="Servicio hasta" {...f.campo("hasta")} />
 
-            <ResumenIva
-              neto={f.datos.neto}
-              afecto={afecto}
-              alCambiarAfecto={categoriaAfecta ? (v) => setExento(!v) : undefined}
-              nota={categoriaAfecta ? undefined : `La categoría ${categoria?.nombre ?? ""} no lleva IVA.`}
-            />
+            {honorarios ? (
+              <ResumenHonorarios bruto={f.datos.neto} fecha={fechaBoleta} />
+            ) : (
+              <ResumenIva
+                neto={f.datos.neto}
+                afecto={afecto}
+                alCambiarAfecto={categoriaAfecta ? (v) => setExento(!v) : undefined}
+                nota={categoriaAfecta ? undefined : `La categoría ${categoria?.nombre ?? ""} no lleva IVA.`}
+              />
+            )}
             <Ancho>
               <label className="flex items-start gap-3 rounded-xl border border-mist-deep bg-mist/30 px-4 py-3">
                 <input

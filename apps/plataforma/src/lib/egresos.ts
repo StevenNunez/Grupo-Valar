@@ -63,6 +63,10 @@ export type Compra = {
   rendidoPor: string | null;
   /** Cuándo se pagó; en un reembolso, cuándo se devolvió. */
   fechaPago: string | null;
+  /** Boleta de honorarios o de terceros (0129): sin IVA; el neto es el bruto. */
+  boletaHonorarios: boolean;
+  /** Pesos retenidos del bruto y enterados al SII; al prestador se le paga neto − retención. */
+  retencion: number;
 };
 
 export type OrigenCompra = "proveedor" | "reembolso";
@@ -88,17 +92,19 @@ type FilaCompra = {
   origen?: OrigenCompra;
   rendido_por?: string | null;
   fecha_pago?: string | null;
+  boleta_honorarios?: boolean | null;
+  retencion?: number | null;
   contratos: { nombre: string } | null;
 };
 
-export async function cargarCompras(): Promise<Compra[]> {
-  const { data, error } = await supabase
-    .from("compras")
-    .select(
-      "id, contrato_id, proveedor, proveedor_id, categoria_id, documento, detalle, tipo, neto, iva, total, fecha, periodo_control, estado_pago, orden_id, anexo_id, datos, origen, rendido_por, fecha_pago, contratos(nombre)",
-    )
-    .order("fecha", { ascending: false });
+const COLUMNAS_COMPRA =
+  "id, contrato_id, proveedor, proveedor_id, categoria_id, documento, detalle, tipo, neto, iva, total, fecha, periodo_control, estado_pago, orden_id, anexo_id, datos, origen, rendido_por, fecha_pago, contratos(nombre)";
 
+export async function cargarCompras(): Promise<Compra[]> {
+  const consultar = (columnas: string) => supabase.from("compras").select(columnas).order("fecha", { ascending: false });
+  let { data, error } = await consultar(`${COLUMNAS_COMPRA}, boleta_honorarios, retencion`);
+  // Sin la 0129 la lista sigue cargando, sin boletas de honorarios.
+  if (error && /boleta_honorarios|retencion/.test(error.message)) ({ data, error } = await consultar(COLUMNAS_COMPRA));
   if (error) throw new Error(error.message);
 
   return ((data ?? []) as unknown as FilaCompra[]).map((f) => ({
@@ -123,6 +129,8 @@ export async function cargarCompras(): Promise<Compra[]> {
     origen: f.origen ?? "proveedor",
     rendidoPor: f.rendido_por ?? null,
     fechaPago: f.fecha_pago ?? null,
+    boletaHonorarios: Boolean(f.boleta_honorarios),
+    retencion: Number(f.retencion ?? 0),
   }));
 }
 
@@ -218,7 +226,23 @@ export async function guardarCompraDirecta(datos: {
   estadoPago?: EstadoPagoCompra;
   /** Una rendición: quién pagó, y si ya se le devolvió. */
   reembolso?: { rendidoPor: string; devuelto: boolean; fechaDevolucion: string };
+  /**
+   * Boleta de honorarios (0129): la retención en pesos, o null si no es boleta.
+   * `teniaBoleta`: la compra guardada ya era boleta. Omitido = no se toca.
+   */
+  honorarios?: { retencion: number | null; teniaBoleta: boolean };
 }) {
+  const marcarBoleta = async (boleta: boolean, retencion: number) => {
+    const { error } = await supabase.from("compras").update({ boleta_honorarios: boleta, retencion }).eq("id", datos.id);
+    if (error) {
+      throw new Error(/boleta_honorarios|retencion/.test(error.message)
+        ? "Para guardar boletas de honorarios falta aplicar la migración 0129 en Supabase."
+        : error.message);
+    }
+  };
+  /* La base exige IVA cero y retención menor que el neto en una boleta: se
+     desmarca antes de que la función cambie los montos y se vuelve a marcar después. */
+  if (datos.honorarios?.teniaBoleta) await marcarBoleta(false, 0);
   const { error } = await supabase.rpc("guardar_compra_directa", {
     p_id: datos.id,
     p_contrato_id: datos.contratoId,
@@ -249,6 +273,7 @@ export async function guardarCompraDirecta(datos: {
   // El anexo va aparte de la función de la base: es del documento, no de sus líneas.
   const { error: errorAnexo } = await supabase.from("compras").update({ anexo_id: datos.anexoId ?? null }).eq("id", datos.id);
   if (errorAnexo) throw new Error(errorAnexo.message);
+  if (datos.honorarios?.retencion != null) await marcarBoleta(true, datos.honorarios.retencion);
 }
 
 /* ── Personal ─────────────────────────────────────────────────────────────── */
@@ -420,6 +445,10 @@ export type Servicio = {
   plazoDias: number;
   fechaVencimiento: string | null;
   fechaPago: string | null;
+  /** Boleta de honorarios o de terceros (0128): sin IVA; el neto es el bruto. */
+  boletaHonorarios: boolean;
+  /** Pesos retenidos del bruto y enterados al SII; al prestador se le paga neto − retención. */
+  retencion: number;
 };
 
 export type Periodicidad = "mensual" | "quincenal" | "semanal" | "anual";
@@ -455,17 +484,19 @@ type FilaServicio = {
   plazo_dias?: number | null;
   fecha_vencimiento?: string | null;
   fecha_pago?: string | null;
+  boleta_honorarios?: boolean | null;
+  retencion?: number | null;
   contratos: { nombre: string } | null;
 };
 
-export async function cargarServicios(): Promise<Servicio[]> {
-  const { data, error } = await supabase
-    .from("servicios")
-    .select(
-      "id, contrato_id, anexo_id, categoria_id, contratista, documento, detalle, tipo_servicio, tipo, neto, iva, total, fecha, desde, hasta, recurrente, periodicidad, estado_pago, fecha_factura, plazo_dias, fecha_vencimiento, fecha_pago, datos, contratos(nombre)",
-    )
-    .order("fecha", { ascending: false });
+const COLUMNAS_SERVICIO =
+  "id, contrato_id, anexo_id, categoria_id, contratista, documento, detalle, tipo_servicio, tipo, neto, iva, total, fecha, desde, hasta, recurrente, periodicidad, estado_pago, fecha_factura, plazo_dias, fecha_vencimiento, fecha_pago, datos, contratos(nombre)";
 
+export async function cargarServicios(): Promise<Servicio[]> {
+  const consultar = (columnas: string) => supabase.from("servicios").select(columnas).order("fecha", { ascending: false });
+  let { data, error } = await consultar(`${COLUMNAS_SERVICIO}, boleta_honorarios, retencion`);
+  // Sin la 0128 la lista sigue cargando, sin boletas de honorarios.
+  if (error && /boleta_honorarios|retencion/.test(error.message)) ({ data, error } = await consultar(COLUMNAS_SERVICIO));
   if (error) throw new Error(error.message);
 
   return ((data ?? []) as unknown as FilaServicio[]).map((f) => ({
@@ -493,6 +524,8 @@ export async function cargarServicios(): Promise<Servicio[]> {
     plazoDias: f.plazo_dias ?? 30,
     fechaVencimiento: f.fecha_vencimiento ?? null,
     fechaPago: f.fecha_pago ?? null,
+    boletaHonorarios: Boolean(f.boleta_honorarios),
+    retencion: Number(f.retencion ?? 0),
   }));
 }
 
