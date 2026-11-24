@@ -73,14 +73,16 @@ const cuenta = (e: EgresoTercero) => e.estadoPago !== "anulada";
  * Falta el documento del proveedor. Un reembolso se respalda con su rendición,
  * no con factura. En una OC, falta factura de lo que ya llegó.
  */
-const sinFactura = (e: EgresoTercero) =>
+const sinFactura = (e: EgresoTercero, boletas: Map<string, number>) =>
   cuenta(e) &&
   !e.rendidoPor &&
+  // Una boleta de honorarios ya es el documento: no espera factura.
+  !(e.origen === "servicio" && boletas.has(e.id)) &&
   (e.origen === "orden" ? e.netoRecibido > e.netoFacturado : e.origen === "compra" ? !e.documento : !e.vencimiento && !e.fechaFactura);
 
 /** Neto que falta facturar: en una OC, lo recibido que el proveedor no ha facturado. */
-const netoSinFactura = (e: EgresoTercero) =>
-  !sinFactura(e) ? 0 : e.origen === "orden" ? e.netoRecibido - e.netoFacturado : e.neto;
+const netoSinFactura = (e: EgresoTercero, boletas: Map<string, number>) =>
+  !sinFactura(e, boletas) ? 0 : e.origen === "orden" ? e.netoRecibido - e.netoFacturado : e.neto;
 
 /**
  * Deuda con proveedores: lo que se debe y todavía no se pagó (los reembolsos
@@ -100,7 +102,7 @@ const vencido = (e: EgresoTercero) => debe(e) && !!e.vencimiento && diasHastaFec
  * pagado. El gasto ya cuenta en su mes desde que se registra; esto controla
  * cuándo hay que pagarlo (el plazo corre desde la factura).
  */
-function pagoDe(e: EgresoTercero): { tono: Tono; texto: string } | null {
+function pagoDe(e: EgresoTercero, esBoleta = false): { tono: Tono; texto: string } | null {
   if (e.rendidoPor) return null;
   if (e.estadoPago === "anulada") return { tono: "neutro", texto: "Anulada · no cuenta" };
   if (e.origen === "orden") {
@@ -119,7 +121,8 @@ function pagoDe(e: EgresoTercero): { tono: Tono; texto: string } | null {
   if (e.estadoPago === "pagada") {
     return { tono: "bueno", texto: e.fechaPago ? `Pagado el ${formatearFecha(e.fechaPago)}` : "Pagado" };
   }
-  if (e.origen === "compra") return { tono: "neutro", texto: "Pendiente de pago" };
+  // Una compra o una boleta de honorarios no esperan factura: solo el pago.
+  if (e.origen === "compra" || (esBoleta && !e.vencimiento)) return { tono: "neutro", texto: "Pendiente de pago" };
   if (!e.vencimiento) {
     const dias = -diasHastaFecha(e.fecha);
     return { tono: dias > 30 ? "aviso" : "neutro", texto: "Factura pendiente" };
@@ -194,6 +197,8 @@ export function VistaEgresosTerceros() {
   const usuario = useUsuario();
   const lista = useConsulta<Lista>(cargarLista, `${usuario.id}:${usuario.empresa}:egresos-terceros-v3`);
   const apoyo = useConsulta<Apoyo>(cargarApoyo);
+  const serviciosApoyo = apoyo.estado.estado === "listo" ? apoyo.estado.datos.servicios : null;
+  const boletas = useMemo(() => boletasDeHonorarios(serviciosApoyo ?? []), [serviciosApoyo]);
   const recargar = () => {
     lista.recargar();
     apoyo.recargar();
@@ -239,7 +244,7 @@ export function VistaEgresosTerceros() {
                 anexos={anexos}
                 edicion={edicion}
                 contratos={apoyo.estado.estado === "listo" ? apoyo.estado.datos.contratos : []}
-                boletas={boletasDeHonorarios(apoyo.estado.estado === "listo" ? apoyo.estado.datos.servicios : [])}
+                boletas={boletas}
                 mes={mes}
                 alCambiarMes={setMes}
                 actualizando={lista.actualizando}
@@ -474,7 +479,7 @@ function Contenidos({
       : filtro === "servicios" ? filas.filter((e) => e.origen === "servicio")
       : filtro === "reembolsos" ? filas.filter((e) => e.rendidoPor)
       : filtro === "recurrentes" ? filas.filter((e) => e.recurrente)
-      : filtro === "sinFactura" ? filas.filter(sinFactura)
+      : filtro === "sinFactura" ? filas.filter((e) => sinFactura(e, boletas))
       : filtro === "porPagar" ? filas.filter(debe)
       : filtro === "vencidos" ? filas.filter(vencido)
       : filtro === "pagados" ? filas.filter((e) => !e.rendidoPor && e.estadoPago === "pagada")
@@ -485,7 +490,7 @@ function Contenidos({
     return delEstatus.filter((e) =>
       coincide(texto, [e.tercero, e.documento, e.detalle, e.categoria, e.contratoId, e.ordenId, e.rendidoPor]),
     );
-  }, [filas, filtro, texto]);
+  }, [filas, filtro, texto, boletas]);
 
   // Lo anulado se ve en la lista pero no suma en ninguna tarjeta ni en el total.
   const contables = visibles.filter(cuenta);
@@ -499,7 +504,7 @@ function Contenidos({
   const arriendos = contables.filter(esArriendo);
   const porPagar = contables.filter(debe);
   const pagoVencido = porPagar.filter(vencido);
-  const sinDocumento = contables.filter(sinFactura);
+  const sinDocumento = contables.filter((e) => sinFactura(e, boletas));
   const pagadasSinFactura = sinDocumento.filter((e) => e.origen !== "orden" && e.estadoPago === "pagada");
   const suma = (ls: EgresoTercero[], campo: "neto" | "total" = "neto") => ls.reduce((t, e) => t + e[campo], 0);
   const sumaPorPagar = (ls: EgresoTercero[]) => ls.reduce((t, e) => t + montoPorPagar(e), 0);
@@ -526,7 +531,7 @@ function Contenidos({
           },
           {
             etiqueta: "Pendiente de factura",
-            valor: formatearMonto(sinDocumento.reduce((t, e) => t + netoSinFactura(e), 0)),
+            valor: formatearMonto(sinDocumento.reduce((t, e) => t + netoSinFactura(e, boletas), 0)),
             nota: `${sinDocumento.length} ${sinDocumento.length === 1 ? "factura faltante" : "facturas faltantes"} (neto; en una OC, lo ya recibido)${pagadasSinFactura.length ? ` · ${pagadasSinFactura.length} ya pagadas sin factura` : ""}`,
             acento: sinDocumento.length > 0 ? "aviso" : undefined,
           },
@@ -653,9 +658,9 @@ const columnas = (
             {tiposServicio.find((t) => t.id === e.clase)?.titulo ?? e.clase}
           </span>
         )}
-        {pagoDe(e) && (
+        {pagoDe(e, boletas.has(e.id)) && (
           <span className="mt-1.5 block">
-            <Chip tono={pagoDe(e)!.tono}>{pagoDe(e)!.texto}</Chip>
+            <Chip tono={pagoDe(e, boletas.has(e.id))!.tono}>{pagoDe(e, boletas.has(e.id))!.texto}</Chip>
           </span>
         )}
       </>

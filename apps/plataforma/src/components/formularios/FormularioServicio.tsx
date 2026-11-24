@@ -221,7 +221,15 @@ export function FormularioServicio({
       f.setError("La fecha de término del servicio debe ser igual o posterior al inicio.");
       return;
     }
-    const { id, ...campos } = f.datos;
+    const { id, ...datosForm } = f.datos;
+    /* Una boleta de honorarios existe desde que se registra: no hay «factura por
+       llegar». Sin fecha escrita vale la del gasto, y el plazo corre desde ahí. */
+    const fechaDoc = honorarios ? datosForm.fecha_factura || datosForm.fecha : datosForm.fecha_factura;
+    const campos = {
+      ...datosForm,
+      fecha_factura: fechaDoc,
+      fecha_vencimiento: datosForm.fecha_vencimiento || (honorarios && fechaDoc ? sumarDias(fechaDoc, datosForm.plazo_dias) : ""),
+    };
     const fila = {
       ...campos,
       iva: ivaDe(campos.neto, afecto),
@@ -404,7 +412,7 @@ export function FormularioServicio({
               etiqueta={honorarios ? "Fecha de la boleta" : "Fecha de la factura"}
               ayuda={
                 honorarios
-                  ? "La de emisión de la boleta: fija la tasa de retención del año. Si la dejas vacía se usa la fecha del gasto."
+                  ? "La de emisión de la boleta: fija la tasa de retención del año y de ahí corre el plazo de pago. Si la dejas vacía se usa la fecha del gasto."
                   : "Cuando llegue la factura. Mientras no esté, el servicio figura «factura pendiente»."
               }
               valor={f.datos.fecha_factura}
