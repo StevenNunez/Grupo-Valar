@@ -57,12 +57,19 @@ export function CicloOrden({
   orden,
   modoInicial = "ver",
   sugerida,
+  soloRecibir = false,
+  alRecibido,
   alCerrar,
   alCambiar,
 }: {
   orden: Orden;
   modoInicial?: Modo;
   sugerida?: FacturaSugerida;
+  /** Abierta desde el expediente de la solicitud: solo el formulario, sin montos,
+   *  y se cierra al guardar. Quien pide no trabaja en la pantalla de Órdenes. */
+  soloRecibir?: boolean;
+  /** Con `soloRecibir`: lo que hay que avisar después de guardar. */
+  alRecibido?: (aviso: AvisoPagnol) => void;
   alCerrar: () => void;
   /** Para que la lista de afuera se relea: el estado y los montos cambiaron. */
   alCambiar: () => void;
@@ -98,6 +105,12 @@ export function CicloOrden({
   const seRecibeEnPagnol = pagnolOC?.modo === "pagnol" && pagnolOC.anuncio.estado === "anunciada";
 
   function hecho(aviso?: AvisoPagnol) {
+    if (soloRecibir) {
+      alCambiar();
+      alRecibido?.(aviso ?? null);
+      alCerrar();
+      return;
+    }
     setAvisoPagnol(aviso ?? null);
     setVersionPagnol((v) => v + 1);
     recargar();
@@ -139,8 +152,8 @@ export function CicloOrden({
           ciclo={seRecibeEnPagnol ? { ...estado.datos, lineas: estado.datos.lineas.filter((l) => !l.pagnolMaterialId) } : estado.datos}
           alVolver={() => setModo("ver")} alHecho={hecho} />
       ) : modo === "directa" ? (
-        <FormRecepcion orden={orden} ciclo={estado.datos} directa seRecibeEnPagnol={seRecibeEnPagnol}
-          alVolver={() => setModo("ver")} alHecho={hecho} />
+        <FormRecepcion orden={orden} ciclo={estado.datos} directa seRecibeEnPagnol={seRecibeEnPagnol} sinMontos={soloRecibir}
+          alVolver={soloRecibir ? alCerrar : () => setModo("ver")} alHecho={hecho} />
       ) : modo === "facturar" ? (
         <FormFactura orden={orden} ciclo={estado.datos} sugerida={sugerida} alVolver={() => setModo("ver")} alHecho={hecho} />
       ) : modo === "corregir" && facturaCorregida ? (
@@ -472,13 +485,15 @@ function Accion({ onClick, destacada = false, children }: { onClick: () => void;
  * caso —lo que falta por llegar, lo recibido sin facturar…— y deja corregirlo
  * hasta un máximo, que es la misma regla que después revisa la base.
  */
-function CantidadesPorLinea({ lineas, cantidades, alCambiar, maximo, columna }: {
+function CantidadesPorLinea({ lineas, cantidades, alCambiar, maximo, columna, sinMontos = false }: {
   lineas: LineaCiclo[];
   cantidades: Record<string, number>;
   alCambiar: (c: Record<string, number>) => void;
   maximo: (l: LineaCiclo) => number;
   /** El nombre de la columna que se llena: "Llegó", "Factura", "Acredita", "Cierra". */
   columna: string;
+  /** Sin la columna Neto ni el total: para quien recibe desde su solicitud. */
+  sinMontos?: boolean;
 }) {
   const visibles = lineas.filter((l) => maximo(l) > 0);
   const neto = visibles.reduce((t, l) => t + (cantidades[l.id] ?? 0) * l.precioUnitario, 0);
@@ -501,7 +516,7 @@ function CantidadesPorLinea({ lineas, cantidades, alCambiar, maximo, columna }: 
               <th className="py-2 pr-3">Línea</th>
               <th className="py-2 pr-3 text-right">Hasta</th>
               <th className="w-28 py-2 pr-3 text-right">{columna}</th>
-              <th className="w-28 py-2 text-right">Neto</th>
+              {!sinMontos && <th className="w-28 py-2 text-right">Neto</th>}
             </tr>
           </thead>
           <tbody>
@@ -520,15 +535,17 @@ function CantidadesPorLinea({ lineas, cantidades, alCambiar, maximo, columna }: 
                     onChange={(e) => alCambiar({ ...cantidades, [l.id]: Math.max(0, Number(e.target.value) || 0) })}
                     className="w-full rounded-lg border border-mist-deep px-2.5 py-1.5 text-right text-sm tabular-nums text-ink focus:border-cyan focus:outline-none focus:ring-2 focus:ring-cyan/20" />
                 </td>
-                <td className="py-2 text-right tabular-nums text-ink">{formatearPesos(Math.round((cantidades[l.id] ?? 0) * l.precioUnitario))}</td>
+                {!sinMontos && <td className="py-2 text-right tabular-nums text-ink">{formatearPesos(Math.round((cantidades[l.id] ?? 0) * l.precioUnitario))}</td>}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-right text-sm text-ink-soft">
-        Neto según la orden: <strong className="tabular-nums text-ink">{formatearPesos(Math.round(neto))}</strong>
-      </p>
+      {!sinMontos && (
+        <p className="mt-2 text-right text-sm text-ink-soft">
+          Neto según la orden: <strong className="tabular-nums text-ink">{formatearPesos(Math.round(neto))}</strong>
+        </p>
+      )}
     </Ancho>
   );
 }
@@ -555,13 +572,15 @@ const netoDe = (lineas: LineaCiclo[], cantidades: Record<string, number>) =>
 
 const LARGO_MINIMO_MOTIVO = 10;
 
-function FormRecepcion({ orden, ciclo, directa = false, seRecibeEnPagnol = false, alVolver, alHecho }: {
+function FormRecepcion({ orden, ciclo, directa = false, seRecibeEnPagnol = false, sinMontos = false, alVolver, alHecho }: {
   orden: Orden;
   ciclo: Ciclo;
   /** «Ya lo recibí yo»: fuera del ciclo normal, con motivo; no entra a un pañol de Pagnol. */
   directa?: boolean;
   /** La OC está anunciada a Pagnol: lo recibido directo se le descuenta de lo que espera. */
   seRecibeEnPagnol?: boolean;
+  /** Sin precios ni netos: lo abre quien pidió, desde su solicitud. */
+  sinMontos?: boolean;
   alVolver: () => void;
   alHecho: (aviso?: AvisoPagnol) => void;
 }) {
@@ -657,7 +676,7 @@ function FormRecepcion({ orden, ciclo, directa = false, seRecibeEnPagnol = false
             </span>
           </Ancho>
         )}
-        <CantidadesPorLinea lineas={ciclo.lineas} cantidades={cantidades} alCambiar={setCantidades} maximo={maximo} columna="Llegó" />
+        <CantidadesPorLinea lineas={ciclo.lineas} cantidades={cantidades} alCambiar={setCantidades} maximo={maximo} columna="Llegó" sinMontos={sinMontos} />
       </Campos>
       <Pie error={f.error} guardando={f.guardando} alCancelar={alVolver} textoGuardar={directa ? "Dar por recibido" : "Registrar recepción"} />
     </form>

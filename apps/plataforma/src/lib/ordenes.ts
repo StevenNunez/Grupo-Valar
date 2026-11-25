@@ -434,6 +434,33 @@ export async function cargarOrden(id: string): Promise<Orden> {
 }
 
 /**
+ * Las órdenes de una solicitud que todavía esperan que llegue algo. Para el
+ * expediente de la solicitud: quien la pidió da por recibido lo que retiró él
+ * mismo sin pasar por la pantalla de Órdenes (0130). Se buscan por la solicitud
+ * de la orden y por las líneas que vienen de sus ítems.
+ */
+export async function cargarOrdenesPorRecibirDeSolped(solpedId: string, solpedItemIds: string[]): Promise<Orden[]> {
+  const [porSolped, porItems] = await Promise.all([
+    supabase.from("ordenes_compra_proveedor").select("id").eq("solped_id", solpedId),
+    solpedItemIds.length
+      ? supabase.from("items_compra").select("orden_id").in("solped_item_id", solpedItemIds).not("orden_id", "is", null)
+      : Promise.resolve({ data: [] as { orden_id: string }[], error: null }),
+  ]);
+  const fallo = porSolped.error ?? porItems.error;
+  if (fallo) throw new Error(fallo.message);
+  const ids = [...new Set([
+    ...(porSolped.data ?? []).map((o) => o.id as string),
+    ...((porItems.data ?? []) as { orden_id: string }[]).map((i) => i.orden_id),
+  ])];
+  if (ids.length === 0) return [];
+  const { data, error } = await supabase.from("ordenes_proveedor_resumen").select("*").in("id", ids).order("numero");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as FilaOrden[])
+    .map(mapear)
+    .filter((o) => o.estado !== "borrador" && o.estado !== "anulada" && o.itemsRecibidos < o.items);
+}
+
+/**
  * El siguiente número de la serie. Es una sugerencia: el campo se edita.
  *
  * Se calcula acá y no con la función `siguiente_numero_oc()` de la base porque

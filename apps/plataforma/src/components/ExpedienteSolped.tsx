@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Chip, type Tono } from "./ui/Chip";
+import { CicloOrden } from "./CicloOrden";
+import { cargarOrdenesPorRecibirDeSolped, type Orden } from "@/lib/ordenes";
 import { Dialogo } from "./ui/Formulario";
 import { useConsulta } from "@/lib/consulta";
 import {
@@ -131,11 +133,33 @@ function Cuerpo({ datos, exp, alTerminada }: { datos: Datos; exp: Expediente; al
   // Los dos siempre, en el mismo orden: son hooks y no se pueden cortar con ||.
   const gestionaCotizacion = usePuede("cotizacion.gestionar");
   const emiteOrdenes = usePuede("ordenes.emitir");
+  const recibeDirecto = usePuede("recepcion.directa");
+  const veOrdenes = usePuede("ordenes.ver");
   const puedeTerminar = (gestionaCotizacion || emiteOrdenes) && SE_PUEDE_TERMINAR.includes(exp.estado);
   const [terminando, setTerminando] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /* «Ya lo recibí yo» (0130): las órdenes de esta solicitud que esperan algo.
+     Quien pide no trabaja en Órdenes de compra; lo hace desde acá. */
+  const enCompra = exp.estado === "en-compra" || exp.estado === "parcial";
+  const [porRecibir, setPorRecibir] = useState<Orden[] | null>(null);
+  const [errorOrdenes, setErrorOrdenes] = useState<string | null>(null);
+  const [recibiendo, setRecibiendo] = useState<Orden | null>(null);
+  const [avisoRecibido, setAvisoRecibido] = useState<{ tono: "info" | "aviso"; texto: string } | null>(null);
+  const [vuelta, setVuelta] = useState(0);
+  const itemIds = datos.items.map((i) => i.id).join(",");
+  useEffect(() => {
+    if (!recibeDirecto || !enCompra) return;
+    let vigente = true;
+    cargarOrdenesPorRecibirDeSolped(exp.id, itemIds ? itemIds.split(",") : [])
+      .then((o) => vigente && setPorRecibir(o))
+      .catch((e) => vigente && setErrorOrdenes(mensajeParaPersona(e, "ExpedienteSolped")));
+    return () => {
+      vigente = false;
+    };
+  }, [recibeDirecto, enCompra, exp.id, itemIds, vuelta]);
 
   async function terminar() {
     setGuardando(true);
@@ -185,8 +209,53 @@ function Cuerpo({ datos, exp, alTerminada }: { datos: Datos; exp: Expediente; al
       <div className="mt-5 rounded-xl border border-mist-deep bg-mist/30 p-4">
         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">Qué falta</p>
         <p className="mt-1 text-sm text-ink">{queFalta[exp.estado]}</p>
+
+        {recibeDirecto && enCompra && (
+          <div className="mt-4 rounded-lg border border-mist-deep bg-white p-3">
+            <p className="text-sm font-semibold text-ink">¿Ya te llegó?</p>
+            <p className="mt-0.5 text-xs text-ink-soft">
+              Si lo retiraste tú en el proveedor o te lo entregaron directo en faena, dalo por recibido aquí y cuenta por qué
+              no pasó por logística.
+            </p>
+            {errorOrdenes ? (
+              <p role="alert" className="mt-2 text-sm text-peligro">{errorOrdenes}</p>
+            ) : porRecibir === null ? (
+              <p className="mt-2 text-sm text-ink-soft">Buscando lo que falta por llegar…</p>
+            ) : porRecibir.length === 0 ? (
+              <p className="mt-2 text-sm text-ink-soft">No queda nada por recibir en las órdenes de esta solicitud.</p>
+            ) : (
+              <ul className="mt-2 flex flex-col gap-2">
+                {porRecibir.map((o) => (
+                  <li key={o.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-mist/30 px-3 py-2 text-sm">
+                    <span className="text-ink">
+                      <span className="font-semibold">{o.numero}</span> · {o.proveedor}
+                      <span className="text-ink-soft"> · {o.itemsRecibidos} de {o.items} líneas recibidas</span>
+                    </span>
+                    <button type="button" onClick={() => { setAvisoRecibido(null); setRecibiendo(o); }}
+                      className="rounded-full bg-cyan-deep px-4 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo">
+                      Ya lo recibí yo
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {avisoRecibido && (
+              <p className={`mt-2 rounded-lg px-3 py-2 text-sm font-medium ${avisoRecibido.tono === "aviso" ? "bg-alerta-suave text-alerta" : "bg-cyan/10 text-cyan-deep"}`}>
+                {avisoRecibido.texto}
+              </p>
+            )}
+          </div>
+        )}
+
+        {recibiendo && (
+          <CicloOrden orden={recibiendo} modoInicial="directa" soloRecibir
+            alRecibido={(a) => setAvisoRecibido(a ?? { tono: "info", texto: `Listo: ${recibiendo.numero} quedó como recibida por ti.` })}
+            alCerrar={() => setRecibiendo(null)}
+            alCambiar={() => { setVuelta((v) => v + 1); alTerminada(); }} />
+        )}
+
         <div className="mt-3 flex flex-wrap items-center gap-3">
-          {(exp.estado === "en-compra" || exp.estado === "parcial") && (
+          {enCompra && veOrdenes && (
             <Link
               href="/abastecimiento/ordenes/"
               className="rounded-full bg-cyan-deep px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-cyan-hondo"
