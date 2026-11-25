@@ -135,6 +135,10 @@ export function VistaOrdenes() {
   /* «Recibir» desde la lista abre el ciclo directo en la recepción: es lo que
      más se hace con una orden emitida y estaba a dos clics, detrás de un ícono. */
   const [recibirDirecto, setRecibirDirecto] = useState(false);
+  /* Quien solo tiene «Recibir fuera del ciclo» (0130) abre «Ya lo recibí yo». */
+  const registraRecepcionArriba = usePuede("recepcion.registrar");
+  const cargaGestionArriba = usePuede("gestion.editar");
+  const modoRecibir = registraRecepcionArriba || cargaGestionArriba ? "recibir" : "directa";
   const [enviando, setEnviando] = useState<Orden | null>(null);
   /* La autorización de la compra (0127): se abre desde la lista o desde el aviso. */
   const [autorizando, setAutorizando] = useState<{ id: string; titulo?: string } | null>(null);
@@ -292,7 +296,7 @@ export function VistaOrdenes() {
         <CicloOrden
           key={`${recepcion.id}:${recibirDirecto}`}
           orden={recepcion}
-          modoInicial={recibirDirecto ? "recibir" : "ver"}
+          modoInicial={recibirDirecto ? modoRecibir : "ver"}
           alCerrar={() => setRecepcion(null)}
           alCambiar={recargar}
         />
@@ -407,7 +411,8 @@ function Contenidos({
   // Los mismos permisos con que el ciclo de la orden deja registrar una recepción.
   const registraRecepcion = usePuede("recepcion.registrar");
   const cargaGestion = usePuede("gestion.editar");
-  const puedeRecibir = registraRecepcion || cargaGestion;
+  const recibeDirecto = usePuede("recepcion.directa");
+  const puedeRecibir = registraRecepcion || cargaGestion || recibeDirecto;
 
   // Con contrato elegido, sus anexos; sin él, todos, con el contrato delante para distinguirlos.
   const anexosVisibles = contrato ? anexos.filter((a) => a.contratoId === contrato) : anexos;

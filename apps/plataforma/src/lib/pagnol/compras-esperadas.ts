@@ -166,7 +166,19 @@ async function leerOrden(sb: SupabaseClient, ordenId: string) {
     .eq("orden_id", ordenId)
     .order("id");
   if (errItems) throw new Error(errItems.message);
-  return { orden: orden as Orden, items: (items ?? []) as unknown as ItemOrden[] };
+  /* Lo recibido en Valar (no lo que llegó de Pagnol): eso Pagnol ya no lo
+     espera. Incluye lo recibido fuera del ciclo normal (0130). */
+  const { data: recibidas, error: errRec } = await sb
+    .from("recepciones")
+    .select("recepcion_items(item_id, cantidad)")
+    .eq("orden_id", ordenId)
+    .neq("origen", "pagnol");
+  if (errRec) throw new Error(errRec.message);
+  const recibidoEnValar = new Map<string, number>();
+  for (const r of (recibidas ?? []) as unknown as { recepcion_items: { item_id: string; cantidad: number }[] }[]) {
+    for (const l of r.recepcion_items ?? []) recibidoEnValar.set(l.item_id, (recibidoEnValar.get(l.item_id) ?? 0) + Number(l.cantidad));
+  }
+  return { orden: orden as Orden, items: (items ?? []) as unknown as ItemOrden[], recibidoEnValar };
 }
 
 async function filaDe(sb: SupabaseClient, ordenId: string): Promise<Fila | null> {
@@ -285,16 +297,16 @@ export async function anunciarOrden(sb: SupabaseClient, ordenId: string, panolPe
 
   const leida = await leerOrden(sb, ordenId);
   if (!leida) return { ok: false, error: "No se encontró la orden, o tu acceso no la alcanza." };
-  const { orden, items } = leida;
+  const { orden, items, recibidoEnValar } = leida;
   if (orden.estado === "borrador") return { ok: false, error: "Un borrador no se anuncia: primero se envía al proveedor." };
   if (orden.estado === "anulada") return { ok: false, error: "La orden está anulada." };
 
-  const r = await anunciarLeida(sb, orden, items, panolPedido);
+  const r = await anunciarLeida(sb, orden, items, recibidoEnValar, panolPedido);
   if (!r.ok) await anotarFallo(sb, orden, r.error).catch(() => undefined);
   return r;
 }
 
-async function anunciarLeida(sb: SupabaseClient, orden: Orden, items: ItemOrden[], panolPedido: string | null): Promise<ResultadoAnuncio> {
+async function anunciarLeida(sb: SupabaseClient, orden: Orden, items: ItemOrden[], recibidoEnValar: Map<string, number>, panolPedido: string | null): Promise<ResultadoAnuncio> {
   const avisos: string[] = [];
   /* Las líneas que aún aprovechan algo y no están en el catálogo de Pagnol se
      buscan o se crean allá, y el enlace queda guardado en la línea. */
@@ -325,17 +337,20 @@ async function anunciarLeida(sb: SupabaseClient, orden: Orden, items: ItemOrden[
   const previa = await filaDe(sb, orden.id);
   const yaAnunciada = !!previa?.pagnol_compra_id && previa.estado !== "error";
 
-  /* La primera vez, lo que ya se recibió en Valar no se pide de nuevo a Pagnol:
-     el pañolero lo recibiría otra vez y la línea quedaría contada dos veces. Una
-     vez anunciada, lo recibido ya es el de Pagnol y la cantidad es la de la orden. */
+  /* Lo que Pagnol espera de cada línea: lo vigente menos lo recibido en Valar.
+     Lo que recibió el pañolero en Pagnol sigue contando dentro de la cantidad
+     (Pagnol no deja bajarla de ahí). Antes de anunciar, lo recibido en Valar no
+     se pide: el pañolero lo recibiría otra vez. Después, una recepción fuera
+     del ciclo (0130) le descuenta a Pagnol lo que ya no va a llegar al pañol. */
   const lineas: LineaAnunciada[] = deLaOrden
     .map((i) => ({
       item_id: i.id,
       external_ref: refDeLinea(orden.id, i.id),
-      cantidad: Number(i.cantidad) - Number(i.cantidad_cerrada) - (yaAnunciada ? 0 : Number(i.cantidad_recibida)),
+      cantidad: Number(i.cantidad) - Number(i.cantidad_cerrada) - (recibidoEnValar.get(i.id) ?? 0),
     }))
     .filter((l) => l.cantidad > 0);
-  if (lineas.length === 0) {
+  // Ya anunciada y sin nada pendiente: se cancelan sus líneas en Pagnol (corregir).
+  if (lineas.length === 0 && !yaAnunciada) {
     return { ok: false, error: "Todo lo enlazado ya se recibió en Valar o está cerrado: no queda nada que Pagnol espere." };
   }
   const yaRecibidoEnValar = !yaAnunciada && deLaOrden.some((i) => Number(i.cantidad_recibida) > 0);

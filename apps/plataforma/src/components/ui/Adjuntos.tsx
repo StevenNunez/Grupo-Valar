@@ -25,6 +25,8 @@ const permisoParaAdjuntar: Record<string, string[]> = {
   finiquitos: ["personal.editar"],
   solped: ["solped.crear", "solped.aprobar", "cotizacion.gestionar"],
   ordenes_compra_proveedor: ["ordenes.emitir", "recepcion.registrar"],
+  /* La guía o la foto de lo recibido. Antes no estaba y el botón «Respaldo» no dejaba subir nada. */
+  recepciones: ["recepcion.registrar", "gestion.editar", "recepcion.directa"],
   proveedores: ["proveedores.editar"],
   articulos: ["articulos.editar"],
 };

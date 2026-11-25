@@ -143,13 +143,14 @@ type Recepcion = {
   fecha: string;
   pagnol_panol_id: string | null;
   origen: string | null;
+  fuera_de_ciclo: boolean | null;
   recepcion_items: { item_id: string; cantidad: number; items_compra: { pagnol_material_id: string | null; precio_unitario: number; descripcion: string } | null }[];
 };
 
 async function leerRecepcion(sb: SupabaseClient, recepcionId: string) {
   const { data, error } = await sb
     .from("recepciones")
-    .select("id, orden_id, contrato_id, fecha, pagnol_panol_id, origen, recepcion_items(item_id, cantidad, items_compra(pagnol_material_id, precio_unitario, descripcion))")
+    .select("id, orden_id, contrato_id, fecha, pagnol_panol_id, origen, fuera_de_ciclo, recepcion_items(item_id, cantidad, items_compra(pagnol_material_id, precio_unitario, descripcion))")
     .eq("id", recepcionId)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -193,6 +194,10 @@ export async function sincronizarRecepcion(sb: SupabaseClient, recepcionId: stri
   if (!rec) throw new Error("No se encontró la recepción, o tu acceso no la alcanza.");
   // Recibida en Pagnol: el stock ya está allá. Informarla de vuelta lo duplicaría.
   if (rec.origen === "pagnol") throw new Error("Esta recepción la registró el pañolero en Pagnol: no se informa de vuelta.");
+  /* Fuera del ciclo (0130): lo recibió quien lo pidió y no pasó por un pañol,
+     así que no entra stock ni activos a Pagnol. Lo que Pagnol esperaba se le
+     descuenta corrigiendo el anuncio de la OC (compras-esperadas.ts). */
+  if (rec.fuera_de_ciclo) return resumir(await enviosDe(sb, rec.id), []);
 
   const avisos: string[] = [];
   const nuevas: Record<string, unknown>[] = [];

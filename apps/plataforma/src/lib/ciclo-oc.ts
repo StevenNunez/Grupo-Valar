@@ -43,6 +43,9 @@ export type RecepcionCiclo = {
   observaciones: string | null;
   /** La registró el pañolero en Pagnol (Fase 5): el stock ya está allá y no se informa de vuelta (0092). */
   desdePagnol: boolean;
+  /** La recibió quien la pidió, por fuera de logística/pañol, con su motivo (0130). No entra stock a Pagnol. */
+  fueraDeCiclo: boolean;
+  motivoFueraDeCiclo: string | null;
   lineas: { itemId: string; cantidad: number }[];
   /** Lo que se le informó a Pagnol de esta recepción (0055). Null si no tenía líneas de Pagnol. */
   pagnol: { total: number; enviados: number; errores: string[] } | null;
@@ -86,7 +89,7 @@ export async function cargarCiclo(ordenId: string): Promise<CicloOrden> {
     supabase.from("items_avance").select("*").eq("orden_id", ordenId),
     supabase
       .from("recepciones")
-      .select("id, fecha, guia_despacho, recibido_por, observaciones, origen, recepcion_items(item_id, cantidad)")
+      .select("id, fecha, guia_despacho, recibido_por, observaciones, origen, fuera_de_ciclo, motivo_fuera_de_ciclo, recepcion_items(item_id, cantidad)")
       .eq("orden_id", ordenId)
       .order("fecha", { ascending: false }),
     supabase
@@ -153,9 +156,12 @@ export async function cargarCiclo(ordenId: string): Promise<CicloOrden> {
     recepciones: ((recepciones.data ?? []) as unknown as {
       id: string; fecha: string; guia_despacho: string | null; recibido_por: string | null;
       observaciones: string | null; origen: string | null; recepcion_items: Detalle;
+      fuera_de_ciclo: boolean | null; motivo_fuera_de_ciclo: string | null;
     }[]).map((r) => ({
       id: r.id,
       desdePagnol: r.origen === "pagnol",
+      fueraDeCiclo: r.fuera_de_ciclo === true,
+      motivoFueraDeCiclo: r.motivo_fuera_de_ciclo,
       fecha: r.fecha,
       guia: r.guia_despacho,
       recibidoPor: r.recibido_por,
@@ -222,6 +228,8 @@ export async function registrarRecepcion(datos: {
   lineas: CantidadPorLinea;
   /** Pañol de Pagnol donde entra. Solo cuando hay líneas del catálogo de Pagnol. */
   panolId?: string | null;
+  /** Lo recibió quien lo pidió, por fuera del ciclo normal (0130). Exige el motivo. */
+  fueraDeCiclo?: { motivo: string };
 }) {
   const id = await llamar<string>("registrar_recepcion", {
     p_orden_id: datos.ordenId,
@@ -230,8 +238,10 @@ export async function registrarRecepcion(datos: {
     p_recibido_por: datos.recibidoPor,
     p_observaciones: datos.observaciones,
     p_lineas: datos.lineas,
+    p_fuera_de_ciclo: !!datos.fueraDeCiclo,
+    p_motivo: datos.fueraDeCiclo?.motivo ?? null,
   });
-  if (datos.panolId) {
+  if (datos.panolId && !datos.fueraDeCiclo) {
     const { error } = await supabase.from("recepciones").update({ pagnol_panol_id: datos.panolId }).eq("id", id);
     if (error) throw new Error(traducir(error.message));
   }

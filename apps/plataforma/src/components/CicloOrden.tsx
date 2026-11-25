@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Chip } from "./ui/Chip";
 import { DialogoAdjuntos } from "./ui/Adjuntos";
 import { Ancho, CampoDinero, CampoFecha, CampoTexto, Campos, Confirmacion, Dialogo, Pie, ResumenIva, ivaDe, useFormulario } from "./ui/Formulario";
-import { anularRecepcionConPagnol, estadoDeOrdenEnPagnol, informarRecepcionAPagnol, listarPanolesDePagnol, type AnuncioDeOrden } from "@/lib/pagnol/navegador";
+import { anularRecepcionConPagnol, anunciarOrdenAPagnol, estadoDeOrdenEnPagnol, informarRecepcionAPagnol, listarPanolesDePagnol, type AnuncioDeOrden } from "@/lib/pagnol/navegador";
 import { PanelPagnolDeOrden } from "./PanelPagnolDeOrden";
 import type { PanolPagnol } from "@/lib/pagnol/tipos";
 import {
@@ -29,6 +29,8 @@ import { usePuede, useUsuario } from "@/lib/sesion";
  * Todo lo que le pasa a una OC después de emitirse, en una sola ventana.
  *
  *   recibir  → cada entrega con su guía. Es lo que habilita la factura.
+ *   directa  → «ya lo recibí yo»: quien lo pidió lo retiró o se lo entregaron
+ *              en faena, sin pasar por logística ni por el pañol. Con motivo (0130).
  *   facturar → qué parte de cada línea cubre la factura. Puede haber varias.
  *   NC       → si facturaron algo que no llegó. Libera el pago retenido.
  *   cerrar   → lo que no llegó ni se facturó y ya no va a llegar.
@@ -37,7 +39,7 @@ import { usePuede, useUsuario } from "@/lib/sesion";
  * corresponden en cada caso para que casi nunca haya que teclearlas.
  */
 
-type Modo = "ver" | "recibir" | "facturar" | "corregir" | "nc" | "cerrar";
+type Modo = "ver" | "recibir" | "directa" | "facturar" | "corregir" | "nc" | "cerrar";
 
 const hoy = () => new Date().toISOString().slice(0, 10);
 const sumarDias = (fecha: string, dias: number) => {
@@ -70,8 +72,9 @@ export function CicloOrden({
   /* La factura que se está corrigiendo (modo «corregir»). */
   const [facturaCorregida, setFacturaCorregida] = useState<FacturaCiclo | null>(null);
   const [adjuntos, setAdjuntos] = useState<{ tabla: string; id: string; titulo: string } | null>(null);
-  // Los cuatro siempre, en el mismo orden: son hooks y no se pueden cortar con ||.
+  // Siempre todos, en el mismo orden: son hooks y no se pueden cortar con ||.
   const registraRecepcion = usePuede("recepcion.registrar");
+  const recibeDirecto = usePuede("recepcion.directa");
   const cargaGestion = usePuede("gestion.editar");
   const emiteOrdenes = usePuede("ordenes.emitir");
   const puedeRecibir = registraRecepcion || cargaGestion;
@@ -96,6 +99,7 @@ export function CicloOrden({
 
   function hecho(aviso?: AvisoPagnol) {
     setAvisoPagnol(aviso ?? null);
+    setVersionPagnol((v) => v + 1);
     recargar();
     alCambiar();
     setModo("ver");
@@ -111,6 +115,7 @@ export function CicloOrden({
   const titulos: Record<Modo, string> = {
     ver: `${orden.numero} · ${orden.proveedor}`,
     recibir: `Recepción · ${orden.numero}`,
+    directa: `Ya lo recibí yo · ${orden.numero}`,
     facturar: `Factura contra ${orden.numero}`,
     corregir: `Corregir factura ${facturaCorregida?.documento ?? ""} · ${orden.numero}`,
     nc: `Nota de crédito · ${orden.numero}`,
@@ -126,12 +131,15 @@ export function CicloOrden({
         </p>
       ) : modo === "ver" ? (
         <Resumen orden={orden} ciclo={estado.datos} alModo={setModo} alCorregir={(f) => { setFacturaCorregida(f); setModo("corregir"); }} alAdjuntos={setAdjuntos}
-          puedeRecibir={puedeRecibir} puedeFacturar={puedeFacturar} alCerrar={alCerrar}
+          puedeRecibir={puedeRecibir} recibeDirecto={recibeDirecto} puedeFacturar={puedeFacturar} alCerrar={alCerrar}
           avisoPagnol={avisoPagnol} alCambio={hecho}
           pagnolOC={pagnolOC} puedeAnunciar={emiteOrdenes || cargaGestion} alCambioPagnol={() => { setVersionPagnol((v) => v + 1); recargar(); alCambiar(); }} />
       ) : modo === "recibir" ? (
         <FormRecepcion orden={orden}
           ciclo={seRecibeEnPagnol ? { ...estado.datos, lineas: estado.datos.lineas.filter((l) => !l.pagnolMaterialId) } : estado.datos}
+          alVolver={() => setModo("ver")} alHecho={hecho} />
+      ) : modo === "directa" ? (
+        <FormRecepcion orden={orden} ciclo={estado.datos} directa seRecibeEnPagnol={seRecibeEnPagnol}
           alVolver={() => setModo("ver")} alHecho={hecho} />
       ) : modo === "facturar" ? (
         <FormFactura orden={orden} ciclo={estado.datos} sugerida={sugerida} alVolver={() => setModo("ver")} alHecho={hecho} />
@@ -150,7 +158,7 @@ export function CicloOrden({
 
 type AvisoPagnol = { tono: "info" | "aviso"; texto: string } | null;
 
-function Resumen({ orden, ciclo, alModo, alCorregir, alAdjuntos, puedeRecibir, puedeFacturar, alCerrar, avisoPagnol, alCambio, pagnolOC, puedeAnunciar, alCambioPagnol }: {
+function Resumen({ orden, ciclo, alModo, alCorregir, alAdjuntos, puedeRecibir, recibeDirecto, puedeFacturar, alCerrar, avisoPagnol, alCambio, pagnolOC, puedeAnunciar, alCambioPagnol }: {
   orden: Orden;
   ciclo: Ciclo;
   alModo: (m: Modo) => void;
@@ -158,6 +166,8 @@ function Resumen({ orden, ciclo, alModo, alCorregir, alAdjuntos, puedeRecibir, p
   alCorregir: (f: FacturaCiclo) => void;
   alAdjuntos: (a: { tabla: string; id: string; titulo: string }) => void;
   puedeRecibir: boolean;
+  /** Puede anotar que lo recibió él mismo, fuera del ciclo normal (recepcion.directa). */
+  recibeDirecto: boolean;
   puedeFacturar: boolean;
   alCerrar: () => void;
   avisoPagnol: AvisoPagnol;
@@ -184,11 +194,27 @@ function Resumen({ orden, ciclo, alModo, alCorregir, alAdjuntos, puedeRecibir, p
     if (!anulando) return;
     setTrabajando(anulando);
     setErrorAnular(null);
+    const anulada = ciclo.recepciones.find((x) => x.id === anulando);
     const r = await anularRecepcionConPagnol(anulando);
+    if (!r.ok) {
+      setTrabajando(null);
+      return setErrorAnular(r.error);
+    }
+    /* Una fuera del ciclo le había descontado a Pagnol lo que esperaba: se le
+       vuelve a pedir. Una línea que Pagnol ya canceló no se puede reabrir. */
+    let texto = "Recepción anulada. Lo que se había informado a Pagnol quedó revertido.";
+    let tono: "info" | "aviso" = "info";
+    if (anulada?.fueraDeCiclo && seRecibeEnPagnol && anulada.lineas.some((x) => deLaOrdenEnPagnol.has(x.itemId))) {
+      const p = await anunciarOrdenAPagnol(orden.id, null);
+      if (p.ok) texto = "Recepción anulada. Pagnol vuelve a esperar esas líneas.";
+      else {
+        tono = "aviso";
+        texto = `Recepción anulada, pero Pagnol no volvió a esperar esas líneas: ${p.error}`;
+      }
+    }
     setTrabajando(null);
-    if (!r.ok) return setErrorAnular(r.error);
     setAnulando(null);
-    alCambio({ tono: "info", texto: "Recepción anulada. Lo que se había informado a Pagnol quedó revertido." });
+    alCambio({ tono, texto });
   }
   const nombre = new Map(ciclo.lineas.map((l) => [l.id, l.descripcion]));
   const sinRecibir = ciclo.lineas.reduce((t, l) => t + l.sinRecibir * l.precioUnitario, 0);
@@ -196,6 +222,8 @@ function Resumen({ orden, ciclo, alModo, alCorregir, alAdjuntos, puedeRecibir, p
   const seRecibeEnPagnol = pagnolOC?.modo === "pagnol" && pagnolOC.anuncio.estado === "anunciada";
   /* Lo que falta y no es del catálogo de Pagnol se sigue recibiendo acá. */
   const hayPorRecibir = ciclo.lineas.some((l) => l.porRecibir > 0 && !(seRecibeEnPagnol && l.pagnolMaterialId));
+  /* Fuera del ciclo se puede anotar cualquier línea que falte, también las que esperaba Pagnol. */
+  const hayPorRecibirDirecto = orden.estado !== "borrador" && orden.estado !== "anulada" && ciclo.lineas.some((l) => l.porRecibir > 0);
   const hayFacturable = ciclo.lineas.some((l) => facturable(l) > 0);
   const hayCerrable = ciclo.lineas.some((l) => cerrable(l) > 0);
   const hayNc = ciclo.lineas.some((l) => l.sinRecibir > 0);
@@ -283,13 +311,18 @@ function Resumen({ orden, ciclo, alModo, alCorregir, alAdjuntos, puedeRecibir, p
                     {r.lineas.map((x) => `${formatearNumero(x.cantidad)} ${nombre.get(x.itemId) ?? x.itemId}`).join(" · ")}
                     {r.recibidoPor && ` — recibió ${r.recibidoPor}`}
                   </p>
+                  {r.fueraDeCiclo && (
+                    <p className="mt-1.5 rounded-lg bg-alerta-suave px-2.5 py-1.5 text-xs text-alerta">
+                      <span className="font-semibold">Recibida fuera del ciclo normal.</span> {r.motivoFueraDeCiclo}
+                    </p>
+                  )}
                   {r.desdePagnol ? (
                     <p className="mt-1.5 text-xs font-semibold text-exito">Recibida en Pagnol ✓ · si algo no venía, se corrige allá y el cambio llega solo</p>
-                  ) : (
+                  ) : r.fueraDeCiclo ? null : (
                     <EstadoEnPagnol recepcion={r} conPagnol={r.lineas.some((x) => deLaOrdenEnPagnol.has(x.itemId))}
                       trabajando={trabajando === r.id} alReintentar={() => reintentar(r.id)} />
                   )}
-                  {puedeRecibir && !r.desdePagnol && (
+                  {(puedeRecibir || (recibeDirecto && r.fueraDeCiclo)) && !r.desdePagnol && (
                     <button type="button" onClick={() => { setErrorAnular(null); setAnulando(r.id); }}
                       className="mt-2 text-xs font-semibold text-peligro hover:underline">
                       Anular recepción
@@ -348,6 +381,9 @@ function Resumen({ orden, ciclo, alModo, alCorregir, alAdjuntos, puedeRecibir, p
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-mist px-6 py-5">
         <div className="flex flex-wrap gap-2">
           {puedeRecibir && hayPorRecibir && <Accion destacada onClick={() => alModo("recibir")}>Registrar recepción</Accion>}
+          {recibeDirecto && hayPorRecibirDirecto && (
+            <Accion destacada={!(puedeRecibir && hayPorRecibir)} onClick={() => alModo("directa")}>Ya lo recibí yo</Accion>
+          )}
           {puedeFacturar && hayFacturable && <Accion onClick={() => alModo("facturar")}>Agregar factura</Accion>}
           {puedeFacturar && hayNc && <Accion onClick={() => alModo("nc")}>Registrar nota de crédito</Accion>}
           {puedeFacturar && hayCerrable && <Accion onClick={() => alModo("cerrar")}>Cerrar saldo</Accion>}
@@ -517,15 +553,27 @@ const netoDe = (lineas: LineaCiclo[], cantidades: Record<string, number>) =>
 
 /* ── Recepción ────────────────────────────────────────────────────────────── */
 
-function FormRecepcion({ orden, ciclo, alVolver, alHecho }: { orden: Orden; ciclo: Ciclo; alVolver: () => void; alHecho: (aviso?: AvisoPagnol) => void }) {
+const LARGO_MINIMO_MOTIVO = 10;
+
+function FormRecepcion({ orden, ciclo, directa = false, seRecibeEnPagnol = false, alVolver, alHecho }: {
+  orden: Orden;
+  ciclo: Ciclo;
+  /** «Ya lo recibí yo»: fuera del ciclo normal, con motivo; no entra a un pañol de Pagnol. */
+  directa?: boolean;
+  /** La OC está anunciada a Pagnol: lo recibido directo se le descuenta de lo que espera. */
+  seRecibeEnPagnol?: boolean;
+  alVolver: () => void;
+  alHecho: (aviso?: AvisoPagnol) => void;
+}) {
   const usuario = useUsuario();
   const f = useFormulario({ fecha: hoy(), guia: "", recibidoPor: usuario.nombre, observaciones: "" });
+  const [motivo, setMotivo] = useState("");
   const [cantidades, setCantidades] = useState(() => inicialDe(ciclo.lineas, (l) => l.porRecibir));
   const maximo = (l: LineaCiclo) => l.porRecibir;
 
   /* Si alguna línea por recibir es del catálogo de Pagnol, se elige a qué
      pañol entra. Es opcional: sin pañol, entra sin pañol asignado. */
-  const conPagnol = ciclo.lineas.some((l) => l.pagnolMaterialId && l.porRecibir > 0);
+  const conPagnol = !directa && ciclo.lineas.some((l) => l.pagnolMaterialId && l.porRecibir > 0);
   const [panoles, setPanoles] = useState<PanolPagnol[] | null>(null);
   const [errorPanoles, setErrorPanoles] = useState<string | null>(null);
   const [panolId, setPanolId] = useState("");
@@ -547,8 +595,23 @@ function FormRecepcion({ orden, ciclo, alVolver, alHecho }: { orden: Orden; cicl
       e.preventDefault();
       const r = lineasAEnviar(ciclo.lineas, cantidades, maximo);
       if (r.error) return f.setError(r.error);
+      if (directa && motivo.trim().length < LARGO_MINIMO_MOTIVO) {
+        return f.setError("Cuenta por qué lo recibiste por fuera del ciclo normal (al menos 10 caracteres).");
+      }
       let aviso: AvisoPagnol = null;
       f.enviar(async () => {
+        if (directa) {
+          await registrarRecepcion({ ordenId: orden.id, ...f.datos, lineas: r.filas!, fueraDeCiclo: { motivo: motivo.trim() } });
+          /* No entra stock a Pagnol (no pasó por un pañol): solo se le avisa que deje de esperarlo. */
+          const esperabaPagnol = seRecibeEnPagnol && r.filas!.some((x) => ciclo.lineas.find((l) => l.id === x.item_id)?.pagnolMaterialId);
+          if (esperabaPagnol) {
+            const p = await anunciarOrdenAPagnol(orden.id, null);
+            aviso = p.ok
+              ? { tono: "info", texto: "Recepción guardada. Pagnol ya no espera lo que recibiste: se descontó de la compra anunciada al pañol." }
+              : { tono: "aviso", texto: `La recepción quedó guardada, pero Pagnol sigue esperando esas líneas: ${p.error} Avísale al pañolero para que no las reciba de nuevo.` };
+          }
+          return;
+        }
         const id = await registrarRecepcion({ ordenId: orden.id, ...f.datos, lineas: r.filas!, panolId: panolId || null });
         // Pagnol va después: si falla, la recepción en Valar ya quedó y se reintenta.
         const llevaPagnol = r.filas!.some((x) => ciclo.lineas.find((l) => l.id === x.item_id)?.pagnolMaterialId);
@@ -556,10 +619,31 @@ function FormRecepcion({ orden, ciclo, alVolver, alHecho }: { orden: Orden; cicl
       }, () => alHecho(aviso));
     }}>
       <Campos>
-        <CampoFecha etiqueta="Fecha de llegada" requerido {...f.campo("fecha")} />
+        {directa && (
+          <Ancho>
+            <p className="rounded-xl bg-mist/50 px-4 py-3 text-sm leading-relaxed text-ink-soft">
+              Para lo que pediste y te llegó a ti sin pasar por logística ni por el pañol: lo retiraste en el proveedor, te lo
+              entregaron en faena… Queda anotado con tu nombre y el motivo, la orden lo da por recibido
+              {seRecibeEnPagnol ? " y Pagnol deja de esperarlo. No entra al stock de ningún pañol." : "."}
+            </p>
+          </Ancho>
+        )}
+        <CampoFecha etiqueta={directa ? "Fecha en que lo recibiste" : "Fecha de llegada"} requerido {...f.campo("fecha")} />
         <CampoTexto etiqueta="N° de guía de despacho" ayuda="El respaldo de que llegó. La guía escaneada se adjunta después." {...f.campo("guia")} />
         <CampoTexto etiqueta="Recibió" {...f.campo("recibidoPor")} />
-        <CampoTexto etiqueta="Observaciones" {...f.campo("observaciones")} />
+        {directa ? (
+          <Ancho>
+            <label className="block text-sm font-semibold text-ink" htmlFor="motivo-fuera-de-ciclo">
+              ¿Por qué se recibe por aquí y no por el ciclo normal? <span className="text-peligro">*</span>
+            </label>
+            <textarea id="motivo-fuera-de-ciclo" rows={2} required value={motivo} onChange={(e) => setMotivo(e.target.value)}
+              placeholder="Ej.: lo retiré yo en el proveedor y lo llevé directo a faena."
+              className="mt-2 w-full rounded-xl border border-mist-deep bg-white px-4 py-3 text-sm text-ink outline-none focus:border-cyan focus:ring-2 focus:ring-cyan/20" />
+            <span className="mt-1.5 block text-xs text-ink-soft">Obligatorio. Queda a la vista en la recepción de esta orden.</span>
+          </Ancho>
+        ) : (
+          <CampoTexto etiqueta="Observaciones" {...f.campo("observaciones")} />
+        )}
         {conPagnol && (
           <Ancho>
             <label className="block text-sm font-semibold text-ink" htmlFor="panol-destino">Pañol de destino en Pagnol</label>
@@ -575,7 +659,7 @@ function FormRecepcion({ orden, ciclo, alVolver, alHecho }: { orden: Orden; cicl
         )}
         <CantidadesPorLinea lineas={ciclo.lineas} cantidades={cantidades} alCambiar={setCantidades} maximo={maximo} columna="Llegó" />
       </Campos>
-      <Pie error={f.error} guardando={f.guardando} alCancelar={alVolver} textoGuardar="Registrar recepción" />
+      <Pie error={f.error} guardando={f.guardando} alCancelar={alVolver} textoGuardar={directa ? "Dar por recibido" : "Registrar recepción"} />
     </form>
   );
 }
